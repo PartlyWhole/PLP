@@ -81,6 +81,8 @@ button:disabled { opacity: 0.5; cursor: default; }
   color: var(--accent); font-size: 11px; letter-spacing: 0.06em; white-space: nowrap;
 }
 .mem-table th.scope-label-head { width: 20px; }
+[data-role=names-table] td.name { padding-left: 14px; cursor: default; }
+.cm-name-hl { background: rgba(217, 164, 65, 0.35); border-radius: 2px; }
 .mem-table tr.scope-start td { border-top: 2px solid var(--line); }
 .mem-table td.name { color: #9fc1ff; white-space: nowrap; }
 .mem-table td.uid { color: var(--dim); white-space: nowrap; }

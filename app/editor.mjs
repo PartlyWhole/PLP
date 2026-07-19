@@ -25,11 +25,35 @@ export function createEditor({ hostEl }) {
     cm.scrollIntoView({ line: idx, ch: 0 }, 60);
   }
 
+  // Occurrence highlight for a variable name (memory-model hover).
+  let nameMarks = [];
+  function clearNameHighlight() {
+    for (const mk of nameMarks) mk.clear();
+    nameMarks = [];
+  }
+  function highlightName(name) {
+    clearNameHighlight();
+    if (!name || !/^[A-Za-z_]\w*$/.test(name)) return;
+    const re = new RegExp(`\\b${name}\\b`, "g");
+    for (let i = 0; i < cm.lineCount(); i++) {
+      const text = cm.getLine(i);
+      for (let m = re.exec(text); m; m = re.exec(text)) {
+        nameMarks.push(cm.markText(
+          { line: i, ch: m.index },
+          { line: i, ch: m.index + name.length },
+          { className: "cm-name-hl" },
+        ));
+      }
+    }
+  }
+
   return {
     getValue: () => cm.getValue(),
-    setValue: (text) => { clearHighlight(); cm.setValue(text); },
+    setValue: (text) => { clearHighlight(); clearNameHighlight(); cm.setValue(text); },
     highlightLine,
     clearHighlight,
+    highlightName,
+    clearNameHighlight,
     refresh: () => cm.refresh(),
   };
 }

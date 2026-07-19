@@ -385,6 +385,13 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
   els.prev.addEventListener("click", () => userShow(index - 1));
   els.next.addEventListener("click", () => userShow(index + 1));
 
+  // Hovering a name highlights its occurrences in the editor.
+  els.names.addEventListener("mouseover", (ev) => {
+    const td = ev.target.closest("td.name");
+    if (td) editor?.highlightName(td.textContent.trim());
+  });
+  els.names.addEventListener("mouseleave", () => editor?.clearNameHighlight());
+
   // Ref chips (in either table) flash + scroll to the object's row.
   root.addEventListener("click", (ev) => {
     const a = ev.target.closest("a.mm-ref");

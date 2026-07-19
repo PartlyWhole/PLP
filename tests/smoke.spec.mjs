@@ -168,6 +168,28 @@ test.describe("PLP smoke", () => {
     });
   });
 
+  test("isolated: hovering a name highlights its occurrences in the editor", async ({ page }) => {
+    await gotoIsolated(page);
+    await page.evaluate(() => window.plp.editor.setValue("count = 1\ncount = count + 1\nprint(count)\n"));
+    const summary = await page.evaluate(() => window.plp.run());
+    expect(summary.terminal_reason).toBe("completed");
+    await expect.poll(() => page.evaluate(() => document.querySelector("[data-role=names-table]").textContent))
+      .toContain("count");
+    const marks = await page.evaluate(() => {
+      const td = [...document.querySelectorAll("[data-role=names-table] td.name")]
+        .find((c) => c.textContent.trim() === "count");
+      td.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      return document.querySelectorAll(".cm-name-hl").length;
+    });
+    expect(marks).toBe(4); // count appears 4 times in the source
+    const cleared = await page.evaluate(() => {
+      document.querySelector("[data-role=names-table]")
+        .dispatchEvent(new MouseEvent("mouseleave"));
+      return document.querySelectorAll(".cm-name-hl").length;
+    });
+    expect(cleared).toBe(0);
+  });
+
   test("isolated: line-step mode groups per executed line and shows produced state", async ({ page }) => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue(
