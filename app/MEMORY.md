@@ -55,6 +55,7 @@ plp.memory.refresh();
 | `chipReachableOnly` (true) | Objects table shows only heap nodes reachable from a chip: Names-table roots (globals, frame locals, closure cells) closed over displayed contents (container items, dict keys/values, instance/class attributes, cell contents) | rows the learner cannot navigate to are noise; OFF shows the engine's full per-step heap |
 | `inlineClassBases` (true) | class `bases` render by name in the class row (`class Puppy(Dog)`); unnameable builtin bases (the implicit `object`) are omitted | stops an opaque builtin row appearing in every class example; OFF renders bases as ordinary chips |
 | `inlinePlainFunctions` (true) | function nodes with **no closure environment** render inline as *`function name`* wherever referenced (no chip, no row) | a bare `def` is not an interesting object for a learner tracing `z = add(x, y)`; closures keep chips + rows because their environment is the point |
+| `inlineModules` (true) | module nodes render inline as *`module math`* wherever referenced (no chip, no row) | `import math` binds a name to a module object; true, but not the story the Objects table is telling |
 | `dimOpaque` (true) | `opaque` nodes (builtins/imported objects the engine truthfully declines to inspect) render as dimmed rows | de-emphasized but **never hidden** — hiding would turn "truthfully not inspected" into "silently doesn't exist" |
 
 Filtering happens at render time only; `plp.memory.steps()` always returns

@@ -30,16 +30,25 @@ export const displayFilters = {
   // of as a chip + object row — a bare `def` is not an interesting object
   // for learners. Closures keep their rows (their environment matters).
   inlinePlainFunctions: true,
+  // Module objects (import math -> `math` bound to a module) render inline
+  // as `module math` — an import binding is not an interesting object row.
+  inlineModules: true,
   // Opaque nodes (builtins/imported objects the engine truthfully declines
   // to inspect) render dimmed. They are never hidden entirely.
   dimOpaque: true,
 };
 
-// A function node qualifies for inline rendering (no chip, no row).
-function isInlinableFunction(node) {
-  return displayFilters.inlinePlainFunctions
-    && node?.kind === "function"
-    && node.closure_environment_id == null;
+// Nodes that render as inline text instead of a chip + object row.
+// Returns the inline HTML, or null when the node should chip normally.
+function inlineRendering(node) {
+  if (!node) return null;
+  if (displayFilters.inlinePlainFunctions && node.kind === "function" && node.closure_environment_id == null) {
+    return `<span class="mm-fn">function ${esc(node.qualname ?? "?")}</span>`;
+  }
+  if (displayFilters.inlineModules && node.kind === "module") {
+    return `<span class="mm-fn">module ${esc(node.module ?? "?")}</span>`;
+  }
+  return null;
 }
 
 function b64Preview(b64, length) {
@@ -73,10 +82,8 @@ export function renderValue(v, heapByUid) {
     case "ellipsis": return "...";
     case "not_implemented": return "NotImplemented";
     case "ref": {
-      const node = heapByUid?.get(v.uid);
-      if (isInlinableFunction(node)) {
-        return `<span class="mm-fn">function ${esc(node.qualname ?? "?")}</span>`;
-      }
+      const inline = inlineRendering(heapByUid?.get(v.uid));
+      if (inline) return inline;
       return `<a class="mm-ref" href="#" data-uid="${v.uid}">obj ${v.uid}</a>`;
     }
     case "elided": return `<span class="mm-elided">⟨elided: ${esc(v.reason)}${v.omitted_count ? `, ${v.omitted_count} omitted` : ""}⟩</span>`;
@@ -130,8 +137,8 @@ function* nodeContentRefs(n) {
 }
 
 // Uids reachable from the Names table (roots) through displayed contents.
-// Refs that render inline (plain functions) emit no chip, so they are not
-// followed and get no row.
+// Refs that render inline (plain functions, modules) emit no chip, so they
+// are not followed and get no row.
 function reachableUids(step, heapByUid) {
   const roots = [
     ...(step.globals ?? []).map((g) => g.bindings),
@@ -144,7 +151,7 @@ function reachableUids(step, heapByUid) {
     const uid = queue.pop();
     if (seen.has(uid)) continue;
     const node = heapByUid.get(uid);
-    if (isInlinableFunction(node)) continue; // rendered as text, not a chip
+    if (inlineRendering(node)) continue; // rendered as text, not a chip
     seen.add(uid);
     if (node) queue.push(...nodeContentRefs(node));
   }
