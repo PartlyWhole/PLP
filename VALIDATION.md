@@ -73,6 +73,19 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | P6 | Live follow + resume-at-end | During a slow run: view tracks latest; scrub back → frozen while records grow; slider to end → follows again | GAP |
 | P7 | Render throttling under load | 10k-step trace: page responsive; renders ≈ animation frames, not records (instrument via rAF counter) | GAP (perf) |
 
+## Generative questions (Q-series = `tests/questions.spec.mjs`)
+
+| # | Feature | Best evidence | Coverage |
+|---|---|---|---|
+| Q1 | memory-next-line: blanks = trace diff (changed/added), unchanged shown | explicit `{from,to}` → blank labels/expected match hand-computed diff; right/wrong grading | Q-1 |
+| Q2 | memory-line-to-line spans lines incl. frame locals | target inside a call → scoped `total()` entries present, ≥1 blank | Q-2 |
+| Q3 | Grading tolerance (whitespace, quote style) | `'…'` vs `"…"`, padded spacing both accepted | Q-1, Q-4 |
+| Q4 | code-order shuffles + grades by position | seeded shuffle differs from source; sorted-back order correct, reversed wrong | Q-3 |
+| Q5 | code-structure structure/details modes complementary | blanked-line sets for both modes equal the keyword classification | Q-4 |
+| Q6 | code-args blanks call arguments | known line → `before`/expected args; grade right/wrong | Q-5 |
+| Q7 | quiz pilot renders + checks; graceful without trace | panel question, fill → correct, wrong → `.bad` mark; after reset `newQuestion` → null | Q-6 |
+| Q8 | Determinism under explicit seed/options | same opts → same question (spot: implied by fixed expectations in Q-1..Q-5) | implicit |
+
 ## Layout / shell
 
 | # | Feature | Best evidence | Coverage |
@@ -141,6 +154,29 @@ Migration rule: land the emulator behind the SAME `plp.console` debug API
 (`text()`, `showUpTo()`, input hooks) so the existing C-series tests keep
 passing unmodified before any X-series is added — the diff between suites
 then measures exactly what the emulator changed.
+
+## Live collaboration (CO-series)
+
+"CO-n" = covered by `tests/collab.spec.mjs`. Hermetic scenarios run over
+BroadcastChannel-only rooms (`?transports=tabs`); the follower/driver
+equality bundle = records deep-equal, transcript equal, step count equal,
+`checkErrors()` empty on both sides.
+
+| # | Feature | Best evidence | Coverage |
+|---|---|---|---|
+| CO1 | Create/join a room; joiner adopts the code | Two pages, tabs transport: `collab.start()` → hash link → joiner `isActive()` and editor equals creator's | CO-1 |
+| CO2 | Two-way live editor sync | Edits on each side reach the other (char-level merge, no clobber) | CO-1 |
+| CO3 | Transport gating (a room only uses its `&via=` pathways) | tabs/p2p rooms: zero websockets to sync.automerge.org opened during the scenario | CO-1, CO-6 |
+| CO4 | Shared run: follower replays memory model + console exactly | Driver runs; follower equality bundle; follower memory tables render; end note present | CO-2 |
+| CO5 | Late joiner replays a finished run from record 0 | Third page joins after completion → equality bundle | CO-2 |
+| CO6 | Re-run resets followers and replays the new run | Second run → follower transcript is the new run only | CO-2 |
+| CO7 | `input()` prompt + echo reach followers; follower never enters line mode | Driver answers input; follower transcript has prompt+echo, `isWaiting()` false throughout | CO-3 |
+| CO8 | Run lockout while a peer's run streams; released after | Follower `canRun()` false + `run()` null during; true after; roles then swap successfully | CO-3 |
+| CO9 | Shared scrubbing with local detach/re-attach | Scrub on driver → follower position follows; follower scrub → detached, ignores driver; scrub to end → re-attached | CO-4 |
+| CO10 | Relay death mid-stream is survivable; sync resumes on relay return | ws-ONLY room via local sync server: kill mid-stream → follower stalls (< driver count); restart → converges to full equality bundle | CO-5 |
+| CO11 | Pure-P2P room (WebRTC via public Nostr signaling) | Separate browser contexts, `transports=p2p`, loopback ICE seam: join + shared run + zero sync-server sockets | CO-6 (SKIPS if relays unreachable — network-dependent by design) |
+| CO12 | Roster count + leave/goodbye | Both sides show ● 2; leave drops peer promptly (goodbye; 15 s TTL backstop) | CO-1 (count); GAP (leave — exercised manually; TTL fallback untested) |
+| CO13 | Lazy loading: solo pays zero collab cost | No `vendor/automerge-collab.mjs` request until Share/`#room=` | GAP (low value; import is behind `start`/`join` by construction) |
 
 ## Standing rules
 

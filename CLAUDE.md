@@ -24,12 +24,16 @@ No build step exists anywhere — plain ES modules, vendored dependencies.
 | `app/runner.mjs` | PyTrace session: run guard, record fan-out, terminal-reason notes, single input-echo path |
 | `app/console.mjs` | terminal emulator — see **app/CONSOLE.md** (as-built doc) |
 | `app/memory.mjs` | Names/Objects tables, toggleable display filters, line-step scrubbing — see **app/MEMORY.md** (as-built doc) |
-| `app/editor.mjs` | CodeMirror 5 wrapper (single file, line highlight) |
+| `app/editor.mjs` | CodeMirror 5 wrapper (single file, line highlight, collab splice/change hooks) |
+| `app/collab.mjs` | live collaboration: shared editor + shared run/scrub over Automerge, multi-transport (ws + WebRTC/Nostr + BroadcastChannel) — see **app/COLLAB.md** |
+| `tools/collab-vendor-build/` | esbuild recipe that produces `vendor/automerge-collab.mjs` (never served; rebuild only to change pinned versions) |
+| `app/questions.mjs` | generative-question engine (pure; trace-grounded memory-prediction + code questions) — see **app/QUESTIONS.md** |
+| `app/quiz.mjs` | thin pilot UI over the question engine (floating panel; disposable) |
 | `app/layout.mjs` | draggable gutters (CSS vars + localStorage), per-pane maximize (Esc restores) |
 | `app/stream-checks.mjs` | consumer-side trace-stream invariants (`traceStreamCheck`) |
 | `vendor/` | pinned third-party: Pyodide 314.0.2, PyTrace 0.1.0 (worker **patched** for sub-path — the ONLY upstream divergence, see `vendor/PATCHES.md`), CodeMirror 5.65.21, xterm.js 6.0.0 (+fit). Hashes in `vendor/PROVENANCE.md`; record any addition there |
 | `tools/dev-server.mjs` | zero-dep static server simulating the `/PLP/` prefix; `--coi` for header posture |
-| `tests/` | Playwright: `smoke.spec.mjs` (core flows), `emulator.spec.mjs` (X-series console) |
+| `tests/` | Playwright: `smoke.spec.mjs` (core flows), `emulator.spec.mjs` (X-series console), `collab.spec.mjs` (CO-series collaboration), `questions.spec.mjs` (Q-series question engine) |
 | `VALIDATION.md` | feature → best-evidence → coverage matrix; add a row when adding a feature |
 | `README.md` | user-facing doc incl. **Stepping model** and **Memory model display rules** |
 
@@ -61,7 +65,13 @@ source of the vendored assets and test machinery).
    position per executed line, each showing the state that line *produced*.
    Engine-step mode keeps raw before-the-line semantics. `memory.goTo()`/
    `stepCount()` are position-space; `memory.steps()` is always raw.
-6. **Tests** assert via `window.plp` state, not pixels; every run ends by
+6. **Collab**: rooms replicate the RECORD STREAM, not the panes (both are
+   deterministic projections — `renderRecordToUI` is the single fan-out).
+   Driver mirrors records one `handle.change` per animation frame, never
+   per record. Presence/scrub is ephemeral, never in the doc. Transports
+   run concurrently (idempotent sync); no fallback state machine
+   (app/COLLAB.md).
+7. **Tests** assert via `window.plp` state, not pixels; every run ends by
    checking `plp.checkErrors()` is empty. Suite runs under the `/PLP/`
    prefix with NO headers (service-worker posture = real GitHub Pages).
    First-visit COI shim reload: `waitForFunction(() => crossOriginIsolated)`.

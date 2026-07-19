@@ -3,7 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 // The dev server intentionally sends NO COOP/COEP headers: tests exercise
 // the coi-serviceworker path exactly as GitHub Pages will serve it, under
 // the simulated /PLP/ project prefix.
-const PORT = 8631;
+const PORT = 8633;
 
 const browsers = [
   { name: "chromium", use: { ...devices["Desktop Chrome"] } },

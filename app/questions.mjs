@@ -1,0 +1,340 @@
+// Generative question engine over a trace + source (pilot).
+//
+// Pure module: no DOM. Given a question context — the program source, the
+// raw step records, and the executed-line positions
+// (`memory.linePositions()`) — each generator in `questionGenerators`
+// produces a serializable Question object with a `grade()` closure:
+//
+//   {
+//     kind, prompt,
+//     // kind-specific payload for a UI to render (given/target snapshots,
+//     // code lines, shuffled items, …)
+//     ...,
+//     blanks: [{ id, label, expected }],   // fill-in questions
+//     items:  [{ id, text }],              // ordering questions
+//     grade(answers) -> { correct, perBlank|perIndex, expected }
+//   }
+//
+// Extensibility: add a generator under a new kind key; the pilot quiz UI
+// (quiz.mjs) renders by payload shape, and unknown kinds can ship their own
+// renderer. Generators are deterministic under an explicit `seed`/position
+// options; without options they self-pick (seeded) sensible targets.
+//
+// The engine respects the memory model's display filters (hidden bindings
+// don't appear in snapshots) so questions match what students see.
+
+import { displayFilters } from "./memory.mjs";
+
+// ---- deterministic RNG ----------------------------------------------------
+export function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ---- plain-text value rendering (student-typable canonical forms) ---------
+export function textValue(v, heap, seen = new Set()) {
+  if (v === null || v === undefined) return "?";
+  switch (v.kind) {
+    case "none": return "None";
+    case "bool": return v.value ? "True" : "False";
+    case "int": return v.decimal;
+    case "float": return v.special ?? v.decimal;
+    case "str": return JSON.stringify(v.value);
+    case "ellipsis": return "...";
+    case "not_implemented": return "NotImplemented";
+    case "range": return `range(${textValue(v.start, heap, seen)}, ${textValue(v.stop, heap, seen)}, ${textValue(v.step, heap, seen)})`;
+    case "bytes": return `bytes[${v.length}]`;
+    case "elided": return "⟨elided⟩";
+    case "ref": {
+      const n = heap.get(v.uid);
+      if (!n) return `obj ${v.uid}`;
+      if (seen.has(v.uid)) return "…"; // cycle guard
+      seen.add(v.uid);
+      const out = textNode(n, heap, seen);
+      seen.delete(v.uid);
+      return out;
+    }
+    default: return v.kind;
+  }
+}
+
+function textNode(n, heap, seen) {
+  switch (n.kind) {
+    case "list": return `[${(n.items ?? []).map((i) => textValue(i, heap, seen)).join(", ")}]`;
+    case "tuple": return `(${(n.items ?? []).map((i) => textValue(i, heap, seen)).join(", ")})`;
+    case "set": case "frozenset": return `{${(n.items ?? []).map((i) => textValue(i, heap, seen)).join(", ")}}`;
+    case "dict": return `{${(n.entries ?? []).map((e) => `${textValue(e.key, heap, seen)}: ${textValue(e.value, heap, seen)}`).join(", ")}}`;
+    case "instance": return `${n.class_qualname ?? "?"}(${(n.attributes ?? []).map((a) => `${a.name}=${textValue(a.value, heap, seen)}`).join(", ")})`;
+    case "function": return `function ${n.qualname ?? "?"}`;
+    case "class": return `class ${n.qualname ?? "?"}`;
+    case "module": return `module ${n.module ?? "?"}`;
+    case "generator": return `generator (${n.state ?? "?"})`;
+    default: return n.type_name ?? n.kind;
+  }
+}
+
+// Mirror of the memory model's hidden-binding filters.
+function isHiddenBinding(b, heap) {
+  if (b.value?.kind !== "ref") return false;
+  const node = heap.get(b.value.uid);
+  if (displayFilters.hideModuleBindings && node?.kind === "module") return true;
+  if (displayFilters.hideFunctionBindings && node?.kind === "function"
+    && node.closure_environment_id == null) return true;
+  return false;
+}
+
+// ---- memory snapshots -----------------------------------------------------
+// Flat entry list mirroring the Names table: [{ scope, name, value }].
+export function snapshotAt(steps, stateIndex) {
+  const s = steps[stateIndex];
+  if (!s) return { entries: [] };
+  const heap = new Map((s.heap ?? []).map((n) => [n.uid, n]));
+  const entries = [];
+  for (const g of s.globals ?? []) {
+    if (g.module !== "__main__") continue;
+    for (const b of g.bindings ?? []) {
+      if (isHiddenBinding(b, heap)) continue;
+      entries.push({ scope: "globals", name: b.name, value: textValue(b.value, heap) });
+    }
+  }
+  for (const f of s.stack ?? []) {
+    if (f.function === "<module>") continue;
+    for (const b of f.locals ?? []) {
+      if (isHiddenBinding(b, heap)) continue;
+      entries.push({ scope: `${f.function}()`, name: b.name, value: textValue(b.value, heap) });
+    }
+  }
+  return { entries };
+}
+
+const entryKey = (e) => `${e.scope}|${e.name}`;
+
+export function diffSnapshots(before, after) {
+  const beforeMap = new Map(before.entries.map((e) => [entryKey(e), e.value]));
+  const added = new Set();
+  const changed = new Set();
+  for (const e of after.entries) {
+    const k = entryKey(e);
+    if (!beforeMap.has(k)) added.add(k);
+    else if (beforeMap.get(k) !== e.value) changed.add(k);
+  }
+  const afterKeys = new Set(after.entries.map(entryKey));
+  const removed = before.entries.map(entryKey).filter((k) => !afterKeys.has(k));
+  return { added, changed, removed };
+}
+
+// ---- grading --------------------------------------------------------------
+// Whitespace-insensitive, quote-style-insensitive comparison so students can
+// type '3', ' 3 ', "'hi'" or '"hi"'.
+export function normalizeAnswer(s) {
+  return String(s ?? "").replace(/\s+/g, "").replace(/'/g, '"');
+}
+
+function gradeBlanks(blanks) {
+  return (answers = {}) => {
+    const perBlank = {};
+    for (const b of blanks) {
+      perBlank[b.id] = normalizeAnswer(answers[b.id]) === normalizeAnswer(b.expected);
+    }
+    return {
+      correct: blanks.length > 0 && blanks.every((b) => perBlank[b.id]),
+      perBlank,
+      expected: Object.fromEntries(blanks.map((b) => [b.id, b.expected])),
+    };
+  };
+}
+
+// ---- memory-prediction questions ------------------------------------------
+function memoryQuestion(ctx, fromPos, toPos, kind) {
+  const P = ctx.positions;
+  if (!P[fromPos] || !P[toPos] || fromPos >= toPos) return null;
+  const given = snapshotAt(ctx.steps, P[fromPos].stateIndex);
+  const target = snapshotAt(ctx.steps, P[toPos].stateIndex);
+  const d = diffSnapshots(given, target);
+  const blanks = [];
+  const entries = target.entries.map((e) => {
+    const k = entryKey(e);
+    if (d.added.has(k) || d.changed.has(k)) {
+      const id = `b${blanks.length}`;
+      blanks.push({ id, label: `${e.scope} · ${e.name}`, expected: e.value });
+      return { ...e, blankId: id };
+    }
+    return { ...e, blankId: null };
+  });
+  if (!blanks.length) return null; // nothing observable changes
+  const span = toPos - fromPos === 1
+    ? `after the next line (line ${P[toPos].line}) runs`
+    : `after execution reaches the state produced by line ${P[toPos].line}`;
+  return {
+    kind,
+    prompt: `The memory below is the state produced by line ${P[fromPos].line}. `
+      + `Fill in the blanks to predict the memory ${span}.`,
+    fromLine: P[fromPos].line,
+    toLine: P[toPos].line,
+    given,
+    target: { entries },
+    removed: d.removed, // UI may mention frames/names that disappear
+    blanks,
+    grade: gradeBlanks(blanks),
+  };
+}
+
+// Find a (from,to) pair with an observable diff, honoring explicit options.
+function pickMemoryPositions(ctx, opts, gap) {
+  const P = ctx.positions;
+  if (opts.from != null && opts.to != null) return [opts.from, opts.to];
+  const rng = mulberry32(opts.seed ?? 42);
+  const candidates = [];
+  for (let i = 0; i + 1 < P.length; i++) {
+    const j = gap === 1 ? i + 1 : Math.min(P.length - 1, i + 2 + Math.floor(rng() * 3));
+    if (j > i) candidates.push([i, j]);
+  }
+  // Rotate the candidate list by a seeded offset, return the first with a diff.
+  const off = Math.floor(rng() * candidates.length);
+  return { candidates, off };
+}
+
+function generateMemoryKind(ctx, opts, gap, kind) {
+  const picked = pickMemoryPositions(ctx, opts, gap);
+  if (Array.isArray(picked)) return memoryQuestion(ctx, picked[0], picked[1], kind);
+  const { candidates, off } = picked;
+  for (let n = 0; n < candidates.length; n++) {
+    const [i, j] = candidates[(n + off) % candidates.length];
+    const q = memoryQuestion(ctx, i, j, kind);
+    if (q) return q;
+  }
+  return null;
+}
+
+// ---- code-prediction questions --------------------------------------------
+const STRUCTURAL_RE = /^\s*(def |class |for |while |if |elif |else\b|return\b|import |from )/;
+
+function shuffle(arr, rng) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function codeOrderQuestion(ctx, opts = {}) {
+  const lines = ctx.source.split("\n").filter((l) => l.trim() !== "");
+  if (lines.length < 3) return null;
+  const rng = mulberry32(opts.seed ?? 42);
+  const items = lines.map((text, i) => ({ id: `i${i}`, text }));
+  let shuffled = shuffle(items, rng);
+  if (shuffled.every((it, i) => it.text === lines[i])) shuffled = [...shuffled].reverse();
+  return {
+    kind: "code-order",
+    prompt: "These are the lines of the program, shuffled. Put them in working order (indentation is preserved — use it).",
+    items: shuffled,
+    grade(orderIds = []) {
+      const byId = new Map(items.map((it) => [it.id, it.text]));
+      const got = orderIds.map((id) => byId.get(id));
+      const perIndex = lines.map((text, i) => got[i] === text);
+      return { correct: perIndex.every(Boolean) && got.length === lines.length, perIndex, expected: lines };
+    },
+  };
+}
+
+// mode "structure": structural lines are blanked (write the skeleton);
+// mode "details": non-structural lines are blanked (write the work).
+function codeStructureQuestion(ctx, opts = {}) {
+  const mode = opts.mode ?? "structure";
+  const lines = ctx.source.split("\n");
+  const blanks = [];
+  const display = lines.map((text, i) => {
+    if (text.trim() === "") return { text, blankId: null };
+    const structural = STRUCTURAL_RE.test(text);
+    const hide = mode === "structure" ? structural : !structural;
+    if (!hide) return { text, blankId: null };
+    const id = `b${blanks.length}`;
+    blanks.push({ id, label: `line ${i + 1}`, expected: text.trim() });
+    return { text: null, indent: text.match(/^\s*/)[0], blankId: id };
+  });
+  if (!blanks.length || blanks.length === display.filter((l) => l.text?.trim() !== "").length) return null;
+  return {
+    kind: "code-structure",
+    mode,
+    prompt: mode === "structure"
+      ? "The detail lines are given. Write the missing structural lines (def/for/if/return/…)."
+      : "The structure is given. Write the missing detail lines.",
+    lines: display,
+    blanks,
+    grade: gradeBlanks(blanks),
+  };
+}
+
+// Blank the arguments of one call expression.
+function codeArgsQuestion(ctx, opts = {}) {
+  const lines = ctx.source.split("\n");
+  const candidates = [];
+  lines.forEach((text, i) => {
+    if (/^\s*def /.test(text)) return; // def headers are parameters, not args
+    for (const m of text.matchAll(/([A-Za-z_]\w*)\(([^()]+)\)/g)) {
+      candidates.push({ lineIndex: i, fn: m[1], args: m[2], start: m.index + m[1].length + 1 });
+    }
+  });
+  if (!candidates.length) return null;
+  const rng = mulberry32(opts.seed ?? 42);
+  const c = opts.line != null
+    ? candidates.find((x) => x.lineIndex === opts.line - 1)
+    : candidates[Math.floor(rng() * candidates.length)];
+  if (!c) return null;
+  const argList = c.args.split(",").map((a) => a.trim());
+  const blanks = argList.map((a, i) => ({ id: `b${i}`, label: `argument ${i + 1} of ${c.fn}(…)`, expected: a }));
+  const line = lines[c.lineIndex];
+  return {
+    kind: "code-args",
+    prompt: `Line ${c.lineIndex + 1} calls ${c.fn}(…). Fill in the argument${argList.length > 1 ? "s" : ""}.`,
+    lineIndex: c.lineIndex,
+    before: line.slice(0, c.start),
+    after: line.slice(c.start + c.args.length),
+    argCount: argList.length,
+    blanks,
+    grade: gradeBlanks(blanks),
+  };
+}
+
+// ---- registry -------------------------------------------------------------
+export const questionGenerators = {
+  "memory-next-line": {
+    label: "Predict memory: next line",
+    needsTrace: true,
+    generate: (ctx, opts = {}) => generateMemoryKind(ctx, opts, 1, "memory-next-line"),
+  },
+  "memory-line-to-line": {
+    label: "Predict memory: line X → line Y",
+    needsTrace: true,
+    generate: (ctx, opts = {}) => generateMemoryKind(ctx, opts, 3, "memory-line-to-line"),
+  },
+  "code-order": {
+    label: "Arrange the code lines",
+    needsTrace: false,
+    generate: codeOrderQuestion,
+  },
+  "code-structure": {
+    label: "Write structure vs details",
+    needsTrace: false,
+    generate: codeStructureQuestion,
+  },
+  "code-args": {
+    label: "Fill in the arguments",
+    needsTrace: false,
+    generate: codeArgsQuestion,
+  },
+};
+
+// ctx = { source, steps, positions } (positions = memory.linePositions()).
+export function generateQuestion(kind, ctx, opts = {}) {
+  const gen = questionGenerators[kind];
+  if (!gen) throw new Error(`unknown question kind: ${kind}`);
+  if (gen.needsTrace && !(ctx.steps?.length && ctx.positions?.length)) return null;
+  return gen.generate(ctx, opts);
+}

@@ -106,6 +106,39 @@ policy is implemented as **individually toggleable filters**
 Rules 3–6 are the `displayFilters` flags in [app/memory.mjs](app/memory.mjs);
 rules 1–2 follow the engine's value encoding.
 
+## Generative questions (pilot)
+
+The **Quiz** button (memory pane) opens a pilot panel of questions
+generated from the current program and its trace: predict the memory after
+the next line (or across a span) with changed values blanked; arrange
+shuffled code lines; write the structural lines vs the detail lines; fill
+in a call's arguments. Memory questions are graded against what the
+program actually did. Engine and extension points:
+[app/QUESTIONS.md](app/QUESTIONS.md).
+
+## Live collaboration
+
+Click **Share session** to get an invite link (`#room=…`). Peers who open
+it share:
+
+- the **code editor** (character-level merging — concurrent edits both
+  survive),
+- every **run**: whoever presses Run becomes the driver; everyone else's
+  memory model and console replay the identical run live, including
+  `input()` prompts and answers. Late joiners replay finished runs in
+  full. While a run streams, other peers' Run is disabled.
+- the **step scrubber**: scrubbing steps everyone who's following; a peer
+  who scrubs on their own detaches, and scrubbing back to the end
+  re-attaches.
+
+Rooms ride three free transports at once (whichever works carries the
+room): the public Automerge sync relay, direct WebRTC between browsers
+(signaling via public Nostr relays), and BroadcastChannel for same-browser
+tabs. `?transports=ws,p2p,tabs` narrows the set; the choice travels in the
+link as `&via=`. **The link is the only access control** — anyone who has
+it can read and write the room, permanently. Details:
+[app/COLLAB.md](app/COLLAB.md).
+
 ## Notes
 
 - Console internals: the raw output chunk store is the source of truth and

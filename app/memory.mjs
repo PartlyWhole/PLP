@@ -490,6 +490,14 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     stepCount: () => positionCount(),
     stepIndex: () => index,
     steps: () => steps, // raw engine step records, always
+    // Executed-line positions (line-step grouping) with the raw step index
+    // whose snapshot each position displays — the question engine's input.
+    linePositions: () => groups.map((g, gi) => ({
+      line: g.line,
+      function: g.function,
+      module: g.module,
+      stateIndex: groups[gi + 1]?.start ?? steps.length - 1,
+    })),
     isFollowing: () => follow,
     lineMode,
     // Display-filter toggles (app/MEMORY.md). Mutate then call refresh(),
