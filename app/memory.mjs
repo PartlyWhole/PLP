@@ -33,6 +33,10 @@ export const displayFilters = {
   // Module objects (import math -> `math` bound to a module) render inline
   // as `module math` — an import binding is not an interesting object row.
   inlineModules: true,
+  // Go further: hide module bindings from the Names table entirely —
+  // `import math` adds no row at all. Turn OFF to teach that imports bind
+  // names like any other assignment.
+  hideModuleBindings: true,
   // Opaque nodes (builtins/imported objects the engine truthfully declines
   // to inspect) render dimmed. They are never hidden entirely.
   dimOpaque: true,
@@ -93,7 +97,11 @@ export function renderValue(v, heapByUid) {
 
 // One scope section: a vertically-written label cell (rowspan over the
 // scope's rows) to the LEFT of the Name column, then name/value rows.
-function scopeRows(label, bindings, heapByUid) {
+function scopeRows(label, allBindings, heapByUid) {
+  const bindings = (allBindings ?? []).filter((b) =>
+    !(displayFilters.hideModuleBindings
+      && b.value?.kind === "ref"
+      && heapByUid?.get(b.value.uid)?.kind === "module"));
   const rows = bindings?.length
     ? bindings.map((b) => `<td class="name">${esc(b.name)}</td><td>${renderValue(b.value, heapByUid)}</td>`)
     : ['<td class="name" colspan="2"><i class="hint">no names</i></td>'];

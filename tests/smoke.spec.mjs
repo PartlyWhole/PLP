@@ -137,15 +137,27 @@ test.describe("PLP smoke", () => {
       window.plp.memory.refresh();
     });
 
-    // Modules inline the same way: `import math` shows as inline text, no row.
+    // Modules: `import math` adds nothing — no Names row, no Objects row.
     await page.evaluate(() => window.plp.editor.setValue("import math\nx = 1\n"));
     const summary2 = await page.evaluate(() => window.plp.run());
     expect(summary2.terminal_reason).toBe("completed");
     // Rendering is rAF-scheduled — poll.
     await expect.poll(() => page.evaluate(() => document.querySelector("[data-role=names-table]").textContent))
-      .toContain("module math");
+      .toContain("x");
+    const names2 = await page.evaluate(() => document.querySelector("[data-role=names-table]").textContent);
+    expect(names2).not.toContain("math");
     expect(await page.evaluate(() => document.querySelector("[data-role=objects-table]").textContent))
       .not.toContain("module");
+    // hideModuleBindings off -> the binding returns, inline (still no row).
+    await page.evaluate(() => {
+      window.plp.memory.filters.hideModuleBindings = false;
+      window.plp.memory.refresh();
+    });
+    await expect(page.locator("[data-role=names-table]")).toContainText("module math");
+    await page.evaluate(() => {
+      window.plp.memory.filters.hideModuleBindings = true;
+      window.plp.memory.refresh();
+    });
   });
 
   test("isolated: line-step mode groups per executed line and shows produced state", async ({ page }) => {
