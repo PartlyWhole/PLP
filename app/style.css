@@ -72,7 +72,16 @@ button:disabled { opacity: 0.5; cursor: default; }
 .mem-table { border-collapse: collapse; width: 100%; font: 12px/1.5 ui-monospace, monospace; }
 .mem-table td, .mem-table th { padding: 2px 8px 2px 0; text-align: left; vertical-align: top; border-bottom: 1px solid #20242c; }
 .mem-table th { color: var(--dim); font-weight: 600; font-size: 11px; }
-.mem-table tr.scope th { color: var(--accent); padding-top: 8px; font-size: 12px; }
+.mem-table td.scope-label {
+  width: 20px; min-width: 20px; padding: 4px 3px;
+  border-right: 1px solid var(--line); vertical-align: middle; text-align: center;
+}
+.mem-table td.scope-label span {
+  display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg);
+  color: var(--accent); font-size: 11px; letter-spacing: 0.06em; white-space: nowrap;
+}
+.mem-table th.scope-label-head { width: 20px; }
+.mem-table tr.scope-start td { border-top: 2px solid var(--line); }
 .mem-table td.name { color: #9fc1ff; white-space: nowrap; }
 .mem-table td.uid { color: var(--dim); white-space: nowrap; }
 .mem-table tr.flash { background: rgba(79, 143, 247, 0.25); }

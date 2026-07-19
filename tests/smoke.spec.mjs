@@ -141,10 +141,11 @@ test.describe("PLP smoke", () => {
     await page.evaluate(() => window.plp.editor.setValue("import math\nx = 1\n"));
     const summary2 = await page.evaluate(() => window.plp.run());
     expect(summary2.terminal_reason).toBe("completed");
-    const names2 = await page.evaluate(() => document.querySelector("[data-role=names-table]").textContent);
-    expect(names2).toContain("module math");
-    const objects2 = await page.evaluate(() => document.querySelector("[data-role=objects-table]").textContent);
-    expect(objects2).not.toContain("module");
+    // Rendering is rAF-scheduled — poll.
+    await expect.poll(() => page.evaluate(() => document.querySelector("[data-role=names-table]").textContent))
+      .toContain("module math");
+    expect(await page.evaluate(() => document.querySelector("[data-role=objects-table]").textContent))
+      .not.toContain("module");
   });
 
   test("isolated: line-step mode groups per executed line and shows produced state", async ({ page }) => {

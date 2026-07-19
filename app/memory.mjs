@@ -91,10 +91,16 @@ export function renderValue(v, heapByUid) {
   }
 }
 
-function bindingRows(bindings, heapByUid) {
-  if (!bindings?.length) return `<tr><td class="name" colspan="2"><i class="hint">no names</i></td></tr>`;
-  return bindings.map((b) =>
-    `<tr><td class="name">${esc(b.name)}</td><td>${renderValue(b.value, heapByUid)}</td></tr>`).join("");
+// One scope section: a vertically-written label cell (rowspan over the
+// scope's rows) to the LEFT of the Name column, then name/value rows.
+function scopeRows(label, bindings, heapByUid) {
+  const rows = bindings?.length
+    ? bindings.map((b) => `<td class="name">${esc(b.name)}</td><td>${renderValue(b.value, heapByUid)}</td>`)
+    : ['<td class="name" colspan="2"><i class="hint">no names</i></td>'];
+  return rows.map((cells, i) =>
+    `<tr${i === 0 ? ' class="scope-start"' : ""}>${
+      i === 0 ? `<td class="scope-label" rowspan="${rows.length}"><span>${label}</span></td>` : ""
+    }${cells}</tr>`).join("");
 }
 
 // Objects-table display policy: implemented by the `displayFilters` flags
@@ -314,21 +320,20 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
 
     const heapByUid = new Map((s.heap ?? []).map((n) => [n.uid, n]));
 
-    // Names: globals first, then stack frames root → active.
-    let names = "<tr><th>Name</th><th>Value</th></tr>";
+    // Names: globals first, then stack frames root → active. Scope labels
+    // are vertical cells to the left of the Name column (rowspan).
+    let names = '<tr><th class="scope-label-head"></th><th>Name</th><th>Value</th></tr>';
     for (const g of s.globals ?? []) {
-      names += `<tr class="scope"><th colspan="2">globals${g.module === "__main__" ? "" : ` (${esc(g.module)})`}</th></tr>`;
-      names += bindingRows(g.bindings, heapByUid);
+      names += scopeRows(`globals${g.module === "__main__" ? "" : ` (${esc(g.module)})`}`, g.bindings, heapByUid);
     }
     (s.stack ?? []).forEach((f, fi, arr) => {
       if (f.function === "<module>") return; // module frame duplicates globals
       const active = fi === arr.length - 1;
-      names += `<tr class="scope"><th colspan="2">${esc(f.function)}()${active ? " ← active" : ""}</th></tr>`;
-      names += bindingRows(f.locals, heapByUid);
+      // Marker must read the same under the label's 180° rotation.
+      names += scopeRows(`${esc(f.function)}()${active ? " ●" : ""}`, f.locals, heapByUid);
     });
     for (const c of s.closure_environments ?? []) {
-      names += `<tr class="scope"><th colspan="2">closure env ${c.environment_id}</th></tr>`;
-      names += bindingRows(c.cells, heapByUid);
+      names += scopeRows(`closure env ${c.environment_id}`, c.cells, heapByUid);
     }
     els.names.innerHTML = names;
 
