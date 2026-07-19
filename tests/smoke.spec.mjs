@@ -188,6 +188,44 @@ test.describe("PLP smoke", () => {
       return document.querySelectorAll(".cm-name-hl").length;
     });
     expect(cleared).toBe(0);
+
+    // Scope-aware: `prices` is both a global and a local of total().
+    // Hovering each highlights only its own scope's occurrences.
+    await page.evaluate(() => window.plp.editor.setValue(
+      "def total(prices):\n"      // line 1: local occurrence (param)
+      + "    s = 0\n"
+      + "    for p in prices:\n"  // line 3: local occurrence
+      + "        s = s + p\n"
+      + "    return s\n"
+      + "\n"
+      + "prices = [3, 5]\n"       // line 7: global occurrence
+      + "t = total(prices)\n"     // line 8: global occurrence
+      + "print(t)\n",
+    ));
+    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    const scoped = await page.evaluate(() => {
+      // Scrub to a position where the total() frame is on screen.
+      const m = window.plp.memory;
+      let frameCell = null;
+      for (let i = 0; i < m.stepCount() && !frameCell; i++) {
+        m.goTo(i);
+        frameCell = document.querySelector('td.name[data-scope="frame"][data-fn="total"]');
+      }
+      const lines = () => [...document.querySelectorAll(".cm-name-hl")]
+        .map((el) => el.closest(".CodeMirror-line")).length;
+      const hover = (cell) => cell.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      const pricesCells = [...document.querySelectorAll("td.name")]
+        .filter((c) => c.textContent.trim() === "prices");
+      const local = pricesCells.find((c) => c.dataset.scope === "frame");
+      const global = pricesCells.find((c) => c.dataset.scope === "global");
+      hover(local);
+      const localMarks = document.querySelectorAll(".cm-name-hl").length;
+      hover(global);
+      const globalMarks = document.querySelectorAll(".cm-name-hl").length;
+      return { localMarks, globalMarks };
+    });
+    expect(scoped.localMarks).toBe(2);  // lines 1 and 3 only
+    expect(scoped.globalMarks).toBe(2); // lines 7 and 8 only
   });
 
   test("isolated: line-step mode groups per executed line and shows produced state", async ({ page }) => {

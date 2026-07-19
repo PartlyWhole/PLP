@@ -31,11 +31,14 @@ export function createEditor({ hostEl }) {
     for (const mk of nameMarks) mk.clear();
     nameMarks = [];
   }
-  function highlightName(name) {
+  // lineFilter (optional): (oneBasedLine) => bool — restricts highlighting
+  // to the hovered name's scope (provided by the memory model).
+  function highlightName(name, lineFilter) {
     clearNameHighlight();
     if (!name || !/^[A-Za-z_]\w*$/.test(name)) return;
     const re = new RegExp(`\\b${name}\\b`, "g");
     for (let i = 0; i < cm.lineCount(); i++) {
+      if (lineFilter && !lineFilter(i + 1)) continue;
       const text = cm.getLine(i);
       for (let m = re.exec(text); m; m = re.exec(text)) {
         nameMarks.push(cm.markText(
@@ -47,9 +50,32 @@ export function createEditor({ hostEl }) {
     }
   }
 
+  // Replace only the changed span (common prefix/suffix) so the local
+  // cursor, scroll, and undo history survive remote collaborative edits.
+  function applyRemote(text) {
+    const cur = cm.getValue();
+    if (cur === text) return;
+    let p = 0;
+    const max = Math.min(cur.length, text.length);
+    while (p < max && cur[p] === text[p]) p++;
+    let s = 0;
+    while (s < max - p && cur[cur.length - 1 - s] === text[text.length - 1 - s]) s++;
+    cm.replaceRange(
+      text.slice(p, text.length - s),
+      cm.posFromIndex(p),
+      cm.posFromIndex(cur.length - s),
+      "collab",
+    );
+  }
+
   return {
     getValue: () => cm.getValue(),
     setValue: (text) => { clearHighlight(); clearNameHighlight(); cm.setValue(text); },
+    applyRemote,
+    // Fires on user edits (not on setValue or applyRemote) — collab echo guard.
+    onLocalChange: (fn) => cm.on("change", (_cm, ch) => {
+      if (ch.origin !== "setValue" && ch.origin !== "collab") fn();
+    }),
     highlightLine,
     clearHighlight,
     highlightName,

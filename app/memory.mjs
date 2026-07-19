@@ -112,10 +112,10 @@ function isHiddenBinding(b, heapByUid) {
   return false;
 }
 
-function scopeRows(label, allBindings, heapByUid) {
+function scopeRows(label, allBindings, heapByUid, scopeAttr = "") {
   const bindings = (allBindings ?? []).filter((b) => !isHiddenBinding(b, heapByUid));
   const rows = bindings?.length
-    ? bindings.map((b) => `<td class="name">${esc(b.name)}</td><td>${renderValue(b.value, heapByUid)}</td>`)
+    ? bindings.map((b) => `<td class="name" ${scopeAttr}>${esc(b.name)}</td><td>${renderValue(b.value, heapByUid)}</td>`)
     : ['<td class="name" colspan="2"><i class="hint">no names</i></td>'];
   return rows.map((cells, i) =>
     `<tr${i === 0 ? ' class="scope-start"' : ""}>${
@@ -345,13 +345,15 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     // are vertical cells to the left of the Name column (rowspan).
     let names = '<tr><th class="scope-label-head"></th><th>Name</th><th>Value</th></tr>';
     for (const g of s.globals ?? []) {
-      names += scopeRows(`globals${g.module === "__main__" ? "" : ` (${esc(g.module)})`}`, g.bindings, heapByUid);
+      names += scopeRows(`globals${g.module === "__main__" ? "" : ` (${esc(g.module)})`}`, g.bindings, heapByUid,
+        g.module === "__main__" ? 'data-scope="global"' : "");
     }
     (s.stack ?? []).forEach((f, fi, arr) => {
       if (f.function === "<module>") return; // module frame duplicates globals
       const active = fi === arr.length - 1;
       // Marker must read the same under the label's 180° rotation.
-      names += scopeRows(`${esc(f.function)}()${active ? " ●" : ""}`, f.locals, heapByUid);
+      names += scopeRows(`${esc(f.function)}()${active ? " ●" : ""}`, f.locals, heapByUid,
+        `data-scope="frame" data-fn="${esc(f.function)}"`);
     });
     for (const c of s.closure_environments ?? []) {
       names += scopeRows(`closure env ${c.environment_id}`, c.cells, heapByUid);
@@ -385,10 +387,59 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
   els.prev.addEventListener("click", () => userShow(index - 1));
   els.next.addEventListener("click", () => userShow(index + 1));
 
-  // Hovering a name highlights its occurrences in the editor.
+  // ---- scope-aware hover highlighting -------------------------------------
+  // Trace-derived scope info: each executed function's source-line range and
+  // local-name set (from every stack frame across all steps). Lazy; rebuilt
+  // after new records arrive.
+  let scopeInfo = null;
+  function computeScopeInfo() {
+    if (scopeInfo) return scopeInfo;
+    const ranges = new Map(); // function -> {min,max} executed line span
+    const localsByFn = new Map(); // function -> Set(local names)
+    for (const s of steps) {
+      for (const f of s.stack ?? []) {
+        if (f.function === "<module>") continue;
+        const ln = f.location?.line;
+        if (ln != null) {
+          const r = ranges.get(f.function);
+          if (r) { r.min = Math.min(r.min, ln); r.max = Math.max(r.max, ln); }
+          else ranges.set(f.function, { min: ln, max: ln });
+        }
+        let set = localsByFn.get(f.function);
+        if (!set) localsByFn.set(f.function, set = new Set());
+        for (const b of f.locals ?? []) set.add(b.name);
+      }
+    }
+    return scopeInfo = { ranges, localsByFn };
+  }
+
+  // Line filter for a hovered name: frame scope -> only that function's
+  // executed line span; global scope -> everywhere except spans of functions
+  // that shadow the name as a local. (Trace-informed: only functions that
+  // actually ran have spans.)
+  function lineFilterFor(scope, fn, name) {
+    const { ranges, localsByFn } = computeScopeInfo();
+    if (scope === "frame") {
+      const r = ranges.get(fn);
+      return r ? (ln) => ln >= r.min && ln <= r.max : null;
+    }
+    if (scope === "global") {
+      const excluded = [...localsByFn]
+        .filter(([, names]) => names.has(name))
+        .map(([f]) => ranges.get(f))
+        .filter(Boolean);
+      if (!excluded.length) return null;
+      return (ln) => !excluded.some((r) => ln >= r.min && ln <= r.max);
+    }
+    return null; // closure envs etc.: no scope restriction
+  }
+
+  // Hovering a name highlights its occurrences in the editor (scope-aware).
   els.names.addEventListener("mouseover", (ev) => {
     const td = ev.target.closest("td.name");
-    if (td) editor?.highlightName(td.textContent.trim());
+    if (!td) return;
+    const name = td.textContent.trim();
+    editor?.highlightName(name, lineFilterFor(td.dataset.scope, td.dataset.fn, name));
   });
   els.names.addEventListener("mouseleave", () => editor?.clearNameHighlight());
 
@@ -428,10 +479,11 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
       if (r.kind === "step") {
         steps.push(r);
         trackGroup(steps.length - 1);
+        scopeInfo = null; // scope spans grow as the trace streams
         scheduleShowLatest();
       }
     },
-    reset() { steps = []; groups = []; index = 0; follow = true; show(0); },
+    reset() { steps = []; groups = []; index = 0; follow = true; scopeInfo = null; show(0); },
     // Position-space API (positions = executed lines in line-step mode,
     // raw engine steps otherwise).
     goTo: (i) => userShow(i),
