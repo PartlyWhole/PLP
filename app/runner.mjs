@@ -68,7 +68,10 @@ export function createRunner({ editor, memory, consoleUI, onStatus }) {
       const summary = await session.run({
         runId: `plp-${Date.now()}-${++runCounter}`,
         source: editor.getValue(),
-        options: {},
+        // Live-input mode (isolated): the console echoes typed lines locally,
+        // so disable the engine's echo — exactly one echo either way.
+        // Degraded mode keeps engine echo (pre-supplied lines, no typing).
+        options: { echo_stdin: !crossOriginIsolated },
         stdinLines: [],
         onRecord,
       });
@@ -102,7 +105,12 @@ export function createRunner({ editor, memory, consoleUI, onStatus }) {
   return {
     run,
     interrupt: () => { session?.interrupt(); },
-    provideInput: (line) => ensureSession().provideInput(line),
+    provideInput: (line) => {
+      ensureSession().provideInput(line); // throws on no outstanding request
+      // Accepted: echo the line into the transcript (live mode disables the
+      // engine's echo; degraded mode never reaches here — provideInput throws).
+      consoleUI.append("echo", line + "\n");
+    },
     isRunning: () => running,
     records: () => records,
     summary: () => lastSummary,

@@ -7,8 +7,11 @@ the PyTrace engine) with:
 - **Memory model** (right): a Names table (globals + call-stack frames) and an
   Objects table (heap: id, type, contents), updating live while the program
   runs, with a step scrubber to replay execution
-- **Console** (bottom): terminal-style interleaved stdout/stderr with inline
-  `input()` answering
+- **Console** (bottom): a real terminal emulator (vendored xterm.js 6):
+  interleaved stdout/stderr, ANSI colors, `\r` progress bars, inline
+  `input()` typed at the prompt with history and Backspace editing, Ctrl+C
+  to interrupt (Ctrl+D shows a truthful "EOF unsupported" notice — the
+  engine's wire contract has no EOF)
 - All panes drag-resizable and maximizable
 
 ## Run locally
@@ -91,8 +94,13 @@ comment); rules 1–2 follow the engine's value encoding.
 
 ## Notes
 
+- Console internals: the raw output chunk store is the source of truth and
+  the terminal is a deterministic replay view (scrubbing replays a prefix).
+  In live-input mode the engine's `echo_stdin` is disabled and the accepted
+  line is echoed locally through a single path (`runner.provideInput`) —
+  exactly one echo in both live and degraded modes.
 - Vendored runtime (`vendor/`): Pyodide 314.0.2, PyTrace engine 0.1.0,
-  CodeMirror 5.65.21 — copied from the Engine Pilot reference repo; see
+  CodeMirror 5.65.21, xterm.js 6.0.0 + fit addon (MIT) — see
   `vendor/PROVENANCE.md` and `vendor/PATCHES.md` (one deliberate divergence:
   `pytrace/browser/worker.mjs` resolves Pyodide relative to itself so the
   site works from a project sub-path).

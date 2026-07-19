@@ -20,8 +20,8 @@ test.describe("PLP smoke", () => {
     // Start the run without awaiting: it blocks at input().
     await page.evaluate(() => { window.__run = window.plp.run(); });
 
-    // Program prints, then waits at input() — the inline input row appears.
-    await expect(page.locator("[data-role=input-row]")).toHaveClass(/active/, { timeout: 180_000 });
+    // Program prints, then waits at input() — the terminal enters line mode.
+    await page.waitForFunction(() => window.plp.console.isWaiting(), null, { timeout: 180_000 });
     const preInput = await page.evaluate(() => window.plp.console.text());
     expect(preInput).toContain("items: 3");
     expect(preInput).toContain("total: 10");
@@ -34,10 +34,12 @@ test.describe("PLP smoke", () => {
     // Consumer-side stream checks: zero violations.
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
 
-    // Echoed input + final print reached the console.
+    // Echoed input (local echo; engine echo disabled in live mode) + final
+    // print reached the transcript and the screen.
     const text = await page.evaluate(() => window.plp.console.text());
     expect(text).toContain("Your name? Ada");
     expect(text).toContain("thanks, Ada");
+    expect(await page.evaluate(() => window.plp.console.buffer())).toContain("Your name? Ada");
 
     // Memory model: final snapshot has known names and a dict object.
     await expect(page.locator("[data-role=names-table]")).toContainText("cart");
@@ -49,18 +51,18 @@ test.describe("PLP smoke", () => {
     expect(await page.evaluate(() => window.plp.memory.lineMode())).toBe(true);
     await expect(page.locator("[data-role=step-counter]")).toHaveText(/^line 0\//);
     await expect(page.locator("[data-role=step-event]")).toContainText("before the program runs");
-    await expect(page.locator("[data-role=console-out]")).toContainText("no output yet");
+    await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toContain("no output yet");
 
     // Position 1 = first executed line; console shows partial output.
     await page.evaluate(() => window.plp.memory.goTo(1));
     await expect(page.locator("[data-role=step-counter]")).toHaveText(/^line 1\//);
-    const scrubbed = await page.locator("[data-role=console-out]").textContent();
+    const scrubbed = await page.evaluate(() => window.plp.console.buffer());
     expect(scrubbed).toMatch(/output up to step \d+/);
     expect(scrubbed).not.toContain("thanks, Ada");
 
     // Scrubbing to the end returns to the live view.
     await page.evaluate(() => window.plp.memory.goTo(window.plp.memory.stepCount() - 1));
-    await expect(page.locator("[data-role=console-out]")).toContainText("thanks, Ada");
+    await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toContain("thanks, Ada");
   });
 
   test("isolated: uncaught exception surfaces on stderr styling and terminal note", async ({ page }) => {
@@ -69,7 +71,7 @@ test.describe("PLP smoke", () => {
     const summary = await page.evaluate(() => window.plp.run());
     expect(summary.terminal_reason).toBe("uncaught_exception");
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
-    await expect(page.locator("[data-role=console-out]")).toContainText("ZeroDivisionError");
+    await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toContain("ZeroDivisionError");
   });
 
   test("isolated: objects table shows chip-reachable objects only; class bases inline", async ({ page }) => {
@@ -142,6 +144,6 @@ test.describe("PLP smoke", () => {
     expect(await page.evaluate(() => crossOriginIsolated)).toBe(false);
     const summary = await page.evaluate(() => window.plp.run());
     expect(summary.terminal_reason).toBe("needs_input");
-    await expect(page.locator("[data-role=console-out]")).toContainText("live input is unavailable");
+    await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toContain("live input is unavailable");
   });
 });

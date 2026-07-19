@@ -30,6 +30,7 @@ editor.setValue(SAMPLE);
 const consoleUI = createConsole({
   root: document.getElementById("console-pane"),
   onInput: (line) => runner.provideInput(line),
+  onInterrupt: () => runner.interrupt(), // Ctrl+C in the terminal
 });
 
 const memory = createMemoryModel({
@@ -81,7 +82,8 @@ async function run() {
 runBtn.addEventListener("click", run);
 stopBtn.addEventListener("click", () => { runner.interrupt(); setStatus("stopping…"); });
 
-initLayout({ onResize: () => editor.refresh() });
+initLayout({ onResize: () => { editor.refresh(); consoleUI.fit(); } });
+window.addEventListener("resize", () => consoleUI.fit());
 
 // Debug/test API.
 window.plp = {

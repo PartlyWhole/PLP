@@ -53,3 +53,16 @@ e98aac5ffa07bae58acd4ff07c4293059f8921c0ae0eba506929d8c6f41c9288  vendor/codemir
 | pygame_ce wheel | https://cdn.jsdelivr.net/pyodide/v314.0.2/full/pygame_ce-2.5.7-cp314-cp314-pyemscripten_2026_0_wasm32.whl | sha256 matches `vendor/pyodide/pyodide-lock.json` entry exactly |
 | coi-serviceworker.js | https://cdn.jsdelivr.net/npm/coi-serviceworker@0.1.7/coi-serviceworker.js (MIT) | pinned 0.1.7 |
 | CodeMirror 5 | https://cdn.jsdelivr.net/npm/codemirror@5.65.21/ (MIT): lib/codemirror.js, lib/codemirror.css, mode/python/python.js | pinned 5.65.21 |
+
+## xterm.js (added 2026-07-18, PLP full-emulator console)
+
+From npm tarballs `@xterm/xterm@6.0.0` and `@xterm/addon-fit@0.11.0` (both
+MIT; LICENSE vendored at `vendor/xterm/LICENSE`). Self-contained ESM
+bundles — zero imports, no CDN/network use, COEP-safe.
+
+```
+b336ec65a086c056d4804b3d4c2347da5663d3f23c3f25be866467bd8857ad59  vendor/xterm/xterm.mjs
+854a7c0fb70e8b1a083c16797ab827299fb18744f5ad34f227b48337e33293c6  vendor/xterm/xterm.css
+2d87e1bddc73be9111de8beee5370c3bb7aac9c94e18e6f245f02ca741ef1769  vendor/xterm/addon-fit.mjs
+b569f629d00f2626a8100df2a1798210535621e42164dfd426a6fe5aac7b0ccd  vendor/xterm/LICENSE
+```

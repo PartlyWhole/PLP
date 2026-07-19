@@ -93,7 +93,16 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | D2 | Cold-cache boot UX | Manual: first visit on a throttled connection shows boot notice; run completes | manual |
 | D3 | Human-judgment pass | Manual: drag feel, maximize feel, focus behavior, input row ergonomics, scrub smoothness on a big trace | manual |
 
-## Conditional: full terminal emulator (xterm.js) — applies only if adopted
+## Full terminal emulator (xterm.js) — ADOPTED
+
+Status: implemented; "E-suite" = `tests/emulator.spec.mjs`. Automated:
+X0a/X0b, X2, X3, X6, X7, X9, X11, X12, X14 (E-suite) and X1 (via the
+migrated smoke suite running byte-for-byte prior assertions through
+`text()`/`buffer()`). Remaining gaps: X4 (cursor movement/clear corpus),
+X5 (malformed-escape corpus), X8 (byte-limit UI rejection), X13 (selection
+— manual), X15 (code-inspection: no Python-visible changes were made).
+The C-series rows above now execute against the emulator via the same
+`plp.console` API; C7's DOM cap is superseded by X11's scrollback bound.
 
 Adopting an emulator swaps the console's evidence surface: assertions move
 from DOM `textContent` to xterm's **screen-buffer API**
