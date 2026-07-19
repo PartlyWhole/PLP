@@ -1,7 +1,9 @@
 # Spaced repetition — research findings & component design
 
-Deep-research report (2026-07-19) for a modular, general-purpose spaced-
-repetition component for PLP. Method: 5-angle web research (cognitive-science
+Deep-research report (2026-07-19) on spaced repetition, oriented toward
+designing a modular, general-purpose spaced-repetition component that any
+web application can embed (application-agnostic; no assumptions about the
+host app's domain, UI, or storage). Method: 5-angle web research (cognitive-science
 foundations, FSRS state of the art, ML scheduling research, beyond-flashcards
 / knowledge tracing, practitioner implementation), 23 sources fetched, 113
 claims extracted, top 25 adversarially verified by 3-vote panels — **25
@@ -22,8 +24,9 @@ confirmed, 0 refuted**. Findings below are grouped by evidence tier.
 - **The testing effect grows with delay and retrieval effort.** g = 0.69
   for retention intervals ≥ 1 day vs 0.41 for < 1 day; recognition formats
   g = 0.36 vs cued recall 0.72 and free recall 0.82 (Rowland 2014). Design
-  implication: production-format questions (our fill-in blanks) at a delay
-  beat same-session multiple choice. (Moderator analyses are
+  implication: production-format questions (recall, fill-in, construction)
+  at a delay beat same-session recognition formats (multiple choice).
+  (Moderator analyses are
   between-study/correlational; the free-vs-cued difference alone was not
   significant.)
 
@@ -86,8 +89,8 @@ cut MAE ≥45% vs Leitner. The design-relevant result: **sparse per-item
 difficulty features overfit** — they caused cold-start failures and
 rapid-decay complaints, and *removing* them improved every live retention
 metric in a 3.3M-student experiment (+12% daily activity) (Settles &
-Meeder, ACL 2016). Direct caution for us: with generated/parameterized
-questions, don't hang memory state on fine-grained item ids.
+Meeder, ACL 2016). Direct caution for any system with generated or
+parameterized items: don't hang memory state on fine-grained item ids.
 
 ---
 
@@ -111,8 +114,8 @@ verification cut. Treat as leads, not established facts.)
   Learning/Review/Relearning); knobs: `request_retention`, `enable_fuzz`,
   `learning_steps`/`relearning_steps`, `maximum_interval`; plus rollback/
   forget/reschedule helpers and a separate optimizer package. `fsrs.js`
-  (FSRS v4) is deprecated in its favor. FSRS is implementable in ~100
-  lines if we prefer hand-rolling (Borretti).
+  (FSRS v4) is deprecated in its favor. FSRS is also implementable from
+  scratch in ~100 lines (Borretti).
 - The research base for **spacing problem-solving/procedural skills** is
   far thinner than for fact recall; no claims about BKT/Elo comparisons
   survived verification (see open questions).
@@ -138,66 +141,79 @@ Open questions:
 
 ---
 
-## Part IV — Design recommendations for the PLP component
+## Part IV — Design recommendations for a general spaced-repetition component
 
-### Architecture (mirrors the questions.mjs pattern: pure engine, thin UI)
+These recommendations are host-application-agnostic: the component knows
+nothing about what an "item" means to the host (flashcard, generated
+question template, exercise, skill), how reviews are presented, or where
+data lives. The host supplies item ids, review outcomes, a clock, and a
+storage adapter; the component supplies scheduling.
+
+### Core architecture: pure engine, injected effects
 
 ```
-app/srs.mjs               — pure scheduling engine, no DOM
-  createSRS({ scheduler, store, now })
-    .review(itemId, rating, at?)   -> new item state (+ appends to log)
-    .due(at?, limit?)              -> [itemId] sorted by overdue-ness
-    .state(itemId)                 -> { due, stability, difficulty, reps, lapses, phase }
-    .retrievability(itemId, at?)   -> predicted recall probability
-  schedulers = { fsrs: …, leitner: … }   // pluggable; leitner proves the seam
+createSRS({ scheduler, store, now })      // no DOM, no I/O of its own
+  .review(itemId, rating, at?)   -> new item state (+ appends to review log)
+  .due(at?, limit?)              -> [itemId] sorted by overdue-ness
+  .state(itemId)                 -> { due, stability, difficulty, reps, lapses, phase }
+  .retrievability(itemId, at?)   -> predicted recall probability
+schedulers = { fsrs, leitner, … }         // pluggable
 ```
 
-1. **Scheduler as a plug-in interface** — `{ initState(), review(state,
-   rating, elapsedDays) -> { state, intervalDays } }`. Ship **FSRS-6 as
-   the default** (vendor `ts-fsrs`, MIT — consistent with our vendoring
-   policy; or hand-roll ~100 lines to stay dependency-light) and a
-   trivial Leitner as the second implementation to keep the seam honest.
-2. **Persist two things, separately**:
-   - *Item state* (small, hot): FSRS card fields — due, stability,
-     difficulty, reps, lapses, phase, last_review. localStorage-sized.
-   - *Append-only review log* (itemId, rating, timestamp, elapsed): this
-     is what makes us future-proof — parameters can be re-optimized and
-     algorithms migrated by replaying the log. Never throw it away.
-3. **Item identity = template × skill, not instance.** Following the HLR
-   lesson, key memory state to the question *template + scope of
-   variation* (e.g. `memory-next-line:assignment-aliasing`), not to each
-   generated instance. Fresh instances per review are a feature (prevents
-   answer memorization — retrieval stays effortful), while the memory
-   state tracks the durable skill. Optionally tag items with knowledge
-   components now (plain strings) so a DAS3H-style skill layer can be
-   added later without migration.
-4. **Ratings**: keep the full 4-grade FSRS scale in the interface
-   (Again/Hard/Good/Easy) but let the quiz map automatically at first —
-   wrong → Again, correct → Good (self-grading UI is friction; the two
-   middle grades add little for auto-graded questions).
-5. **Defaults, per the evidence**: desired retention **0.90** (Anki's
-   default; expose 0.7–0.97); FSRS pretrained default parameters for cold
-   start; fuzz **on** (research says near-optimum is flat — fuzz costs
-   nothing and de-clumps reviews); err long when uncertain (overshooting
-   is cheap, undershooting expensive); short learning steps for day-0 only.
-6. **Honor the testing-effect moderators in the product**: schedule
-   *production-format* questions (our blanks) rather than recognition;
-   prefer next-day first review over same-session re-asks.
-7. **What NOT to build**: no hand-tuned expanding-interval tables (the
-   assumption is unsupported; the target-retention mechanism subsumes it);
-   no per-instance difficulty features (HLR lesson); no neural scheduler
-   (marginal benchmark gains, real complexity cost).
-8. **Roadmap hooks**: per-user parameter optimization from the review log
-   (ts-fsrs optimizer offline or in a worker); skill-level scheduling
-   (DAS3H-style) once templates carry KC tags; retention-target tuning
-   from our own logs.
+1. **Scheduler as a plug-in interface** — e.g. `{ initState(),
+   review(state, rating, elapsedDays) -> { state, intervalDays } }`.
+   **FSRS-6 as the default** (via MIT-licensed `ts-fsrs`, or ~100 lines
+   hand-rolled). Ship at least one second, trivially simple scheduler
+   (e.g. Leitner) — not because it's good, but because a second
+   implementation keeps the interface honest and enables A/B comparison.
+2. **Persist two things, separately, behind a storage adapter**:
+   - *Item state* (small, hot): the scheduler's card fields — due,
+     stability, difficulty, reps, lapses, phase, last-review time. Fits
+     any key-value store (localStorage, IndexedDB, server DB).
+   - *Append-only review log* `(itemId, rating, timestamp, elapsed)`:
+     the future-proofing layer. Parameters can be re-optimized, algorithms
+     migrated, and retention measured by replaying the log. Never discard
+     it; treat item state as a cache derivable from it.
+3. **Item identity should be as coarse as the durable skill.** Following
+   the HLR lesson (sparse per-item features overfit) and the open
+   template-transfer question: when items are generated or parameterized,
+   key memory state to the *template / knowledge component whose mastery
+   persists*, not to each generated instance. Fresh instances per review
+   are a feature — they keep retrieval effortful and prevent answer
+   memorization — while the memory state tracks the underlying skill.
+   Let hosts optionally tag items with knowledge-component labels (opaque
+   strings) so a skill-level scheduling layer (DAS3H-style) can be added
+   later without a data migration.
+4. **Ratings**: support the full 4-grade FSRS scale (Again/Hard/Good/
+   Easy) in the interface, but document a binary auto-mapping (wrong →
+   Again, correct → Good) for hosts with machine-graded items — the
+   middle grades mostly matter for self-graded review.
+5. **Defaults, per the evidence**: desired retention **0.90** (configurable
+   ~0.7–0.97 — the retention-vs-review-load knob); published FSRS default
+   parameters for cold start; interval fuzz **on** (the optimum is flat,
+   so fuzz costs nothing and de-clumps review days); when uncertain,
+   err toward longer intervals (overshooting is measurably cheaper than
+   undershooting); short learning steps confined to first-day learning.
+6. **Encourage testing-effect-aligned usage** in the component's docs:
+   production-format reviews (recall/construction) over recognition, and
+   a ≥ 1-day first interval over same-session re-asks, since the effect
+   sizes roughly double under both.
+7. **What NOT to build**: hand-tuned expanding-interval tables (the
+   expanding assumption is unsupported; retention-targeted scheduling
+   subsumes it); per-instance difficulty features (the HLR lesson);
+   a neural scheduler (marginal benchmark gains, real complexity cost).
+8. **Extension hooks**: per-user parameter optimization from the review
+   log (ts-fsrs ships an optimizer; runnable offline or in a worker);
+   knowledge-component-level scheduling once items carry tags; empirical
+   retention-target tuning from the host's own logs.
 
-### Validation plan (when built)
+### Validation plan (for any implementation)
 
-Engine is pure → unit-testable like questions.mjs: deterministic scheduling
-given a fixed clock; property tests (interval grows on Good, resets toward
-relearning on Again, retrievability monotonically decays); a replay test
-(log → same states); and a scheduler-swap test through the plug-in seam.
+A pure engine with injected clock/storage is deterministic and
+unit-testable: fixed-clock scheduling tests; property tests (interval
+grows on Good, drops toward relearning on Again, retrievability decays
+monotonically between reviews); a replay test (review log → identical item
+states); and a scheduler-swap test through the plug-in seam.
 
 ---
 
