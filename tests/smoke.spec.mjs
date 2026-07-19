@@ -43,11 +43,16 @@ test.describe("PLP smoke", () => {
     await expect(page.locator("[data-role=names-table]")).toContainText("cart");
     await expect(page.locator("[data-role=objects-table]")).toContainText("dict");
 
-    // Scrubber (line-step mode is the default): jumping to the first
-    // position changes the view; console shows the reconstructed (partial)
-    // output.
+    // Scrubber (line-step mode is the default): position 0 is the synthetic
+    // "before the program runs" anchor — empty tables, no output.
     await page.evaluate(() => window.plp.memory.goTo(0));
     expect(await page.evaluate(() => window.plp.memory.lineMode())).toBe(true);
+    await expect(page.locator("[data-role=step-counter]")).toHaveText(/^line 0\//);
+    await expect(page.locator("[data-role=step-event]")).toContainText("before the program runs");
+    await expect(page.locator("[data-role=console-out]")).toContainText("no output yet");
+
+    // Position 1 = first executed line; console shows partial output.
+    await page.evaluate(() => window.plp.memory.goTo(1));
     await expect(page.locator("[data-role=step-counter]")).toHaveText(/^line 1\//);
     const scrubbed = await page.locator("[data-role=console-out]").textContent();
     expect(scrubbed).toMatch(/output up to step \d+/);
@@ -107,22 +112,23 @@ test.describe("PLP smoke", () => {
     const summary = await page.evaluate(() => window.plp.run());
     expect(summary.terminal_reason).toBe("completed");
 
-    // 4 source lines executed -> 4 line positions (the comprehension's
-    // iterations collapse into one), though the raw trace has more steps.
+    // 4 source lines executed -> 5 positions (synthetic start + one per
+    // line; the comprehension's iterations collapse into one), though the
+    // raw trace has more steps.
     const positions = await page.evaluate(() => window.plp.memory.stepCount());
     const rawSteps = await page.evaluate(() => window.plp.memory.steps().length);
-    expect(positions).toBe(4);
+    expect(positions).toBe(5);
     expect(rawSteps).toBeGreaterThan(positions);
 
     // Position 1 = "line 1 just ran": grid_bad is already bound while
     // line 1 is highlighted (state shown is the state the line PRODUCED).
-    await page.evaluate(() => window.plp.memory.goTo(0));
+    await page.evaluate(() => window.plp.memory.goTo(1));
     await expect(page.locator("[data-role=step-counter]")).toHaveText("line 1/4");
     await expect(page.locator("[data-role=step-event]")).toContainText("line 1");
     await expect(page.locator("[data-role=names-table]")).toContainText("grid_bad");
 
     // The comprehension position reports its collapsed engine steps.
-    await page.evaluate(() => window.plp.memory.goTo(1));
+    await page.evaluate(() => window.plp.memory.goTo(2));
     await expect(page.locator("[data-role=step-event]")).toContainText("engine steps");
 
     // Raw engine-step mode is still available via the toggle.

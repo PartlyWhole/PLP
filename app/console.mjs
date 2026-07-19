@@ -51,6 +51,11 @@ export function createConsole({ root, onInput }) {
   function showUpTo(steps, index) {
     scrubbed = index < steps.length - 1;
     if (!scrubbed) { renderLive(); return; }
+    if (index < 0) { // synthetic "before the program runs" position
+      out.textContent = "";
+      appendNode("sys", "⟨before the program runs — no output yet⟩\n");
+      return;
+    }
     let stdout = "", stderr = "";
     for (let j = 0; j <= index && j < steps.length; j++) {
       stdout += steps[j].output?.stdout_delta ?? "";

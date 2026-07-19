@@ -210,7 +210,10 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
   }
 
   const lineMode = () => modeToggle?.checked ?? false;
-  const positionCount = () => (lineMode() ? groups.length : steps.length);
+  // Line mode has a synthetic position 0: "before the program runs" (empty
+  // memory, no highlight), so scrubbing shows each line's effect as a diff
+  // from a visible starting point. Positions 1..N are the executed lines.
+  const positionCount = () => (lineMode() ? groups.length + 1 : steps.length);
 
   function show(i) {
     if (!steps.length) {
@@ -225,13 +228,26 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     }
     index = Math.max(0, Math.min(i, positionCount() - 1));
     let s, hlLine, hlModule;
+    if (lineMode() && index === 0) {
+      // Synthetic start position: nothing has executed yet.
+      stateIndex = -1;
+      els.counter.textContent = `line 0/${groups.length}`;
+      els.event.innerHTML = "<i>before the program runs</i>";
+      els.flags.innerHTML = "";
+      els.names.innerHTML = "<tr><th>Name</th><th>Value</th></tr>";
+      els.objects.innerHTML = "<tr><th>Id</th><th>Type</th><th>Value</th></tr>";
+      els.slider.max = String(positionCount() - 1);
+      els.slider.value = "0";
+      editor?.clearHighlight();
+      return;
+    }
     if (lineMode()) {
-      const g = groups[index];
-      const nextStart = groups[index + 1]?.start;
+      const g = groups[index - 1];
+      const nextStart = groups[index]?.start;
       stateIndex = nextStart != null ? nextStart : steps.length - 1;
       s = steps[stateIndex];
       const span = (nextStart ?? steps.length) - g.start;
-      els.counter.textContent = `line ${index + 1}/${groups.length}`;
+      els.counter.textContent = `line ${index}/${groups.length}`;
       els.event.innerHTML = `<b>line ${g.line}</b>`
         + (g.function !== "<module>" ? ` in ${esc(g.function)}` : "")
         + (span > 1 ? ` <small>(${span} engine steps)</small>` : "");

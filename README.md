@@ -38,7 +38,9 @@ Tests drive the app through the `window.plp` debug API.
 The scrubber has two granularities (toggle in the memory pane; **line steps**
 is the default):
 
-- **Line steps** — one position per *executed source line*: consecutive
+- **Line steps** — position 0 is a synthetic **start anchor** ("before the
+  program runs": empty tables, no output, no highlight), then one position
+  per *executed source line*: consecutive
   engine steps on the same (module, function, line) collapse into one
   position (a 3-iteration comprehension is one position, labeled with its
   collapsed engine-step count). The highlighted line and the displayed
