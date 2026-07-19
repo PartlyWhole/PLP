@@ -93,6 +93,46 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | D2 | Cold-cache boot UX | Manual: first visit on a throttled connection shows boot notice; run completes | manual |
 | D3 | Human-judgment pass | Manual: drag feel, maximize feel, focus behavior, input row ergonomics, scrub smoothness on a big trace | manual |
 
+## Conditional: full terminal emulator (xterm.js) — applies only if adopted
+
+Adopting an emulator swaps the console's evidence surface: assertions move
+from DOM `textContent` to xterm's **screen-buffer API**
+(`term.buffer.active.getLine(y).translateToString()`, `getCell()` for
+colors/attributes) — still state, never pixels. Two architectural
+invariants make everything below testable:
+
+- **X0a — chunk store stays the source of truth.** The raw delta array (and
+  `plp.console.text()`) remains authoritative; the emulator is a *view*.
+  Evidence: after any run, `text()` equals the stream-check reconstruction,
+  regardless of what the screen shows.
+- **X0b — deterministic replay.** Feeding the same deltas after `term.reset()`
+  yields an identical buffer. Evidence: capture buffer text at live end,
+  scrub to 0 and back, buffers byte-equal. (This is what makes scrubbing
+  valid at all in an emulator.)
+
+| # | Feature | Best evidence | Notes |
+|---|---|---|---|
+| X1 | Byte-faithful plain output | Buffer text for a control-code-free program equals the DOM console's current behavior (regression baseline) | run the existing C-series against buffer API |
+| X2 | `\r` overwrite | Progress-bar program (`print(f"\r{i}%", end="")`) → final buffer line contains only the last value; line count does not grow per update | the headline emulator win |
+| X3 | ANSI SGR colors | `\x1b[31merror\x1b[0m` → `getCell()` reports the fg color on those cells; reset returns to default | assert attributes, not rendering |
+| X4 | Cursor movement / clear | Program emitting cursor-up + erase-line → buffer matches the expected final grid | pick 2–3 canonical sequences |
+| X5 | Unknown sequences degrade safely | Feed malformed/unsupported escapes → no raw garbage in buffer, no throw, subsequent output intact | fuzz-ish; small fixed corpus |
+| X6 | Inline input discipline, echo exactly once | Run with `echo_stdin: false` (assert it in the header record's merged options); type at the prompt → prompt+line appears exactly once in buffer; `provideInput` called with the typed line | replaces C4; double-echo is the classic bug |
+| X7 | Line editing + history | Backspace mid-line, arrow-up recall → submitted line matches edited text | our code, not xterm's — xterm has no line editor |
+| X8 | Input constraints enforced UI-side | Oversized line (> `max_input_line_bytes`) → UI error, run continues waiting; no `engine_error` terminal | protects the wire contract |
+| X9 | Ctrl+C / Ctrl+D keys | Ctrl+C during a loop → `interrupted` (COI). Ctrl+D → visible "EOF unsupported" notice, run still waiting | EOF remains protocol-impossible; validate the *message* |
+| X10 | Scrub replay correctness | At mid position: buffer equals replay of deltas through that position's state step; position 0 → empty buffer + banner | X0b makes this meaningful |
+| X11 | Flood throughput + bounded scrollback | 3000-line flood: page responsive (use `term.write` callback backpressure); scrollback length = configured cap; `text()` still complete | replaces C7; scrollback cap is the new DOM cap |
+| X12 | Resize/fit on pane drag + maximize | After drag/maximize: `term.cols/rows` changed, no wrapped-line corruption of a known long line | pairs with L1/L3 |
+| X13 | Selection + copy | Programmatic selection of a known region → clipboard/selection text matches | manual fallback acceptable |
+| X14 | Self-containment under COI | Network log shows zero cross-origin requests after adding the vendored bundle; suite still passes under COEP | vendoring rule (guide §7) |
+| X15 | Truthfulness unchanged | `isatty()` still False; no fake terminal size advertised to Python | emulator is presentation-only; the engine sees nothing new |
+
+Migration rule: land the emulator behind the SAME `plp.console` debug API
+(`text()`, `showUpTo()`, input hooks) so the existing C-series tests keep
+passing unmodified before any X-series is added — the diff between suites
+then measures exactly what the emulator changed.
+
 ## Standing rules
 
 - Every automated test ends by asserting `plp.checkErrors()` is empty (R8) —
