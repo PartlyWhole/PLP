@@ -1,0 +1,89 @@
+# PLP — Python Learning Platform (repo guide)
+
+Static, build-free GitHub Pages site: run/trace Python in the browser with
+a code editor, a live memory model, and a terminal-emulator console.
+Deploys as a **project site** (`https://partlywhole.github.io/PLP/`) — the
+sub-path is a load-bearing constraint (see Serving rules).
+
+## Commands
+
+```sh
+node tools/dev-server.mjs            # http://127.0.0.1:8619/PLP/ (GH-Pages simulation, COI via service worker)
+node tools/dev-server.mjs --coi      # same, with real COOP/COEP headers
+npx playwright test                  # full suite (smoke + emulator); needs `npm install` once
+```
+
+No build step exists anywhere — plain ES modules, vendored dependencies.
+
+## Layout
+
+| Path | What |
+|---|---|
+| `index.html` | shell: COI-shim bootstrap, pane markup, classic-script CodeMirror, `app/main.mjs` module entry |
+| `app/main.mjs` | wiring + `window.plp` debug API (tests assert through it; keep it stable) |
+| `app/runner.mjs` | PyTrace session: run guard, record fan-out, terminal-reason notes, single input-echo path |
+| `app/console.mjs` | terminal emulator — see **app/CONSOLE.md** (as-built doc) |
+| `app/memory.mjs` | Names/Objects tables, display policy, line-step scrubbing |
+| `app/editor.mjs` | CodeMirror 5 wrapper (single file, line highlight) |
+| `app/layout.mjs` | draggable gutters (CSS vars + localStorage), per-pane maximize (Esc restores) |
+| `app/stream-checks.mjs` | consumer-side trace-stream invariants (`traceStreamCheck`) |
+| `vendor/` | pinned third-party: Pyodide 314.0.2, PyTrace 0.1.0 (worker **patched** for sub-path — the ONLY upstream divergence, see `vendor/PATCHES.md`), CodeMirror 5.65.21, xterm.js 6.0.0 (+fit). Hashes in `vendor/PROVENANCE.md`; record any addition there |
+| `tools/dev-server.mjs` | zero-dep static server simulating the `/PLP/` prefix; `--coi` for header posture |
+| `tests/` | Playwright: `smoke.spec.mjs` (core flows), `emulator.spec.mjs` (X-series console) |
+| `VALIDATION.md` | feature → best-evidence → coverage matrix; add a row when adding a feature |
+| `README.md` | user-facing doc incl. **Stepping model** and **Memory model display rules** |
+
+The engines' authoritative integration reference is
+`~/Pilot/FRONTEND-INTEGRATION-GUIDE.md` (Engine Pilot repo — also the
+source of the vendored assets and test machinery).
+
+## Load-bearing invariants (do not break casually)
+
+1. **Serving**: every URL must be relative or `import.meta.url`-derived —
+   never root-absolute (breaks under `/PLP/`). No CDN/cross-origin fetches
+   (COEP `require-corp` via `coi-serviceworker.js`; `?nonisolated` opts out
+   → PyTrace degraded mode). `.nojekyll` must exist.
+2. **Runner**: reject a concurrent `run()` BEFORE resetting any per-run
+   state. After the first record, failures are terminal records, not
+   rejections — the UI has exactly two failure paths.
+3. **Console**: the chunk store is the source of truth; the xterm screen is
+   a deterministic replay view. Input echo happens exactly once, only in
+   `runner.provideInput` (live mode runs with `echo_stdin: false`;
+   degraded keeps engine echo). `term.write` is async — poll `buffer()` in
+   tests.
+4. **Memory model**: render at most once per animation frame while records
+   stream (traces arrive at thousands/sec; per-record rendering freezes the
+   tab). Objects table shows only chip-reachable nodes; class bases render
+   inline by name; opaque rows are dimmed, never hidden; elided markers
+   always render (README "display rules" 1–5).
+5. **Stepping**: line-step mode (default) = synthetic position 0 + one
+   position per executed line, each showing the state that line *produced*.
+   Engine-step mode keeps raw before-the-line semantics. `memory.goTo()`/
+   `stepCount()` are position-space; `memory.steps()` is always raw.
+6. **Tests** assert via `window.plp` state, not pixels; every run ends by
+   checking `plp.checkErrors()` is empty. Suite runs under the `/PLP/`
+   prefix with NO headers (service-worker posture = real GitHub Pages).
+   First-visit COI shim reload: `waitForFunction(() => crossOriginIsolated)`.
+
+## Engine facts that shape the UI (from the integration guide + source)
+
+- Live input/cooperative interrupt need `crossOriginIsolated`; degraded
+  mode = pre-supplied stdin + hard kill (`killed`, synthetic terminal,
+  `trace_complete: false`).
+- `stdinLines` is IGNORED in live mode; `input()` waits forever for
+  `provideInput` — always keep an interrupt escape.
+- Only `builtins.input` is hooked; no EOF exists in the wire contract;
+  interrupts are not catchable as `KeyboardInterrupt`; `isatty()` is False.
+- Scalars encode inline; identity (uids) is per-step and per-run — never
+  compare uids across runs.
+- Interrupt demos need ms-scale C work per iteration (`sum(range(100_000))`)
+  or the interrupt can land as `engine_error`.
+- Flood-output test programs must use C-level ops (`"\n".join(map(...))`) —
+  per-iteration Python loops trip `max_steps` (default 1000) first.
+
+## Deployment gates
+
+Not yet deployed. Before the first public push: (1) user consent to create
+PartlyWhole/PLP and push; (2) explicit owner decision on publishing the
+vendored engine code (no LICENSE in the engine repos). After deploy: re-run
+the suite with `baseURL` pointed at the live site.

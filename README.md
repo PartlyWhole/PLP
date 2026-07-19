@@ -62,6 +62,9 @@ Both modes scrub the same in-memory record array; `window.plp.memory.goTo()`
 and `stepCount()` operate in the current mode's position space, while
 `steps()` always returns raw engine steps.
 
+Console internals are documented in [app/CONSOLE.md](app/CONSOLE.md);
+repo-wide architecture and invariants in [CLAUDE.md](CLAUDE.md).
+
 ## Memory model display rules
 
 The engine (PyTrace) reports every reachable object per step, bounded by
