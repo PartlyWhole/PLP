@@ -1,9 +1,25 @@
-# Spaced repetition — research findings & component design
+# Spaced Repetition Engine — research findings & design
 
 Deep-research report (2026-07-19) on spaced repetition, oriented toward
-designing a modular, general-purpose spaced-repetition component that any
-web application can embed (application-agnostic; no assumptions about the
-host app's domain, UI, or storage). Method: 5-angle web research (cognitive-science
+designing a **Spaced Repetition Engine**: a modular, general-purpose,
+embeddable engine that any web application can use — including fully
+**static sites** (e.g. GitHub Pages) with no server, no build step, and no
+backend storage. Application-agnostic: no assumptions about the host's
+domain, UI, or storage.
+
+**Terminology (three layers, used consistently below):**
+
+- **Algorithm** — the interval math (FSRS-6, SM-2, Leitner, HLR).
+- **Scheduler** — the pluggable unit that applies an algorithm to decide
+  when an item comes due (the "S" in FSRS/SRS; usage matches Anki,
+  ts-fsrs, and the srs-benchmark).
+- **Engine** — what this document specifies: a scheduler *plus* item-state
+  management, the append-only review log, due-queue and retrievability
+  queries, and rating mapping. The host embeds the engine; the engine
+  delegates interval math to a scheduler; a scheduler implements an
+  algorithm.
+
+Method: 5-angle web research (cognitive-science
 foundations, FSRS state of the art, ML scheduling research, beyond-flashcards
 / knowledge tracing, practitioner implementation), 23 sources fetched, 113
 claims extracted, top 25 adversarially verified by 3-vote panels — **25
@@ -141,13 +157,13 @@ Open questions:
 
 ---
 
-## Part IV — Design recommendations for a general spaced-repetition component
+## Part IV — Design recommendations for the Spaced Repetition Engine
 
-These recommendations are host-application-agnostic: the component knows
+These recommendations are host-application-agnostic: the engine knows
 nothing about what an "item" means to the host (flashcard, generated
 question template, exercise, skill), how reviews are presented, or where
 data lives. The host supplies item ids, review outcomes, a clock, and a
-storage adapter; the component supplies scheduling.
+storage adapter; the engine supplies scheduling.
 
 ### Core architecture: pure engine, injected effects
 
@@ -194,7 +210,7 @@ schedulers = { fsrs, leitner, … }         // pluggable
    so fuzz costs nothing and de-clumps review days); when uncertain,
    err toward longer intervals (overshooting is measurably cheaper than
    undershooting); short learning steps confined to first-day learning.
-6. **Encourage testing-effect-aligned usage** in the component's docs:
+6. **Encourage testing-effect-aligned usage** in the engine's docs:
    production-format reviews (recall/construction) over recognition, and
    a ≥ 1-day first interval over same-session re-asks, since the effect
    sizes roughly double under both.
@@ -206,6 +222,38 @@ schedulers = { fsrs, leitner, … }         // pluggable
    log (ts-fsrs ships an optimizer; runnable offline or in a worker);
    knowledge-component-level scheduling once items carry tags; empirical
    retention-target tuning from the host's own logs.
+
+### Static-hosting requirements (GitHub Pages-class deployment)
+
+The engine must be fully functional on a statically hosted site — no
+server, no build step, no backend. Concretely:
+
+- **Packaging**: a self-contained ES module (plus its scheduler modules),
+  loadable with a plain `<script type="module">`/`import` from a relative
+  path. No CDN dependency (static sites often run under COEP/CSP policies
+  that forbid cross-origin fetches); vendorable with a permissive license
+  (ts-fsrs is MIT).
+- **Storage**: client-side only by default. The storage-adapter seam must
+  have localStorage and IndexedDB implementations out of the box — item
+  state fits localStorage; the append-only review log grows unboundedly
+  in principle (though slowly: ~tens of bytes/review) and belongs in
+  IndexedDB for large decks. A server adapter is just another plug-in for
+  hosts that have one.
+- **Data portability instead of sync**: with no backend there is no
+  multi-device sync; the engine must expose **export/import of the review
+  log + item state** (a single JSON blob) so users can move or back up
+  their history. Document this limitation honestly.
+- **Optimization client-side or not at all**: per-user parameter fitting
+  can't call a server. Either run the optimizer in a Web Worker
+  (gradient-descent fitting of ~21 parameters over a personal-scale log
+  is tractable client-side), or ship pretrained defaults and treat
+  optimization as an offline/optional step over an exported log.
+- **Clock honesty**: with no server time source, the engine takes an
+  injected `now()` and must tolerate client clock skew — never schedule
+  into the past, clamp negative elapsed times, and treat elapsed time as
+  advisory rather than trusted.
+- **No telemetry requirement**: all evidence-gathering (e.g. measuring
+  actual retention to tune the target) must work from the local log alone.
 
 ### Validation plan (for any implementation)
 
