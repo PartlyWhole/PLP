@@ -67,7 +67,10 @@ function heapNodeValue(n) {
       return `${esc(n.class_qualname ?? "")} { ${(n.attributes ?? []).map((a) =>
         `${esc(a.name)}=${renderValue(a.value)}`).join(", ")} }`;
     case "class":
-      return `class ${esc(n.qualname ?? "")}`;
+      return `class ${esc(n.qualname ?? "")}`
+        + (n.attributes?.length
+          ? ` { ${n.attributes.map((a) => `${esc(a.name)}=${renderValue(a.value)}`).join(", ")} }`
+          : "");
     case "function":
       return `function ${esc(n.qualname ?? "")}`
         + (n.closure_environment_id != null ? ` <small class="hint">closure env ${n.closure_environment_id}</small>` : "");
