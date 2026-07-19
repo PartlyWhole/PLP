@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Python Learning Platform</title>
+<script>
+  // Cross-origin isolation via service worker (GitHub Pages cannot send
+  // COOP/COEP headers). ?nonisolated skips it to run in PyTrace's documented
+  // degraded mode (no live input; hard-kill interrupt).
+  if (!new URLSearchParams(location.search).has("nonisolated")) {
+    document.write('<script src="coi-serviceworker.js"><\/script>');
+  } else if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister()));
+  }
+</script>
+<link rel="stylesheet" href="vendor/codemirror/codemirror.css">
+<link rel="stylesheet" href="app/style.css">
+</head>
+<body>
+<header>
+  <h1>Python Learning Platform</h1>
+  <span class="badge" id="run-status">idle</span>
+  <span class="badge" id="coi-badge">isolation: …</span>
+</header>
+<main id="layout">
+  <section class="pane" id="editor-pane">
+    <div class="pane-head">
+      <span class="pane-title">Code</span>
+      <button id="btn-run" class="primary" type="button">Run ▶</button>
+      <button id="btn-stop" type="button">Stop</button>
+      <span class="spacer"></span>
+      <button class="max-btn" data-max="editor-pane" type="button" title="Maximize pane">⤢</button>
+    </div>
+    <div id="cm-host" class="pane-body"></div>
+  </section>
+
+  <div class="gutter v" id="gutter-v"></div>
+
+  <section class="pane" id="memory-pane">
+    <div class="pane-head">
+      <span class="pane-title">Memory model</span>
+      <span class="spacer"></span>
+      <button class="max-btn" data-max="memory-pane" type="button" title="Maximize pane">⤢</button>
+    </div>
+    <div class="pane-body memory-body">
+      <div class="step-nav">
+        <button data-role="step-prev" type="button">◀</button>
+        <input type="range" data-role="step-slider" min="0" max="0" value="0">
+        <button data-role="step-next" type="button">▶</button>
+        <span class="hint" data-role="step-counter">no steps</span>
+      </div>
+      <div class="hint" data-role="step-event"></div>
+      <div data-role="step-flags"></div>
+      <div class="mem-tables">
+        <div class="mem-box">
+          <h4>Names (frames)</h4>
+          <table class="mem-table" data-role="names-table"></table>
+        </div>
+        <div class="mem-box">
+          <h4>Objects</h4>
+          <table class="mem-table" data-role="objects-table"></table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="gutter h" id="gutter-h"></div>
+
+  <section class="pane" id="console-pane">
+    <div class="pane-head">
+      <span class="pane-title">Console</span>
+      <span class="spacer"></span>
+      <button class="max-btn" data-max="console-pane" type="button" title="Maximize pane">⤢</button>
+    </div>
+    <div class="pane-body console-body">
+      <pre class="console-out" data-role="console-out"></pre>
+      <div class="input-row" data-role="input-row">
+        <span class="input-caret">›</span>
+        <input type="text" data-role="input-line" autocomplete="off" spellcheck="false"
+               placeholder="program is waiting for input — type a line and press Enter">
+      </div>
+    </div>
+  </section>
+</main>
+<script src="vendor/codemirror/codemirror.js"></script>
+<script src="vendor/codemirror/python.js"></script>
+<script type="module" src="app/main.mjs"></script>
+</body>
+</html>

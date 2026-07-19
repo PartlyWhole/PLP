@@ -1,0 +1,15 @@
+{
+  "name": "plp-site",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Python Learning Platform — editor, memory model, and terminal console over PyTrace (static GitHub Pages site)",
+  "type": "module",
+  "scripts": {
+    "serve": "node tools/dev-server.mjs",
+    "serve:coi": "node tools/dev-server.mjs --coi",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1"
+  }
+}

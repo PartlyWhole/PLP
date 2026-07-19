@@ -1,0 +1,1979 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pytrace:schema:trace-engine:1",
+  "title": "PyTrace trace-engine/1 canonical record",
+  "description": "One record in a PyTrace v1 NDJSON stream. Cross-record ordering and referential invariants are defined by the implementation plan.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/HeaderRecord"
+    },
+    {
+      "$ref": "#/$defs/StepRecord"
+    },
+    {
+      "$ref": "#/$defs/DiagnosticRecord"
+    },
+    {
+      "$ref": "#/$defs/TerminalRecord"
+    }
+  ],
+  "$defs": {
+    "NonNegativeInteger": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "PositiveInteger": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "Uid": {
+      "$ref": "#/$defs/PositiveInteger"
+    },
+    "FrameId": {
+      "$ref": "#/$defs/PositiveInteger"
+    },
+    "EnvironmentId": {
+      "$ref": "#/$defs/PositiveInteger"
+    },
+    "TraceOptions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_steps",
+        "max_heap_nodes",
+        "max_heap_edges",
+        "max_container_elems",
+        "max_output_bytes",
+        "max_record_bytes",
+        "max_trace_bytes",
+        "max_source_bytes",
+        "max_input_line_bytes",
+        "wall_clock_s",
+        "identity_tombstones",
+        "trace_modules",
+        "show_dunder_attributes",
+        "echo_stdin"
+      ],
+      "properties": {
+        "max_steps": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "max_heap_nodes": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "max_heap_edges": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "max_container_elems": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "max_output_bytes": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "max_record_bytes": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "max_trace_bytes": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "max_source_bytes": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "max_input_line_bytes": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "wall_clock_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "identity_tombstones": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "trace_modules": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "show_dunder_attributes": {
+          "type": "boolean"
+        },
+        "echo_stdin": {
+          "type": "boolean"
+        }
+      }
+    },
+    "HostCapabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "live_input",
+        "cooperative_interrupt",
+        "hard_interrupt",
+        "process_group",
+        "cpu_limit",
+        "address_space_limit",
+        "cross_origin_isolated"
+      ],
+      "properties": {
+        "live_input": {
+          "type": "boolean"
+        },
+        "cooperative_interrupt": {
+          "type": "boolean"
+        },
+        "hard_interrupt": {
+          "type": "boolean"
+        },
+        "process_group": {
+          "type": "boolean"
+        },
+        "cpu_limit": {
+          "type": "boolean"
+        },
+        "address_space_limit": {
+          "type": "boolean"
+        },
+        "cross_origin_isolated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "HostInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "runtime",
+        "platform",
+        "input_mode",
+        "python_hash_seed",
+        "capabilities"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "in_process",
+            "native_subprocess",
+            "browser_worker"
+          ]
+        },
+        "runtime": {
+          "enum": [
+            "cpython",
+            "pyodide"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "minLength": 1
+        },
+        "input_mode": {
+          "enum": [
+            "live",
+            "pre_supplied"
+          ]
+        },
+        "python_hash_seed": {
+          "enum": [
+            "0",
+            "uncontrolled",
+            "not_applicable"
+          ]
+        },
+        "capabilities": {
+          "$ref": "#/$defs/HostCapabilities"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "const": "in_process"
+            },
+            "runtime": {
+              "const": "cpython"
+            },
+            "platform": {
+              "enum": [
+                "linux",
+                "macos"
+              ]
+            },
+            "python_hash_seed": {
+              "const": "uncontrolled"
+            },
+            "capabilities": {
+              "properties": {
+                "cooperative_interrupt": {
+                  "const": false
+                },
+                "hard_interrupt": {
+                  "const": false
+                },
+                "process_group": {
+                  "const": false
+                },
+                "cpu_limit": {
+                  "const": false
+                },
+                "address_space_limit": {
+                  "const": false
+                },
+                "cross_origin_isolated": {
+                  "const": false
+                }
+              }
+            }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "input_mode": {
+                  "const": "live"
+                },
+                "capabilities": {
+                  "properties": {
+                    "live_input": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "properties": {
+                "input_mode": {
+                  "const": "pre_supplied"
+                },
+                "capabilities": {
+                  "properties": {
+                    "live_input": {
+                      "const": false
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "native_subprocess"
+            },
+            "runtime": {
+              "const": "cpython"
+            },
+            "platform": {
+              "enum": [
+                "linux",
+                "macos"
+              ]
+            },
+            "python_hash_seed": {
+              "const": "0"
+            },
+            "capabilities": {
+              "properties": {
+                "live_input": {
+                  "const": true
+                },
+                "cooperative_interrupt": {
+                  "const": true
+                },
+                "hard_interrupt": {
+                  "const": true
+                },
+                "process_group": {
+                  "const": true
+                },
+                "cross_origin_isolated": {
+                  "const": false
+                }
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "kind": {
+              "const": "browser_worker"
+            },
+            "runtime": {
+              "const": "pyodide"
+            },
+            "platform": {
+              "const": "browser"
+            },
+            "python_hash_seed": {
+              "const": "not_applicable"
+            },
+            "capabilities": {
+              "properties": {
+                "hard_interrupt": {
+                  "const": true
+                },
+                "process_group": {
+                  "const": false
+                },
+                "cpu_limit": {
+                  "const": false
+                },
+                "address_space_limit": {
+                  "const": false
+                }
+              }
+            }
+          },
+          "oneOf": [
+            {
+              "properties": {
+                "input_mode": {
+                  "enum": [
+                    "live",
+                    "pre_supplied"
+                  ]
+                },
+                "capabilities": {
+                  "properties": {
+                    "live_input": {
+                      "const": true
+                    },
+                    "cooperative_interrupt": {
+                      "const": true
+                    },
+                    "cross_origin_isolated": {
+                      "const": true
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "properties": {
+                "input_mode": {
+                  "const": "pre_supplied"
+                },
+                "capabilities": {
+                  "properties": {
+                    "live_input": {
+                      "const": false
+                    },
+                    "cooperative_interrupt": {
+                      "const": false
+                    },
+                    "cross_origin_isolated": {
+                      "const": false
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "HeaderRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "seq",
+        "format",
+        "run_id",
+        "engine_version",
+        "python_version",
+        "backend",
+        "source",
+        "source_sha256",
+        "options",
+        "host"
+      ],
+      "properties": {
+        "kind": {
+          "const": "header"
+        },
+        "seq": {
+          "const": 0
+        },
+        "format": {
+          "const": "trace-engine/1"
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "engine_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$"
+        },
+        "python_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "backend": {
+          "const": "settrace"
+        },
+        "source": {
+          "type": "string"
+        },
+        "source_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "options": {
+          "$ref": "#/$defs/TraceOptions"
+        },
+        "host": {
+          "$ref": "#/$defs/HostInfo"
+        }
+      }
+    },
+    "Location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filename",
+        "module",
+        "function",
+        "line"
+      ],
+      "properties": {
+        "filename": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "function": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "NoneValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "none"
+        }
+      }
+    },
+    "BoolValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "bool"
+        },
+        "value": {
+          "type": "boolean"
+        }
+      }
+    },
+    "IntValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "decimal"
+      ],
+      "properties": {
+        "kind": {
+          "const": "int"
+        },
+        "decimal": {
+          "type": "string",
+          "pattern": "^-?(?:0|[1-9][0-9]*)$"
+        }
+      }
+    },
+    "FiniteFloatValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "decimal"
+      ],
+      "properties": {
+        "kind": {
+          "const": "float"
+        },
+        "decimal": {
+          "type": "string",
+          "pattern": "^-?(?:[0-9]+(?:\\.[0-9]+)?)(?:[eE][+-]?[0-9]+)?$"
+        }
+      }
+    },
+    "SpecialFloatValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "special"
+      ],
+      "properties": {
+        "kind": {
+          "const": "float"
+        },
+        "special": {
+          "enum": [
+            "Infinity",
+            "-Infinity",
+            "NaN"
+          ]
+        }
+      }
+    },
+    "FloatValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/FiniteFloatValue"
+        },
+        {
+          "$ref": "#/$defs/SpecialFloatValue"
+        }
+      ]
+    },
+    "StrValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "str"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "BytesValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "base64",
+        "length"
+      ],
+      "properties": {
+        "kind": {
+          "const": "bytes"
+        },
+        "base64": {
+          "type": "string",
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "contentEncoding": "base64"
+        },
+        "length": {
+          "$ref": "#/$defs/NonNegativeInteger"
+        }
+      }
+    },
+    "ComplexValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "real",
+        "imag"
+      ],
+      "properties": {
+        "kind": {
+          "const": "complex"
+        },
+        "real": {
+          "$ref": "#/$defs/FloatValue"
+        },
+        "imag": {
+          "$ref": "#/$defs/FloatValue"
+        }
+      }
+    },
+    "RangeValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "start",
+        "stop",
+        "step"
+      ],
+      "properties": {
+        "kind": {
+          "const": "range"
+        },
+        "start": {
+          "$ref": "#/$defs/IntValue"
+        },
+        "stop": {
+          "$ref": "#/$defs/IntValue"
+        },
+        "step": {
+          "$ref": "#/$defs/IntValue"
+        }
+      }
+    },
+    "SliceValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "start",
+        "stop",
+        "step"
+      ],
+      "properties": {
+        "kind": {
+          "const": "slice"
+        },
+        "start": {
+          "$ref": "#/$defs/EncodedValue"
+        },
+        "stop": {
+          "$ref": "#/$defs/EncodedValue"
+        },
+        "step": {
+          "$ref": "#/$defs/EncodedValue"
+        }
+      }
+    },
+    "EllipsisValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "ellipsis"
+        }
+      }
+    },
+    "NotImplementedValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "const": "not_implemented"
+        }
+      }
+    },
+    "RefValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "uid"
+      ],
+      "properties": {
+        "kind": {
+          "const": "ref"
+        },
+        "uid": {
+          "$ref": "#/$defs/Uid"
+        }
+      }
+    },
+    "ElidedValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "reason"
+      ],
+      "properties": {
+        "kind": {
+          "const": "elided"
+        },
+        "reason": {
+          "enum": [
+            "node_limit",
+            "edge_limit",
+            "container_limit",
+            "record_limit",
+            "unsafe_access"
+          ]
+        },
+        "omitted_count": {
+          "$ref": "#/$defs/NonNegativeInteger"
+        }
+      }
+    },
+    "ScalarValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NoneValue"
+        },
+        {
+          "$ref": "#/$defs/BoolValue"
+        },
+        {
+          "$ref": "#/$defs/IntValue"
+        },
+        {
+          "$ref": "#/$defs/FloatValue"
+        },
+        {
+          "$ref": "#/$defs/StrValue"
+        },
+        {
+          "$ref": "#/$defs/BytesValue"
+        },
+        {
+          "$ref": "#/$defs/ComplexValue"
+        },
+        {
+          "$ref": "#/$defs/RangeValue"
+        },
+        {
+          "$ref": "#/$defs/SliceValue"
+        },
+        {
+          "$ref": "#/$defs/EllipsisValue"
+        },
+        {
+          "$ref": "#/$defs/NotImplementedValue"
+        }
+      ]
+    },
+    "SetSliceValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "start",
+        "stop",
+        "step"
+      ],
+      "properties": {
+        "kind": {
+          "const": "slice"
+        },
+        "start": {
+          "$ref": "#/$defs/SetScalarValue"
+        },
+        "stop": {
+          "$ref": "#/$defs/SetScalarValue"
+        },
+        "step": {
+          "$ref": "#/$defs/SetScalarValue"
+        }
+      }
+    },
+    "SetScalarValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NoneValue"
+        },
+        {
+          "$ref": "#/$defs/BoolValue"
+        },
+        {
+          "$ref": "#/$defs/IntValue"
+        },
+        {
+          "$ref": "#/$defs/FloatValue"
+        },
+        {
+          "$ref": "#/$defs/StrValue"
+        },
+        {
+          "$ref": "#/$defs/BytesValue"
+        },
+        {
+          "$ref": "#/$defs/ComplexValue"
+        },
+        {
+          "$ref": "#/$defs/RangeValue"
+        },
+        {
+          "$ref": "#/$defs/SetSliceValue"
+        },
+        {
+          "$ref": "#/$defs/EllipsisValue"
+        },
+        {
+          "$ref": "#/$defs/NotImplementedValue"
+        }
+      ]
+    },
+    "EncodedValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ScalarValue"
+        },
+        {
+          "$ref": "#/$defs/RefValue"
+        },
+        {
+          "$ref": "#/$defs/ElidedValue"
+        }
+      ]
+    },
+    "Binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/EncodedValue"
+        }
+      }
+    },
+    "Bindings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Binding"
+      }
+    },
+    "ClosureCellBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "value"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/RefValue"
+        }
+      }
+    },
+    "ClosureCellBindings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ClosureCellBinding"
+      }
+    },
+    "FrameSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "frame_id",
+        "function",
+        "module",
+        "location",
+        "locals"
+      ],
+      "properties": {
+        "frame_id": {
+          "$ref": "#/$defs/FrameId"
+        },
+        "function": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "locals": {
+          "$ref": "#/$defs/Bindings"
+        }
+      }
+    },
+    "GlobalScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "module",
+        "bindings"
+      ],
+      "properties": {
+        "module": {
+          "type": "string"
+        },
+        "bindings": {
+          "$ref": "#/$defs/Bindings"
+        }
+      }
+    },
+    "ClosureEnvironment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment_id",
+        "cells"
+      ],
+      "properties": {
+        "environment_id": {
+          "$ref": "#/$defs/EnvironmentId"
+        },
+        "cells": {
+          "$ref": "#/$defs/ClosureCellBindings"
+        }
+      }
+    },
+    "SequenceNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "kind",
+        "type_name",
+        "ordering",
+        "items",
+        "elided_count"
+      ],
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/Uid"
+        },
+        "kind": {
+          "enum": [
+            "list",
+            "tuple",
+            "set",
+            "frozenset"
+          ]
+        },
+        "type_name": {
+          "type": "string"
+        },
+        "ordering": {
+          "enum": [
+            "insertion",
+            "canonical",
+            "unordered"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EncodedValue"
+          }
+        },
+        "elided_count": {
+          "$ref": "#/$defs/NonNegativeInteger"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "list",
+                  "tuple"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "properties": {
+              "ordering": {
+                "const": "insertion"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "set",
+                  "frozenset"
+                ]
+              }
+            },
+            "required": [
+              "kind"
+            ]
+          },
+          "then": {
+            "if": {
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/SetScalarValue"
+                  }
+                },
+                "elided_count": {
+                  "const": 0
+                }
+              },
+              "required": [
+                "items",
+                "elided_count"
+              ]
+            },
+            "then": {
+              "properties": {
+                "ordering": {
+                  "const": "canonical"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "ordering": {
+                  "const": "unordered"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "DictEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "value"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/EncodedValue"
+        },
+        "value": {
+          "$ref": "#/$defs/EncodedValue"
+        }
+      }
+    },
+    "DictNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "kind",
+        "type_name",
+        "entries",
+        "elided_count"
+      ],
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/Uid"
+        },
+        "kind": {
+          "const": "dict"
+        },
+        "type_name": {
+          "type": "string"
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DictEntry"
+          }
+        },
+        "elided_count": {
+          "$ref": "#/$defs/NonNegativeInteger"
+        }
+      }
+    },
+    "FunctionNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "kind",
+        "type_name",
+        "module",
+        "qualname",
+        "provenance"
+      ],
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/Uid"
+        },
+        "kind": {
+          "const": "function"
+        },
+        "type_name": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "qualname": {
+          "type": "string"
+        },
+        "provenance": {
+          "enum": [
+            "resolved",
+            "unknown"
+          ]
+        },
+        "defining_frame_id": {
+          "$ref": "#/$defs/FrameId"
+        },
+        "closure_environment_id": {
+          "$ref": "#/$defs/EnvironmentId"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "provenance": {
+              "const": "resolved"
+            }
+          },
+          "required": [
+            "defining_frame_id"
+          ]
+        },
+        {
+          "properties": {
+            "provenance": {
+              "const": "unknown"
+            }
+          },
+          "not": {
+            "required": [
+              "defining_frame_id"
+            ]
+          }
+        }
+      ]
+    },
+    "ClassNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "kind",
+        "type_name",
+        "module",
+        "qualname",
+        "bases",
+        "attributes"
+      ],
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/Uid"
+        },
+        "kind": {
+          "const": "class"
+        },
+        "type_name": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        },
+        "qualname": {
+          "type": "string"
+        },
+        "bases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EncodedValue"
+          }
+        },
+        "attributes": {
+          "$ref": "#/$defs/Bindings"
+        }
+      }
+    },
+    "InstanceNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "kind",
+        "type_name",
+        "class_module",
+        "class_qualname",
+        "attributes"
+      ],
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/Uid"
+        },
+        "kind": {
+          "const": "instance"
+        },
+        "type_name": {
+          "type": "string"
+        },
+        "class_module": {
+          "type": "string"
+        },
+        "class_qualname": {
+          "type": "string"
+        },
+        "attributes": {
+          "$ref": "#/$defs/Bindings"
+        }
+      }
+    },
+    "GeneratorNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "kind",
+        "type_name",
+        "state"
+      ],
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/Uid"
+        },
+        "kind": {
+          "const": "generator"
+        },
+        "type_name": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "created",
+            "running",
+            "suspended",
+            "closed"
+          ]
+        },
+        "frame_id": {
+          "$ref": "#/$defs/FrameId"
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        }
+      }
+    },
+    "CellNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "kind",
+        "type_name",
+        "state"
+      ],
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/Uid"
+        },
+        "kind": {
+          "const": "cell"
+        },
+        "type_name": {
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "empty",
+            "value"
+          ]
+        },
+        "content": {
+          "$ref": "#/$defs/EncodedValue"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "state": {
+              "const": "empty"
+            }
+          },
+          "not": {
+            "required": [
+              "content"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "state": {
+              "const": "value"
+            }
+          },
+          "required": [
+            "content"
+          ]
+        }
+      ]
+    },
+    "ModuleNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "kind",
+        "type_name",
+        "module"
+      ],
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/Uid"
+        },
+        "kind": {
+          "const": "module"
+        },
+        "type_name": {
+          "type": "string"
+        },
+        "module": {
+          "type": "string"
+        }
+      }
+    },
+    "IteratorNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "kind",
+        "type_name"
+      ],
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/Uid"
+        },
+        "kind": {
+          "const": "iterator"
+        },
+        "type_name": {
+          "type": "string"
+        }
+      }
+    },
+    "OpaqueNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "kind",
+        "type_name",
+        "reason"
+      ],
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/Uid"
+        },
+        "kind": {
+          "const": "opaque"
+        },
+        "type_name": {
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "unsupported",
+            "imported",
+            "adapter_error",
+            "unsafe_access"
+          ]
+        }
+      }
+    },
+    "ElidedNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uid",
+        "kind",
+        "type_name",
+        "reason"
+      ],
+      "properties": {
+        "uid": {
+          "$ref": "#/$defs/Uid"
+        },
+        "kind": {
+          "const": "elided"
+        },
+        "type_name": {
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "node_limit",
+            "edge_limit",
+            "container_limit"
+          ]
+        },
+        "omitted_count": {
+          "$ref": "#/$defs/NonNegativeInteger"
+        }
+      }
+    },
+    "HeapNode": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/SequenceNode"
+        },
+        {
+          "$ref": "#/$defs/DictNode"
+        },
+        {
+          "$ref": "#/$defs/FunctionNode"
+        },
+        {
+          "$ref": "#/$defs/ClassNode"
+        },
+        {
+          "$ref": "#/$defs/InstanceNode"
+        },
+        {
+          "$ref": "#/$defs/GeneratorNode"
+        },
+        {
+          "$ref": "#/$defs/CellNode"
+        },
+        {
+          "$ref": "#/$defs/ModuleNode"
+        },
+        {
+          "$ref": "#/$defs/IteratorNode"
+        },
+        {
+          "$ref": "#/$defs/OpaqueNode"
+        },
+        {
+          "$ref": "#/$defs/ElidedNode"
+        }
+      ]
+    },
+    "OutputDelta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stdout_delta",
+        "stderr_delta",
+        "stdout_bytes",
+        "stderr_bytes"
+      ],
+      "properties": {
+        "stdout_delta": {
+          "type": "string"
+        },
+        "stderr_delta": {
+          "type": "string"
+        },
+        "stdout_bytes": {
+          "$ref": "#/$defs/NonNegativeInteger"
+        },
+        "stderr_bytes": {
+          "$ref": "#/$defs/NonNegativeInteger"
+        }
+      }
+    },
+    "StepFlags": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "heap_elided",
+        "edges_elided",
+        "container_elided",
+        "output_truncated",
+        "degraded",
+        "identity_ambiguous"
+      ],
+      "properties": {
+        "heap_elided": {
+          "type": "boolean"
+        },
+        "edges_elided": {
+          "type": "boolean"
+        },
+        "container_elided": {
+          "type": "boolean"
+        },
+        "output_truncated": {
+          "type": "boolean"
+        },
+        "degraded": {
+          "type": "boolean"
+        },
+        "identity_ambiguous": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ValueEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "const": "value"
+        },
+        "value": {
+          "$ref": "#/$defs/EncodedValue"
+        }
+      }
+    },
+    "ExceptionEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "exception"
+      ],
+      "properties": {
+        "kind": {
+          "const": "exception"
+        },
+        "exception": {
+          "$ref": "#/$defs/RefValue"
+        }
+      }
+    },
+    "InputEventData": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "request_id",
+        "prompt"
+      ],
+      "properties": {
+        "kind": {
+          "const": "input"
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prompt": {
+          "type": "string"
+        }
+      }
+    },
+    "EventData": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ValueEventData"
+        },
+        {
+          "$ref": "#/$defs/ExceptionEventData"
+        },
+        {
+          "$ref": "#/$defs/InputEventData"
+        }
+      ]
+    },
+    "StepRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "seq",
+        "step",
+        "event",
+        "location",
+        "stack",
+        "globals",
+        "closure_environments",
+        "heap",
+        "output",
+        "flags"
+      ],
+      "properties": {
+        "kind": {
+          "const": "step"
+        },
+        "seq": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "step": {
+          "$ref": "#/$defs/NonNegativeInteger"
+        },
+        "event": {
+          "enum": [
+            "call",
+            "resume",
+            "line",
+            "yield",
+            "return",
+            "exception",
+            "unwind",
+            "input"
+          ]
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        },
+        "stack": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/FrameSnapshot"
+          }
+        },
+        "globals": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/GlobalScope"
+          }
+        },
+        "closure_environments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClosureEnvironment"
+          }
+        },
+        "heap": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HeapNode"
+          }
+        },
+        "output": {
+          "$ref": "#/$defs/OutputDelta"
+        },
+        "flags": {
+          "$ref": "#/$defs/StepFlags"
+        },
+        "event_data": {
+          "$ref": "#/$defs/EventData"
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "event": {
+                  "enum": [
+                    "call",
+                    "resume",
+                    "line"
+                  ]
+                }
+              },
+              "not": {
+                "required": [
+                  "event_data"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "event": {
+                  "enum": [
+                    "yield",
+                    "return"
+                  ]
+                },
+                "event_data": {
+                  "$ref": "#/$defs/ValueEventData"
+                }
+              },
+              "required": [
+                "event_data"
+              ]
+            },
+            {
+              "properties": {
+                "event": {
+                  "enum": [
+                    "exception",
+                    "unwind"
+                  ]
+                },
+                "event_data": {
+                  "$ref": "#/$defs/ExceptionEventData"
+                }
+              },
+              "required": [
+                "event_data"
+              ]
+            },
+            {
+              "properties": {
+                "event": {
+                  "const": "input"
+                },
+                "event_data": {
+                  "$ref": "#/$defs/InputEventData"
+                }
+              },
+              "required": [
+                "event_data"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "DiagnosticRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "seq",
+        "severity",
+        "code",
+        "message"
+      ],
+      "properties": {
+        "kind": {
+          "const": "diagnostic"
+        },
+        "seq": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "severity": {
+          "enum": [
+            "warning",
+            "error"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "message": {
+          "type": "string"
+        },
+        "at_step": {
+          "$ref": "#/$defs/NonNegativeInteger"
+        },
+        "details": {
+          "type": "object"
+        }
+      }
+    },
+    "TerminalSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "step_count",
+        "diagnostic_count",
+        "stdout_bytes",
+        "stderr_bytes",
+        "trace_bytes"
+      ],
+      "properties": {
+        "step_count": {
+          "$ref": "#/$defs/NonNegativeInteger"
+        },
+        "diagnostic_count": {
+          "$ref": "#/$defs/NonNegativeInteger"
+        },
+        "stdout_bytes": {
+          "$ref": "#/$defs/NonNegativeInteger"
+        },
+        "stderr_bytes": {
+          "$ref": "#/$defs/NonNegativeInteger"
+        },
+        "trace_bytes": {
+          "$ref": "#/$defs/PositiveInteger"
+        }
+      }
+    },
+    "ExceptionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type_name"
+      ],
+      "properties": {
+        "type_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "safe_message": {
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/Location"
+        }
+      }
+    },
+    "TerminalRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "seq",
+        "reason",
+        "synthetic",
+        "trace_complete",
+        "summary"
+      ],
+      "properties": {
+        "kind": {
+          "const": "terminal"
+        },
+        "seq": {
+          "$ref": "#/$defs/PositiveInteger"
+        },
+        "reason": {
+          "enum": [
+            "completed",
+            "uncaught_exception",
+            "step_limit",
+            "trace_limit",
+            "needs_input",
+            "interrupted",
+            "killed",
+            "engine_error"
+          ]
+        },
+        "synthetic": {
+          "type": "boolean"
+        },
+        "trace_complete": {
+          "type": "boolean"
+        },
+        "summary": {
+          "$ref": "#/$defs/TerminalSummary"
+        },
+        "exception": {
+          "$ref": "#/$defs/ExceptionSummary"
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "reason": {
+                  "const": "completed"
+                },
+                "synthetic": {
+                  "const": false
+                },
+                "trace_complete": {
+                  "const": true
+                }
+              },
+              "not": {
+                "required": [
+                  "exception"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "reason": {
+                  "const": "uncaught_exception"
+                },
+                "synthetic": {
+                  "const": false
+                },
+                "trace_complete": {
+                  "const": true
+                }
+              },
+              "required": [
+                "exception"
+              ]
+            },
+            {
+              "properties": {
+                "reason": {
+                  "enum": [
+                    "step_limit",
+                    "trace_limit",
+                    "needs_input",
+                    "interrupted"
+                  ]
+                },
+                "synthetic": {
+                  "const": false
+                },
+                "trace_complete": {
+                  "const": true
+                }
+              },
+              "not": {
+                "required": [
+                  "exception"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "reason": {
+                  "const": "killed"
+                },
+                "synthetic": {
+                  "const": true
+                },
+                "trace_complete": {
+                  "const": false
+                }
+              },
+              "not": {
+                "required": [
+                  "exception"
+                ]
+              }
+            },
+            {
+              "properties": {
+                "reason": {
+                  "const": "engine_error"
+                }
+              },
+              "oneOf": [
+                {
+                  "properties": {
+                    "synthetic": {
+                      "const": false
+                    },
+                    "trace_complete": {
+                      "const": true
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "synthetic": {
+                      "const": true
+                    },
+                    "trace_complete": {
+                      "const": false
+                    }
+                  }
+                }
+              ],
+              "not": {
+                "required": [
+                  "exception"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
