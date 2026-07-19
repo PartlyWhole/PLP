@@ -75,6 +75,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .mem-table td.name { color: #9fc1ff; white-space: nowrap; }
 .mem-table td.uid { color: var(--dim); white-space: nowrap; }
 .mem-table tr.flash { background: rgba(79, 143, 247, 0.25); }
+.mem-table tr.dim { opacity: 0.55; }
 .mm-str { color: #a8d08f; }
 .mm-elided { color: var(--warn); }
 a.mm-ref {

@@ -50,8 +50,79 @@ function bindingRows(bindings) {
     `<tr><td class="name">${esc(b.name)}</td><td>${renderValue(b.value)}</td></tr>`).join("");
 }
 
+// ---------------------------------------------------------------------------
+// Objects-table display policy (see README "Memory model display rules"):
+//
+// The Objects table shows only heap nodes reachable from a visible reference
+// chip — starting at the Names table (globals, frame locals, closure cells)
+// and following refs through displayed object contents (container items,
+// dict keys/values, instance/class attributes, cell contents). The invariant
+// this preserves: every rendered `obj N` chip resolves to a rendered row.
+//
+// Class `bases` are deliberately NOT chips: they render inline by name in
+// the class row, so the implicit builtin `object` base (an opaque node the
+// engine truthfully declines to inspect) stops appearing as a row in every
+// class example. Non-user objects a learner's own names actually reach
+// (file handles, imported modules, compiled regexes, …) DO still appear —
+// as dimmed `opaque` rows — because hiding them would break chips and turn
+// "truthfully not inspected" into "silently doesn't exist".
+// ---------------------------------------------------------------------------
+
+// Walk an EncodedValue (or array of them) and yield every ref uid, including
+// refs nested inside complex/range/slice payloads.
+function* valueRefs(v) {
+  if (Array.isArray(v)) {
+    for (const item of v) yield* valueRefs(item);
+    return;
+  }
+  if (v && typeof v === "object") {
+    if (v.kind === "ref" && typeof v.uid === "number") yield v.uid;
+    for (const inner of Object.values(v)) {
+      if (inner && typeof inner === "object") yield* valueRefs(inner);
+    }
+  }
+}
+
+// Refs a heap node's *rendered content* exposes as chips (bases excluded —
+// they render inline by name).
+function* nodeContentRefs(n) {
+  switch (n.kind) {
+    case "list": case "tuple": case "set": case "frozenset":
+      yield* valueRefs(n.items ?? []);
+      break;
+    case "dict":
+      for (const e of n.entries ?? []) { yield* valueRefs(e.key); yield* valueRefs(e.value); }
+      break;
+    case "instance": case "class":
+      yield* valueRefs((n.attributes ?? []).map((a) => a.value));
+      break;
+    case "cell":
+      if (n.state === "value") yield* valueRefs(n.content);
+      break;
+  }
+}
+
+// Uids reachable from the Names table (roots) through displayed contents.
+function reachableUids(step, heapByUid) {
+  const roots = [
+    ...(step.globals ?? []).map((g) => g.bindings),
+    ...(step.stack ?? []).map((f) => f.locals),
+    ...(step.closure_environments ?? []).map((c) => c.cells),
+  ];
+  const seen = new Set();
+  const queue = [...valueRefs(roots.map((b) => (b ?? []).map((x) => x.value)))];
+  while (queue.length) {
+    const uid = queue.pop();
+    if (seen.has(uid)) continue;
+    seen.add(uid);
+    const node = heapByUid.get(uid);
+    if (node) queue.push(...nodeContentRefs(node));
+  }
+  return seen;
+}
+
 // Heap node -> the "Value" cell of the Objects table.
-function heapNodeValue(n) {
+function heapNodeValue(n, heapByUid) {
   switch (n.kind) {
     case "list": case "tuple": case "set": case "frozenset": {
       const open = n.kind === "list" ? "[" : n.kind === "tuple" ? "(" : "{";
@@ -66,11 +137,20 @@ function heapNodeValue(n) {
     case "instance":
       return `${esc(n.class_qualname ?? "")} { ${(n.attributes ?? []).map((a) =>
         `${esc(a.name)}=${renderValue(a.value)}`).join(", ")} }`;
-    case "class":
-      return `class ${esc(n.qualname ?? "")}`
+    case "class": {
+      // Bases render inline by name (no ref chip): the implicit `object`
+      // base would otherwise drag an opaque builtin row into every class
+      // example. Only bases that resolve to a named class in this step's
+      // heap are listed; unnameable (opaque/builtin) bases are omitted.
+      const baseNames = (n.bases ?? [])
+        .map((b) => (b?.kind === "ref" ? heapByUid?.get(b.uid) : null))
+        .filter((base) => base?.kind === "class" && base.qualname)
+        .map((base) => esc(base.qualname));
+      return `class ${esc(n.qualname ?? "")}${baseNames.length ? `(${baseNames.join(", ")})` : ""}`
         + (n.attributes?.length
           ? ` { ${n.attributes.map((a) => `${esc(a.name)}=${renderValue(a.value)}`).join(", ")} }`
           : "");
+    }
     case "function":
       return `function ${esc(n.qualname ?? "")}`
         + (n.closure_environment_id != null ? ` <small class="hint">closure env ${n.closure_environment_id}</small>` : "");
@@ -147,10 +227,13 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     }
     els.names.innerHTML = names;
 
-    // Objects: one row per heap node.
+    // Objects: one row per heap node reachable from a visible chip (see the
+    // display-policy comment above). Opaque rows render dimmed.
+    const heapByUid = new Map((s.heap ?? []).map((n) => [n.uid, n]));
+    const visible = reachableUids(s, heapByUid);
     els.objects.innerHTML = "<tr><th>Id</th><th>Type</th><th>Value</th></tr>"
-      + (s.heap ?? []).map((n) =>
-        `<tr data-uid="${n.uid}"><td class="uid">obj ${n.uid}</td><td>${esc(n.type_name ?? n.kind)}</td><td>${heapNodeValue(n)}</td></tr>`,
+      + (s.heap ?? []).filter((n) => visible.has(n.uid)).map((n) =>
+        `<tr data-uid="${n.uid}"${n.kind === "opaque" ? ' class="dim"' : ""}><td class="uid">obj ${n.uid}</td><td>${esc(n.type_name ?? n.kind)}</td><td>${heapNodeValue(n, heapByUid)}</td></tr>`,
       ).join("");
 
     if (editor && loc.module === "__main__") editor.highlightLine(loc.line);
