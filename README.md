@@ -68,7 +68,10 @@ repo-wide architecture and invariants in [CLAUDE.md](CLAUDE.md).
 ## Memory model display rules
 
 The engine (PyTrace) reports every reachable object per step, bounded by
-budgets; the UI applies a learner-oriented display policy on top:
+budgets; the UI applies a learner-oriented display policy on top. The
+policy is implemented as **individually toggleable filters**
+(`plp.memory.filters` + `plp.memory.refresh()`; see
+[app/MEMORY.md](app/MEMORY.md) for the full as-built documentation):
 
 1. **Immutable scalars render inline** (int, str, bool, None, float, bytes,
    …) in the Names table and inside object contents. Identity is only
@@ -86,14 +89,18 @@ budgets; the UI applies a learner-oriented display policy on top:
    omitted. This keeps the ubiquitous opaque `object` base from cluttering
    every class example, without breaking rule 3 — real user superclasses
    still appear because names reference them.
-5. **Truth markers are never hidden.** Objects the engine truthfully
+5. **Plain functions render inline** (`inlinePlainFunctions`): a function
+   with no closure environment shows as *`function add`* wherever it is
+   referenced, with no object row — a bare `def` is not an interesting
+   object for a learner. Closures keep chips and rows.
+6. **Truth markers are never hidden.** Objects the engine truthfully
    declines to inspect (`opaque` — builtins, imported objects, file handles)
    still appear when a learner's own data reaches them, as dimmed rows;
    `elided` markers (budget truncation) always render. Hiding them would
    turn "not inspected" into "doesn't exist".
 
-Rules 3–5 live in [app/memory.mjs](app/memory.mjs) (see the display-policy
-comment); rules 1–2 follow the engine's value encoding.
+Rules 3–6 are the `displayFilters` flags in [app/memory.mjs](app/memory.mjs);
+rules 1–2 follow the engine's value encoding.
 
 ## Notes
 

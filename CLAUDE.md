@@ -23,7 +23,7 @@ No build step exists anywhere — plain ES modules, vendored dependencies.
 | `app/main.mjs` | wiring + `window.plp` debug API (tests assert through it; keep it stable) |
 | `app/runner.mjs` | PyTrace session: run guard, record fan-out, terminal-reason notes, single input-echo path |
 | `app/console.mjs` | terminal emulator — see **app/CONSOLE.md** (as-built doc) |
-| `app/memory.mjs` | Names/Objects tables, display policy, line-step scrubbing |
+| `app/memory.mjs` | Names/Objects tables, toggleable display filters, line-step scrubbing — see **app/MEMORY.md** (as-built doc) |
 | `app/editor.mjs` | CodeMirror 5 wrapper (single file, line highlight) |
 | `app/layout.mjs` | draggable gutters (CSS vars + localStorage), per-pane maximize (Esc restores) |
 | `app/stream-checks.mjs` | consumer-side trace-stream invariants (`traceStreamCheck`) |
@@ -53,9 +53,10 @@ source of the vendored assets and test machinery).
    tests.
 4. **Memory model**: render at most once per animation frame while records
    stream (traces arrive at thousands/sec; per-record rendering freezes the
-   tab). Objects table shows only chip-reachable nodes; class bases render
-   inline by name; opaque rows are dimmed, never hidden; elided markers
-   always render (README "display rules" 1–5).
+   tab). The Objects-table policy is the `displayFilters` flag set
+   (chip-reachable only, inline class bases, inline plain functions,
+   dimmed-never-hidden opaque); elided markers always render; every chip
+   must resolve to a row regardless of flag state (app/MEMORY.md).
 5. **Stepping**: line-step mode (default) = synthetic position 0 + one
    position per executed line, each showing the state that line *produced*.
    Engine-step mode keeps raw before-the-line semantics. `memory.goTo()`/

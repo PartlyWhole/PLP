@@ -9,6 +9,39 @@
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
+// ---------------------------------------------------------------------------
+// Display filters — the Objects-table policy as individually toggleable
+// constituents (documented in app/MEMORY.md). Flip a flag to false to see
+// the unfiltered engine truth for that aspect; the underlying step records
+// are never altered. Also exposed as `window.plp.memory.filters` for
+// console experimentation.
+// ---------------------------------------------------------------------------
+export const displayFilters = {
+  // Objects table shows only heap nodes reachable from a visible reference
+  // chip (Names table -> displayed contents closure). Keeps the invariant:
+  // every chip resolves to a row, every row is reachable from a name.
+  chipReachableOnly: true,
+  // Class `bases` render inline by name (e.g. `class Puppy(Dog)`) instead
+  // of as chips, so the implicit builtin `object` base doesn't add an
+  // opaque row to every class example.
+  inlineClassBases: true,
+  // Plain named functions (resolved provenance, no closure environment)
+  // render inline as `function name` wherever they are referenced, instead
+  // of as a chip + object row — a bare `def` is not an interesting object
+  // for learners. Closures keep their rows (their environment matters).
+  inlinePlainFunctions: true,
+  // Opaque nodes (builtins/imported objects the engine truthfully declines
+  // to inspect) render dimmed. They are never hidden entirely.
+  dimOpaque: true,
+};
+
+// A function node qualifies for inline rendering (no chip, no row).
+function isInlinableFunction(node) {
+  return displayFilters.inlinePlainFunctions
+    && node?.kind === "function"
+    && node.closure_environment_id == null;
+}
+
 function b64Preview(b64, length) {
   try {
     const raw = atob(b64);
@@ -23,8 +56,9 @@ function b64Preview(b64, length) {
 }
 
 // EncodedValue -> inline HTML (closed vocabulary; unknown kinds render as
-// raw JSON for forward safety).
-export function renderValue(v) {
+// raw JSON for forward safety). heapByUid enables filter-aware ref
+// rendering (inline plain functions); without it refs always chip.
+export function renderValue(v, heapByUid) {
   if (v === null || v === undefined) return "<i>?</i>";
   switch (v.kind) {
     case "none": return "None";
@@ -33,40 +67,33 @@ export function renderValue(v) {
     case "float": return esc(v.special ?? v.decimal);
     case "str": return `<span class="mm-str">${esc(JSON.stringify(v.value))}</span>`;
     case "bytes": return `<span class="mm-str">${esc(b64Preview(v.base64, v.length))}</span> <small>(${v.length}B)</small>`;
-    case "complex": return `complex(${renderValue(v.real)}, ${renderValue(v.imag)})`;
-    case "range": return `range(${renderValue(v.start)}, ${renderValue(v.stop)}, ${renderValue(v.step)})`;
-    case "slice": return `slice(${renderValue(v.start)}, ${renderValue(v.stop)}, ${renderValue(v.step)})`;
+    case "complex": return `complex(${renderValue(v.real, heapByUid)}, ${renderValue(v.imag, heapByUid)})`;
+    case "range": return `range(${renderValue(v.start, heapByUid)}, ${renderValue(v.stop, heapByUid)}, ${renderValue(v.step, heapByUid)})`;
+    case "slice": return `slice(${renderValue(v.start, heapByUid)}, ${renderValue(v.stop, heapByUid)}, ${renderValue(v.step, heapByUid)})`;
     case "ellipsis": return "...";
     case "not_implemented": return "NotImplemented";
-    case "ref": return `<a class="mm-ref" href="#" data-uid="${v.uid}">obj ${v.uid}</a>`;
+    case "ref": {
+      const node = heapByUid?.get(v.uid);
+      if (isInlinableFunction(node)) {
+        return `<span class="mm-fn">function ${esc(node.qualname ?? "?")}</span>`;
+      }
+      return `<a class="mm-ref" href="#" data-uid="${v.uid}">obj ${v.uid}</a>`;
+    }
     case "elided": return `<span class="mm-elided">⟨elided: ${esc(v.reason)}${v.omitted_count ? `, ${v.omitted_count} omitted` : ""}⟩</span>`;
     default: return `<code>${esc(JSON.stringify(v))}</code>`;
   }
 }
 
-function bindingRows(bindings) {
+function bindingRows(bindings, heapByUid) {
   if (!bindings?.length) return `<tr><td class="name" colspan="2"><i class="hint">no names</i></td></tr>`;
   return bindings.map((b) =>
-    `<tr><td class="name">${esc(b.name)}</td><td>${renderValue(b.value)}</td></tr>`).join("");
+    `<tr><td class="name">${esc(b.name)}</td><td>${renderValue(b.value, heapByUid)}</td></tr>`).join("");
 }
 
-// ---------------------------------------------------------------------------
-// Objects-table display policy (see README "Memory model display rules"):
-//
-// The Objects table shows only heap nodes reachable from a visible reference
-// chip — starting at the Names table (globals, frame locals, closure cells)
-// and following refs through displayed object contents (container items,
-// dict keys/values, instance/class attributes, cell contents). The invariant
-// this preserves: every rendered `obj N` chip resolves to a rendered row.
-//
-// Class `bases` are deliberately NOT chips: they render inline by name in
-// the class row, so the implicit builtin `object` base (an opaque node the
-// engine truthfully declines to inspect) stops appearing as a row in every
-// class example. Non-user objects a learner's own names actually reach
-// (file handles, imported modules, compiled regexes, …) DO still appear —
-// as dimmed `opaque` rows — because hiding them would break chips and turn
-// "truthfully not inspected" into "silently doesn't exist".
-// ---------------------------------------------------------------------------
+// Objects-table display policy: implemented by the `displayFilters` flags
+// above; full rationale and per-filter documentation in app/MEMORY.md (and
+// README "Memory model display rules"). Core invariant regardless of flag
+// state: every rendered `obj N` chip resolves to a rendered row.
 
 // Walk an EncodedValue (or array of them) and yield every ref uid, including
 // refs nested inside complex/range/slice payloads.
@@ -103,6 +130,8 @@ function* nodeContentRefs(n) {
 }
 
 // Uids reachable from the Names table (roots) through displayed contents.
+// Refs that render inline (plain functions) emit no chip, so they are not
+// followed and get no row.
 function reachableUids(step, heapByUid) {
   const roots = [
     ...(step.globals ?? []).map((g) => g.bindings),
@@ -114,8 +143,9 @@ function reachableUids(step, heapByUid) {
   while (queue.length) {
     const uid = queue.pop();
     if (seen.has(uid)) continue;
-    seen.add(uid);
     const node = heapByUid.get(uid);
+    if (isInlinableFunction(node)) continue; // rendered as text, not a chip
+    seen.add(uid);
     if (node) queue.push(...nodeContentRefs(node));
   }
   return seen;
@@ -127,28 +157,34 @@ function heapNodeValue(n, heapByUid) {
     case "list": case "tuple": case "set": case "frozenset": {
       const open = n.kind === "list" ? "[" : n.kind === "tuple" ? "(" : "{";
       const close = n.kind === "list" ? "]" : n.kind === "tuple" ? ")" : "}";
-      return `${open}${(n.items ?? []).map(renderValue).join(", ")}${close}`
+      return `${open}${(n.items ?? []).map((v) => renderValue(v, heapByUid)).join(", ")}${close}`
         + (n.ordering === "unordered" ? ` <small class="hint">(unordered)</small>` : "")
         + (n.elided_count ? ` <span class="mm-elided">+${n.elided_count} elided</span>` : "");
     }
     case "dict":
-      return `{${(n.entries ?? []).map((e) => `${renderValue(e.key)}: ${renderValue(e.value)}`).join(", ")}}`
+      return `{${(n.entries ?? []).map((e) => `${renderValue(e.key, heapByUid)}: ${renderValue(e.value, heapByUid)}`).join(", ")}}`
         + (n.elided_count ? ` <span class="mm-elided">+${n.elided_count} elided</span>` : "");
     case "instance":
       return `${esc(n.class_qualname ?? "")} { ${(n.attributes ?? []).map((a) =>
-        `${esc(a.name)}=${renderValue(a.value)}`).join(", ")} }`;
+        `${esc(a.name)}=${renderValue(a.value, heapByUid)}`).join(", ")} }`;
     case "class": {
-      // Bases render inline by name (no ref chip): the implicit `object`
-      // base would otherwise drag an opaque builtin row into every class
-      // example. Only bases that resolve to a named class in this step's
-      // heap are listed; unnameable (opaque/builtin) bases are omitted.
-      const baseNames = (n.bases ?? [])
-        .map((b) => (b?.kind === "ref" ? heapByUid?.get(b.uid) : null))
-        .filter((base) => base?.kind === "class" && base.qualname)
-        .map((base) => esc(base.qualname));
-      return `class ${esc(n.qualname ?? "")}${baseNames.length ? `(${baseNames.join(", ")})` : ""}`
+      // displayFilters.inlineClassBases: bases render by name (no chip) so
+      // the implicit builtin `object` base gets no row; unnameable bases
+      // are omitted. With the filter off, bases render as ordinary chips.
+      let bases = "";
+      if (displayFilters.inlineClassBases) {
+        const baseNames = (n.bases ?? [])
+          .map((b) => (b?.kind === "ref" ? heapByUid?.get(b.uid) : null))
+          .filter((base) => base?.kind === "class" && base.qualname)
+          .map((base) => esc(base.qualname));
+        bases = baseNames.length ? `(${baseNames.join(", ")})` : "";
+      } else {
+        const chips = (n.bases ?? []).map((b) => renderValue(b, heapByUid)).join(", ");
+        bases = chips ? `(${chips})` : "";
+      }
+      return `class ${esc(n.qualname ?? "")}${bases}`
         + (n.attributes?.length
-          ? ` { ${n.attributes.map((a) => `${esc(a.name)}=${renderValue(a.value)}`).join(", ")} }`
+          ? ` { ${n.attributes.map((a) => `${esc(a.name)}=${renderValue(a.value, heapByUid)}`).join(", ")} }`
           : "");
     }
     case "function":
@@ -157,7 +193,7 @@ function heapNodeValue(n, heapByUid) {
     case "generator":
       return `generator (${esc(n.state ?? "?")})`;
     case "cell":
-      return n.state === "value" ? `cell → ${renderValue(n.content)}` : "cell (empty)";
+      return n.state === "value" ? `cell → ${renderValue(n.content, heapByUid)}` : "cell (empty)";
     case "module":
       return `module ${esc(n.module ?? "")}`;
     case "opaque":
@@ -269,31 +305,33 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
       .filter(([, v]) => v)
       .map(([k]) => `<span class="mm-flag on">${esc(k)}</span>`).join(" ");
 
+    const heapByUid = new Map((s.heap ?? []).map((n) => [n.uid, n]));
+
     // Names: globals first, then stack frames root → active.
     let names = "<tr><th>Name</th><th>Value</th></tr>";
     for (const g of s.globals ?? []) {
       names += `<tr class="scope"><th colspan="2">globals${g.module === "__main__" ? "" : ` (${esc(g.module)})`}</th></tr>`;
-      names += bindingRows(g.bindings);
+      names += bindingRows(g.bindings, heapByUid);
     }
     (s.stack ?? []).forEach((f, fi, arr) => {
       if (f.function === "<module>") return; // module frame duplicates globals
       const active = fi === arr.length - 1;
       names += `<tr class="scope"><th colspan="2">${esc(f.function)}()${active ? " ← active" : ""}</th></tr>`;
-      names += bindingRows(f.locals);
+      names += bindingRows(f.locals, heapByUid);
     });
     for (const c of s.closure_environments ?? []) {
       names += `<tr class="scope"><th colspan="2">closure env ${c.environment_id}</th></tr>`;
-      names += bindingRows(c.cells);
+      names += bindingRows(c.cells, heapByUid);
     }
     els.names.innerHTML = names;
 
-    // Objects: one row per heap node reachable from a visible chip (see the
-    // display-policy comment above). Opaque rows render dimmed.
-    const heapByUid = new Map((s.heap ?? []).map((n) => [n.uid, n]));
-    const visible = reachableUids(s, heapByUid);
+    // Objects: filtered per displayFilters (see app/MEMORY.md).
+    const visible = displayFilters.chipReachableOnly
+      ? reachableUids(s, heapByUid)
+      : new Set((s.heap ?? []).map((n) => n.uid));
     els.objects.innerHTML = "<tr><th>Id</th><th>Type</th><th>Value</th></tr>"
       + (s.heap ?? []).filter((n) => visible.has(n.uid)).map((n) =>
-        `<tr data-uid="${n.uid}"${n.kind === "opaque" ? ' class="dim"' : ""}><td class="uid">obj ${n.uid}</td><td>${esc(n.type_name ?? n.kind)}</td><td>${heapNodeValue(n, heapByUid)}</td></tr>`,
+        `<tr data-uid="${n.uid}"${displayFilters.dimOpaque && n.kind === "opaque" ? ' class="dim"' : ""}><td class="uid">obj ${n.uid}</td><td>${esc(n.type_name ?? n.kind)}</td><td>${heapNodeValue(n, heapByUid)}</td></tr>`,
       ).join("");
 
     if (editor && hlModule === "__main__") editor.highlightLine(hlLine);
@@ -333,11 +371,16 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
   function scheduleShowLatest() {
     if (renderScheduled) return;
     renderScheduled = true;
-    requestAnimationFrame(() => {
+    const render = () => {
       renderScheduled = false;
       if (follow) show(positionCount() - 1);
       else show(index); // keep position, but refresh slider max/counter
-    });
+    };
+    // rAF never fires in hidden/backgrounded pages — records streaming into
+    // a background tab would leave the pane stale. Fall back to a throttled
+    // timeout there.
+    if (document.hidden) setTimeout(render, 200);
+    else requestAnimationFrame(render);
   }
 
   return {
@@ -357,5 +400,9 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     steps: () => steps, // raw engine step records, always
     isFollowing: () => follow,
     lineMode,
+    // Display-filter toggles (app/MEMORY.md). Mutate then call refresh(),
+    // e.g. plp.memory.filters.inlinePlainFunctions = false; plp.memory.refresh()
+    filters: displayFilters,
+    refresh: () => show(index),
   };
 }

@@ -58,6 +58,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 #cm-host .CodeMirror { height: 100%; font-size: 13px; }
 .CodeMirror { background: #101216; color: #d6dae3; }
 .CodeMirror-gutters { background: #171a20; border-right: 1px solid var(--line); }
+.CodeMirror-cursor { border-left: 2px solid var(--accent); }
 .cm-active-step { background: rgba(79, 143, 247, 0.25) !important; }
 
 /* memory model */
@@ -77,6 +78,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 .mem-table tr.flash { background: rgba(79, 143, 247, 0.25); }
 .mem-table tr.dim { opacity: 0.55; }
 .mm-str { color: #a8d08f; }
+.mm-fn { color: #c9a8f0; font-style: italic; }
 .mm-elided { color: var(--warn); }
 a.mm-ref {
   color: var(--accent); text-decoration: none; border: 1px solid var(--line);

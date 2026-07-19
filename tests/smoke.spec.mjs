@@ -103,6 +103,41 @@ test.describe("PLP smoke", () => {
     expect(dangling).toBe(0);
   });
 
+  test("isolated: plain functions render inline, not as object rows (display filter)", async ({ page }) => {
+    await gotoIsolated(page);
+    await page.evaluate(() => window.plp.editor.setValue(
+      "x = 1\ny = x\nx = x+y\ny = x+x\ndef add(x,y):\n    return x+y\nz = add(x,y)\nprint(z)\n",
+    ));
+    const summary = await page.evaluate(() => window.plp.run());
+    expect(summary.terminal_reason).toBe("completed");
+
+    // Names: `add` shows inline as a function, with no chip.
+    const namesHtml = await page.evaluate(() => document.querySelector("[data-role=names-table]").innerHTML);
+    expect(namesHtml).toContain("function add");
+    expect(namesHtml).not.toContain("mm-ref"); // scalars + inline fn only
+
+    // Objects: no function row (this program allocates no other objects).
+    const objectsText = await page.evaluate(() => document.querySelector("[data-role=objects-table]").textContent);
+    expect(objectsText).not.toContain("function");
+    // No dangling chips anywhere (core invariant, filters on or off).
+    const dangling = await page.evaluate(() => {
+      const rows = new Set([...document.querySelectorAll("[data-role=objects-table] tr[data-uid]")].map((r) => r.dataset.uid));
+      return [...document.querySelectorAll("a.mm-ref")].filter((a) => !rows.has(a.dataset.uid)).length;
+    });
+    expect(dangling).toBe(0);
+
+    // Toggling the filter off in code restores the object row + chip.
+    await page.evaluate(() => {
+      window.plp.memory.filters.inlinePlainFunctions = false;
+      window.plp.memory.refresh();
+    });
+    await expect(page.locator("[data-role=objects-table]")).toContainText("function add");
+    await page.evaluate(() => {
+      window.plp.memory.filters.inlinePlainFunctions = true;
+      window.plp.memory.refresh();
+    });
+  });
+
   test("isolated: line-step mode groups per executed line and shows produced state", async ({ page }) => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue(
