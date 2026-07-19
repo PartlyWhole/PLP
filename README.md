@@ -89,12 +89,14 @@ policy is implemented as **individually toggleable filters**
    omitted. This keeps the ubiquitous opaque `object` base from cluttering
    every class example, without breaking rule 3 — real user superclasses
    still appear because names reference them.
-5. **Plain functions and modules render inline; module bindings hide**
-   (`inlinePlainFunctions`, `inlineModules`, `hideModuleBindings`): a
-   function with no closure environment shows as *`function add`* with no
-   object row (closures keep chips and rows), and `import math` adds
-   nothing at all — neither an Objects row nor a Names row. Toggle
-   `hideModuleBindings` off to show imports as ordinary name bindings.
+5. **Bare `def` and `import` add nothing** (`inlinePlainFunctions`,
+   `inlineModules`, `hideFunctionBindings`, `hideModuleBindings`): a
+   plain function or module binding produces no Names row and no Objects
+   row — plumbing, not state. Called functions still appear as frame
+   labels; closures always keep their bindings, chips, and rows. Toggle
+   the `hide*Bindings` flags off to teach that `def`/`import` bind names
+   like any assignment (values then render inline: *`function add`*,
+   *`module math`*).
 6. **Truth markers are never hidden.** Objects the engine truthfully
    declines to inspect (`opaque` — builtins, imported objects, file handles)
    still appear when a learner's own data reaches them, as dimmed rows;

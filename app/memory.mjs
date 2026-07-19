@@ -30,6 +30,11 @@ export const displayFilters = {
   // of as a chip + object row — a bare `def` is not an interesting object
   // for learners. Closures keep their rows (their environment matters).
   inlinePlainFunctions: true,
+  // Hide plain-function bindings from the Names table entirely — a bare
+  // `def total(...)` adds no row (`total` still appears as the frame label
+  // when called). Closure bindings always stay. Turn OFF to teach that
+  // def binds a name like any assignment.
+  hideFunctionBindings: true,
   // Module objects (import math -> `math` bound to a module) render inline
   // as `module math` — an import binding is not an interesting object row.
   inlineModules: true,
@@ -97,11 +102,18 @@ export function renderValue(v, heapByUid) {
 
 // One scope section: a vertically-written label cell (rowspan over the
 // scope's rows) to the LEFT of the Name column, then name/value rows.
+// Bindings hidden from the Names table wholesale (see displayFilters).
+function isHiddenBinding(b, heapByUid) {
+  if (b.value?.kind !== "ref") return false;
+  const node = heapByUid?.get(b.value.uid);
+  if (displayFilters.hideModuleBindings && node?.kind === "module") return true;
+  if (displayFilters.hideFunctionBindings && node?.kind === "function"
+    && node.closure_environment_id == null) return true;
+  return false;
+}
+
 function scopeRows(label, allBindings, heapByUid) {
-  const bindings = (allBindings ?? []).filter((b) =>
-    !(displayFilters.hideModuleBindings
-      && b.value?.kind === "ref"
-      && heapByUid?.get(b.value.uid)?.kind === "module"));
+  const bindings = (allBindings ?? []).filter((b) => !isHiddenBinding(b, heapByUid));
   const rows = bindings?.length
     ? bindings.map((b) => `<td class="name">${esc(b.name)}</td><td>${renderValue(b.value, heapByUid)}</td>`)
     : ['<td class="name" colspan="2"><i class="hint">no names</i></td>'];
@@ -160,7 +172,8 @@ function reachableUids(step, heapByUid) {
     ...(step.closure_environments ?? []).map((c) => c.cells),
   ];
   const seen = new Set();
-  const queue = [...valueRefs(roots.map((b) => (b ?? []).map((x) => x.value)))];
+  const queue = [...valueRefs(roots.map((b) =>
+    (b ?? []).filter((x) => !isHiddenBinding(x, heapByUid)).map((x) => x.value)))];
   while (queue.length) {
     const uid = queue.pop();
     if (seen.has(uid)) continue;

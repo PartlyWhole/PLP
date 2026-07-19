@@ -57,6 +57,10 @@ plp.memory.refresh();
 | `inlinePlainFunctions` (true) | function nodes with **no closure environment** render inline as *`function name`* wherever referenced (no chip, no row) | a bare `def` is not an interesting object for a learner tracing `z = add(x, y)`; closures keep chips + rows because their environment is the point |
 | `inlineModules` (true) | module nodes render inline as *`module math`* wherever referenced (no chip, no row) | `import math` binds a name to a module object; true, but not the story the Objects table is telling |
 | `hideModuleBindings` (true) | module bindings are omitted from the **Names** table entirely — `import math` adds no row | for most lessons an import is plumbing, not state; turn OFF to teach that imports bind names like any assignment (the binding then shows as inline *`module math`* per `inlineModules`) |
+| `hideFunctionBindings` (true) | plain-function bindings are omitted from the **Names** table — `def total(...)` adds no row (`total()` still appears as the frame label when called; closure bindings always stay) | same plumbing argument as imports; turn OFF to teach that `def` binds a name like any assignment |
+
+Hidden bindings also don't seed Objects-table reachability — rows are
+reachable from *visible* names.
 | `dimOpaque` (true) | `opaque` nodes (builtins/imported objects the engine truthfully declines to inspect) render as dimmed rows | de-emphasized but **never hidden** — hiding would turn "truthfully not inspected" into "silently doesn't exist" |
 
 Filtering happens at render time only; `plp.memory.steps()` always returns

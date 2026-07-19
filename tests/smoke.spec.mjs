@@ -111,10 +111,17 @@ test.describe("PLP smoke", () => {
     const summary = await page.evaluate(() => window.plp.run());
     expect(summary.terminal_reason).toBe("completed");
 
-    // Names: `add` shows inline as a function, with no chip.
+    // Names: the `add` binding is hidden entirely (hideFunctionBindings).
     const namesHtml = await page.evaluate(() => document.querySelector("[data-role=names-table]").innerHTML);
-    expect(namesHtml).toContain("function add");
-    expect(namesHtml).not.toContain("mm-ref"); // scalars + inline fn only
+    expect(namesHtml).not.toContain("add");
+    expect(namesHtml).not.toContain("mm-ref"); // scalars only
+
+    // hideFunctionBindings off -> binding returns as inline text (no chip).
+    await page.evaluate(() => {
+      window.plp.memory.filters.hideFunctionBindings = false;
+      window.plp.memory.refresh();
+    });
+    await expect(page.locator("[data-role=names-table]")).toContainText("function add");
 
     // Objects: no function row (this program allocates no other objects).
     const objectsText = await page.evaluate(() => document.querySelector("[data-role=objects-table]").textContent);
@@ -134,6 +141,7 @@ test.describe("PLP smoke", () => {
     await expect(page.locator("[data-role=objects-table]")).toContainText("function add");
     await page.evaluate(() => {
       window.plp.memory.filters.inlinePlainFunctions = true;
+      window.plp.memory.filters.hideFunctionBindings = true;
       window.plp.memory.refresh();
     });
 
