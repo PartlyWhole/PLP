@@ -86,6 +86,23 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | Q7 | quiz pilot renders + checks; graceful without trace | panel question, fill → correct, wrong → `.bad` mark; after reset `newQuestion` → null | Q-6 |
 | Q8 | Determinism under explicit seed/options | same opts → same question (spot: implied by fixed expectations in Q-1..Q-5) | implicit |
 
+## Director layer (D-series = `tests/director.spec.mjs`)
+
+| # | Feature | Best evidence | Coverage |
+|---|---|---|---|
+| DR1 | Event bus: semantic events in order, correct payloads; `edited` only for user-origin changes | scripted session → ordered log assertions | D-1a/b |
+| DR2 | Lesson lint catches unknown targets/actions/events/conditions/signals/beat refs, dup ids, idleMs-in-until, missing until; `start()` refuses | malformed lesson → every specific message asserted; reference lesson lints clean | D-2 |
+| DR3 | Gates: every capability denies (DOM/behavioral) and restores; `reset()` leaves zero artifacts | per-cap DOM/state assertions; gatedCaps bookkeeping | D-3a |
+| DR4 | console-input gate: prompt shows, line mode never engages, interrupt escape works | input program under gate → transcript has prompt, isWaiting false | D-3b |
+| DR5 | Effects: spotlight/dim backdrop, pulse, rich-text popover + Esc dismiss, veil/unveil, clearEffects | class/count assertions per effect | D-4a |
+| DR6 | Structured `{name}` targets resolve and effects re-anchor across memory re-renders | spotlight a Names cell → scrub (table rebuilt) → still spotted; veil persists re-render | D-4b |
+| DR7 | Condition library: every predicate true+false case incl. `sameObject` aliasing and typed `raisedException` | known trace → exact boolean table | D-5 |
+| DR8 | Runtime: event/check/all triggers with latching, gates persist across beats while effects clear, signal branching, terminal resting beat, progress recorded | synthetic lesson walk | D-6a |
+| DR9 | Hints: idle (once semantics), event-pattern (repeatable), signal-threshold; why-on-demand; strip dots; exit restores everything; telemetry rows | synthetic lesson with 500ms idle hint | D-6b |
+| DR10 | Crash safety: a beat that throws while staging tears down to free play (gates fail open) | crashing quiz action → director inactive, caps restored | D-6c |
+| DR11 | Reference lesson end-to-end as a learner (run, hover, scrub, input, rerun, quiz) + struggle branch to review | full walk; 3-wrong-answers detour | D-7a/b |
+| DR12 | Solo-only guard (collab × director) | manual/GAP (needs a room fixture) | GAP |
+
 ## Layout / shell
 
 | # | Feature | Best evidence | Coverage |
@@ -175,8 +192,10 @@ equality bundle = records deep-equal, transcript equal, step count equal,
 | CO9 | Shared scrubbing with local detach/re-attach | Scrub on driver → follower position follows; follower scrub → detached, ignores driver; scrub to end → re-attached | CO-4 |
 | CO10 | Relay death mid-stream is survivable; sync resumes on relay return | ws-ONLY room via local sync server: kill mid-stream → follower stalls (< driver count); restart → converges to full equality bundle | CO-5 |
 | CO11 | Pure-P2P room (WebRTC via public Nostr signaling) | Separate browser contexts, `transports=p2p`, loopback ICE seam: join + shared run + zero sync-server sockets | CO-6 (SKIPS if relays unreachable — network-dependent by design) |
-| CO12 | Roster count + leave/goodbye | Both sides show ● 2; leave drops peer promptly (goodbye; 15 s TTL backstop) | CO-1 (count); GAP (leave — exercised manually; TTL fallback untested) |
+| CO12 | Roster count + leave/goodbye | Both sides show ● 2; leave drops peer promptly (goodbye; 15 s TTL backstop) | CO-1 (count); GAP (graceful leave — exercised manually) |
 | CO13 | Lazy loading: solo pays zero collab cost | No `vendor/automerge-collab.mjs` request until Share/`#room=` | GAP (low value; import is behind `start`/`join` by construction) |
+| CO14 | Room link pasted into a live tab joins via hashchange, no reload | Solo page + `location.hash = #room=…` → active + code adopted, reload-marker still set | CO-lifecycle-1 |
+| CO15 | Ungraceful close (crash, no goodbye): badge drops and a dead driver's run lock releases via read-time freshness (20 s) | B drives a run, goodbye suppressed, tab closed mid-stream → A's badge → 1 and `canRun()` → true within the staleness window; A then runs successfully | CO-lifecycle-2 |
 
 ## Standing rules
 

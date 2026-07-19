@@ -99,7 +99,53 @@ a.mm-ref:hover { border-color: var(--accent); }
 .mm-flag { color: var(--dim); font-size: 11px; margin-right: 6px; }
 .mm-flag.on { color: var(--warn); font-weight: 600; }
 
+/* stage (director attention layer) */
+.stage-gated { opacity: 0.35 !important; pointer-events: none !important; }
+.stage-backdrop {
+  position: fixed; inset: 0; z-index: 70; pointer-events: none;
+  background: rgba(8, 10, 14, 0.55);
+}
+.stage-spot {
+  position: relative; z-index: 71;
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px;
+  box-shadow: 0 0 0 6px rgba(79, 143, 247, 0.25);
+  background: var(--bg);
+}
+@keyframes stage-pulse-kf {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(79, 143, 247, 0); }
+  50% { box-shadow: 0 0 0 8px rgba(79, 143, 247, 0.45); }
+}
+.stage-pulse { animation: stage-pulse-kf 0.8s ease-in-out 2; border-radius: 6px; }
+.stage-veiled { visibility: hidden !important; }
+.stage-popover {
+  position: fixed; z-index: 72; max-width: 320px;
+  background: var(--panel); border: 1px solid var(--accent); border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  padding: 8px 10px; font-size: 13px; line-height: 1.5;
+}
+.stage-popover.hint { border-color: var(--warn); }
+.stage-popover code { background: #101216; border-radius: 3px; padding: 0 4px; font-size: 12px; }
+.stage-popover-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
+.stage-popover-actions button { font-size: 11px; padding: 1px 7px; }
+
+/* director lesson strip */
+.director-strip {
+  position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 73;
+  display: flex; gap: 10px; align-items: center;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  padding: 4px 12px; font-size: 12px;
+}
+.director-strip .dots { display: flex; gap: 4px; }
+.director-strip .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--line);
+}
+.director-strip .dot.done { background: var(--good); }
+.director-strip .dot.now { background: var(--accent); }
+.director-strip button { font-size: 11px; padding: 1px 8px; }
+
 /* quiz pilot */
+.quiz-panel[hidden] { display: none; }
 .quiz-panel {
   position: fixed; right: 16px; bottom: 16px; z-index: 60;
   width: min(460px, 90vw); max-height: 70vh; display: flex; flex-direction: column;

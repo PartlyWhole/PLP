@@ -5,6 +5,7 @@
 // The UI is disposable; the engine is the product.
 
 import { questionGenerators, generateQuestion } from "./questions.mjs";
+import { events } from "./events.mjs";
 
 export function createQuiz({ memory, editor }) {
   const panel = document.createElement("div");
@@ -173,6 +174,7 @@ export function createQuiz({ memory, editor }) {
       return null;
     }
     renderQuestion(q);
+    events.emit("quiz-question", { kind: q.kind });
     return q;
   }
 
@@ -202,6 +204,7 @@ export function createQuiz({ memory, editor }) {
       }
     }
     el("quiz-result").textContent = result.correct ? "✓ correct" : "not yet — ✗ marked";
+    events.emit("quiz-graded", { kind: current.question.kind, correct: result.correct });
     return result;
   }
 

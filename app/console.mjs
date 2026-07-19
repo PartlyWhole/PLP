@@ -166,7 +166,13 @@ export function createConsole({ root, onInput, onInterrupt, maxInputLineBytes = 
     term.write(text); // local echo
   });
 
+  // Stage gate (console-input capability): when non-interactive, input()
+  // waits show the prompt but line mode never engages (the director can
+  // still leave Stop/interrupt available as the escape).
+  let interactive = true;
+
   function showInput() {
+    if (!interactive) return;
     waiting = true;
     lineBuf = "";
     histPos = -1;
@@ -209,6 +215,8 @@ export function createConsole({ root, onInput, onInterrupt, maxInputLineBytes = 
       return lines.join("\n").replace(/\n+$/, "");
     },
     isWaiting: () => waiting,
+    setInteractive(v) { interactive = Boolean(v); if (!interactive) hideInput(); },
+    isInteractive: () => interactive,
     term, // debug/test access (cell attributes, cols/rows)
   };
 }

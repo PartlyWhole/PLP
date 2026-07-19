@@ -1,6 +1,8 @@
 // CodeMirror 5 wrapper for the single-file editor (main.py). Expects
 // window.CodeMirror from vendor/codemirror loaded as classic scripts.
 
+import { events } from "./events.mjs";
+
 export function createEditor({ hostEl }) {
   const cm = window.CodeMirror(hostEl, {
     mode: "python",
@@ -9,6 +11,10 @@ export function createEditor({ hostEl }) {
     viewportMargin: Infinity,
   });
   let marked = null; // line index of the current step highlight
+
+  cm.on("change", (_cm, ch) => {
+    if (ch.origin !== "setValue" && ch.origin !== "collab") events.emit("edited");
+  });
 
   function clearHighlight() {
     if (marked !== null) {
@@ -72,14 +78,19 @@ export function createEditor({ hostEl }) {
     getValue: () => cm.getValue(),
     setValue: (text) => { clearHighlight(); clearNameHighlight(); cm.setValue(text); },
     applyRemote,
-    // Fires on user edits (not on setValue or applyRemote) — collab echo guard.
+    // Fires on local edits, typed or programmatic (NOT on applyRemote —
+    // remote applications carry the "collab" origin; the collab module's
+    // applyingRemote flag additionally guards its own setValue adoption).
     onLocalChange: (fn) => cm.on("change", (_cm, ch) => {
-      if (ch.origin !== "setValue" && ch.origin !== "collab") fn();
+      if (ch.origin !== "collab") fn();
     }),
     highlightLine,
     clearHighlight,
     highlightName,
     clearNameHighlight,
     refresh: () => cm.refresh(),
+    // Director/stage hooks.
+    setReadOnly: (v) => cm.setOption("readOnly", v ? "nocursor" : false),
+    isReadOnly: () => Boolean(cm.getOption("readOnly")),
   };
 }

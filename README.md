@@ -116,6 +116,17 @@ in a call's arguments. Memory questions are graded against what the
 program actually did. Engine and extension points:
 [app/QUESTIONS.md](app/QUESTIONS.md).
 
+## Guided lessons (director)
+
+The **Lesson** button starts a guided, game-tutorial-style walkthrough:
+the app gates itself down to one meaningful action per step, spotlights
+it, and advances only on your own real actions (running, hovering,
+scrubbing, answering) — with quiet behavior-triggered hints, on-demand
+"why?" explanations, and struggle-aware branching. Lessons are
+human-authored data over an implemented grammar; authoring manual:
+[app/DIRECTOR.md](app/DIRECTOR.md). The shipped lesson is a
+grammar-validation placeholder.
+
 ## Live collaboration
 
 Click **Share session** to get an invite link (`#room=…`). Peers who open

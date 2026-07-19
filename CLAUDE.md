@@ -27,6 +27,11 @@ No build step exists anywhere — plain ES modules, vendored dependencies.
 | `app/editor.mjs` | CodeMirror 5 wrapper (single file, line highlight, collab splice/change hooks) |
 | `app/collab.mjs` | live collaboration: shared editor + shared run/scrub over Automerge, multi-transport (ws + WebRTC/Nostr + BroadcastChannel) — see **app/COLLAB.md** |
 | `tools/collab-vendor-build/` | esbuild recipe that produces `vendor/automerge-collab.mjs` (never served; rebuild only to change pinned versions) |
+| `app/events.mjs` | semantic event bus (learner actions; modules emit, director/tests subscribe) |
+| `app/stage.mjs` | director's app-surface layer: semantic targets, capability gates, attention effects (spotlight/pulse/popover/veil) |
+| `app/director.mjs` | lesson runtime: beat FSM, triggers, hints, signals, branching, telemetry — see **app/DIRECTOR.md** (authoring manual) |
+| `app/conditions.mjs` | curated trace-grounded predicates for lesson triggers |
+| `lessons/` | human-authored lesson data + registry (`meet-the-machine` = grammar-validation reference, placeholder content) |
 | `app/questions.mjs` | generative-question engine (pure; trace-grounded memory-prediction + code questions) — see **app/QUESTIONS.md** |
 | `app/quiz.mjs` | thin pilot UI over the question engine (floating panel; disposable) |
 | `app/layout.mjs` | draggable gutters (CSS vars + localStorage), per-pane maximize (Esc restores) |
@@ -71,7 +76,13 @@ source of the vendored assets and test machinery).
    per record. Presence/scrub is ephemeral, never in the doc. Transports
    run concurrently (idempotent sync); no fallback state machine
    (app/COLLAB.md).
-7. **Tests** assert via `window.plp` state, not pixels; every run ends by
+7. **Director**: the stage arranges, the LEARNER performs (no action runs
+   code or presses buttons; `until` is learner-driven only). Effects are
+   per-beat; gates persist across beats; every exit path (incl. errors)
+   runs `stage.reset()` — gates fail open. Lessons are data, linted at
+   start; pedagogy lives in `lessons/`, never in the runtime
+   (app/DIRECTOR.md).
+8. **Tests** assert via `window.plp` state, not pixels; every run ends by
    checking `plp.checkErrors()` is empty. Suite runs under the `/PLP/`
    prefix with NO headers (service-worker posture = real GitHub Pages).
    First-visit COI shim reload: `waitForFunction(() => crossOriginIsolated)`.

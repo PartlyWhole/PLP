@@ -7,6 +7,8 @@
 // at thousands per second); user scrubbing renders immediately.
 // Value/heap rendering adapted from the Engine Pilot trace view.
 
+import { events } from "./events.mjs";
+
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 // ---------------------------------------------------------------------------
@@ -371,16 +373,23 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
 
     if (editor && hlModule === "__main__") editor.highlightLine(hlLine);
     else editor?.clearHighlight();
+    events.emit("memory-rendered", { position: index });
   }
 
   function userShow(i) {
     follow = i >= positionCount() - 1; // scrubbing to the end resumes live follow
     show(i);
     onUserScrub?.(stateIndex, steps);
+    events.emit("scrubbed", {
+      position: index,
+      line: lineMode() && index > 0 ? groups[index - 1]?.line : steps[stateIndex]?.location?.line,
+      stateIndex,
+    });
   }
 
   modeToggle?.addEventListener("change", () => {
     show(follow ? positionCount() - 1 : Math.min(index, positionCount() - 1));
+    events.emit("mode-changed", { lineMode: lineMode() });
   });
 
   els.slider.addEventListener("input", () => userShow(Number(els.slider.value)));
@@ -440,6 +449,7 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     if (!td) return;
     const name = td.textContent.trim();
     editor?.highlightName(name, lineFilterFor(td.dataset.scope, td.dataset.fn, name));
+    events.emit("hover-name", { scope: td.dataset.scope ?? null, name });
   });
   els.names.addEventListener("mouseleave", () => editor?.clearNameHighlight());
 
@@ -453,6 +463,7 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     row.scrollIntoView({ block: "nearest" });
     row.classList.add("flash");
     setTimeout(() => row.classList.remove("flash"), 900);
+    events.emit("chip-clicked", { uid: Number(a.dataset.uid) });
   });
 
   // Rendering a snapshot is O(step contents); doing it synchronously per
