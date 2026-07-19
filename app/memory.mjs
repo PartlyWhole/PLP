@@ -182,9 +182,35 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     names: root.querySelector("[data-role=names-table]"),
     objects: root.querySelector("[data-role=objects-table]"),
   };
+  const modeToggle = root.querySelector("[data-role=step-mode]");
   let steps = [];
-  let index = 0;
-  let follow = true; // live mode: keep showing the latest step
+  let index = 0; // position index in the CURRENT mode's position space
+  let stateIndex = 0; // raw step index whose snapshot is displayed
+  let follow = true; // live mode: keep showing the latest position
+
+  // ---- line-step positions -------------------------------------------------
+  // The engine emits a snapshot per trace event, and a `line` snapshot shows
+  // state BEFORE that line runs — so raw scrubbing highlights line N while
+  // displaying the effects of the lines above it, and one source line can
+  // span many steps (loop/comprehension iterations, call/return events).
+  // Line-step mode regroups this into learner-shaped positions: one position
+  // per contiguous run of steps on the same (module, function, line), whose
+  // displayed state is the NEXT group's boundary snapshot — i.e. "line N
+  // just executed → this is the memory it produced". The final group shows
+  // the last snapshot (final state for finished runs; in-progress state for
+  // a live run). Raw engine-step mode remains available via the toggle.
+  let groups = []; // { start, line, function, module }
+
+  function trackGroup(stepIdx) {
+    const loc = steps[stepIdx].location;
+    const last = groups[groups.length - 1];
+    if (!last || last.line !== loc.line || last.function !== loc.function || last.module !== loc.module) {
+      groups.push({ start: stepIdx, line: loc.line, function: loc.function, module: loc.module });
+    }
+  }
+
+  const lineMode = () => modeToggle?.checked ?? false;
+  const positionCount = () => (lineMode() ? groups.length : steps.length);
 
   function show(i) {
     if (!steps.length) {
@@ -197,13 +223,31 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
       editor?.clearHighlight();
       return;
     }
-    index = Math.max(0, Math.min(i, steps.length - 1));
-    const s = steps[index];
-    els.slider.max = String(steps.length - 1);
+    index = Math.max(0, Math.min(i, positionCount() - 1));
+    let s, hlLine, hlModule;
+    if (lineMode()) {
+      const g = groups[index];
+      const nextStart = groups[index + 1]?.start;
+      stateIndex = nextStart != null ? nextStart : steps.length - 1;
+      s = steps[stateIndex];
+      const span = (nextStart ?? steps.length) - g.start;
+      els.counter.textContent = `line ${index + 1}/${groups.length}`;
+      els.event.innerHTML = `<b>line ${g.line}</b>`
+        + (g.function !== "<module>" ? ` in ${esc(g.function)}` : "")
+        + (span > 1 ? ` <small>(${span} engine steps)</small>` : "");
+      hlLine = g.line;
+      hlModule = g.module;
+    } else {
+      stateIndex = index;
+      s = steps[index];
+      const loc = s.location;
+      els.counter.textContent = `step ${index + 1}/${steps.length}`;
+      els.event.innerHTML = `<b>${esc(s.event)}</b> in ${esc(loc.function)} — line ${loc.line}`;
+      hlLine = loc.line;
+      hlModule = loc.module;
+    }
+    els.slider.max = String(positionCount() - 1);
     els.slider.value = String(index);
-    els.counter.textContent = `step ${index + 1}/${steps.length}`;
-    const loc = s.location;
-    els.event.innerHTML = `<b>${esc(s.event)}</b> in ${esc(loc.function)} — line ${loc.line}`;
 
     els.flags.innerHTML = Object.entries(s.flags ?? {})
       .filter(([, v]) => v)
@@ -236,15 +280,19 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
         `<tr data-uid="${n.uid}"${n.kind === "opaque" ? ' class="dim"' : ""}><td class="uid">obj ${n.uid}</td><td>${esc(n.type_name ?? n.kind)}</td><td>${heapNodeValue(n, heapByUid)}</td></tr>`,
       ).join("");
 
-    if (editor && loc.module === "__main__") editor.highlightLine(loc.line);
+    if (editor && hlModule === "__main__") editor.highlightLine(hlLine);
     else editor?.clearHighlight();
   }
 
   function userShow(i) {
-    follow = i >= steps.length - 1; // scrubbing to the end resumes live follow
+    follow = i >= positionCount() - 1; // scrubbing to the end resumes live follow
     show(i);
-    onUserScrub?.(index, steps);
+    onUserScrub?.(stateIndex, steps);
   }
+
+  modeToggle?.addEventListener("change", () => {
+    show(follow ? positionCount() - 1 : Math.min(index, positionCount() - 1));
+  });
 
   els.slider.addEventListener("input", () => userShow(Number(els.slider.value)));
   els.prev.addEventListener("click", () => userShow(index - 1));
@@ -271,7 +319,7 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     renderScheduled = true;
     requestAnimationFrame(() => {
       renderScheduled = false;
-      if (follow) show(steps.length - 1);
+      if (follow) show(positionCount() - 1);
       else show(index); // keep position, but refresh slider max/counter
     });
   }
@@ -280,14 +328,18 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     appendRecord(r) {
       if (r.kind === "step") {
         steps.push(r);
+        trackGroup(steps.length - 1);
         scheduleShowLatest();
       }
     },
-    reset() { steps = []; index = 0; follow = true; show(0); },
+    reset() { steps = []; groups = []; index = 0; follow = true; show(0); },
+    // Position-space API (positions = executed lines in line-step mode,
+    // raw engine steps otherwise).
     goTo: (i) => userShow(i),
-    stepCount: () => steps.length,
+    stepCount: () => positionCount(),
     stepIndex: () => index,
-    steps: () => steps,
+    steps: () => steps, // raw engine step records, always
     isFollowing: () => follow,
+    lineMode,
   };
 }

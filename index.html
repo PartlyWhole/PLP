@@ -49,6 +49,9 @@
         <input type="range" data-role="step-slider" min="0" max="0" value="0">
         <button data-role="step-next" type="button">▶</button>
         <span class="hint" data-role="step-counter">no steps</span>
+        <label class="hint" title="Line steps: one position per executed source line, showing the state it produced. Engine steps: every raw trace event (calls, returns, per-iteration line events), state as-of before the event's line runs.">
+          <input type="checkbox" data-role="step-mode" checked> line steps
+        </label>
       </div>
       <div class="hint" data-role="step-event"></div>
       <div data-role="step-flags"></div>

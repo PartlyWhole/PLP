@@ -33,6 +33,30 @@ npx playwright test        # add PW_ALL_BROWSERS=1 for firefox+webkit
 
 Tests drive the app through the `window.plp` debug API.
 
+## Stepping model
+
+The scrubber has two granularities (toggle in the memory pane; **line steps**
+is the default):
+
+- **Line steps** — one position per *executed source line*: consecutive
+  engine steps on the same (module, function, line) collapse into one
+  position (a 3-iteration comprehension is one position, labeled with its
+  collapsed engine-step count). The highlighted line and the displayed
+  memory agree causally: position "line N" highlights line N and shows the
+  state that line **produced** (technically: the next group's boundary
+  snapshot; the final position shows the last snapshot). This avoids the
+  raw stream's learner-hostile artifacts — duplicate-looking start steps,
+  and the off-by-one where line N is highlighted while the memory still
+  shows the state from *before* it ran.
+- **Engine steps** — every raw trace event (`call`/`line`/`return`/`yield`/
+  `exception`/…), with the engine's own semantics: a snapshot is taken
+  *before* the event's line executes. Useful for seeing calls/returns and
+  per-iteration evaluation explicitly.
+
+Both modes scrub the same in-memory record array; `window.plp.memory.goTo()`
+and `stepCount()` operate in the current mode's position space, while
+`steps()` always returns raw engine steps.
+
 ## Memory model display rules
 
 The engine (PyTrace) reports every reachable object per step, bounded by
