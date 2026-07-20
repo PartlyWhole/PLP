@@ -5,6 +5,7 @@
 // the DOM is the feature (effects, gates).
 
 import { test, expect } from "@playwright/test";
+import referenceLesson from "../lessons/meet-the-machine.mjs";
 
 const SITE = "/PLP/";
 
@@ -19,6 +20,19 @@ async function run(page, source) {
   return page.evaluate(() => window.plp.run());
 }
 
+test.describe("D0 — dormant learner surface", () => {
+  test("the app exposes no Lesson control and loads no lesson data", async ({ page }) => {
+    await boot(page);
+    await expect(page.locator("#btn-lesson")).toHaveCount(0);
+    expect(await page.evaluate(() => ({
+      registryExposed: "lessons" in window.plp,
+      lessonResources: performance.getEntriesByType("resource")
+        .map((entry) => entry.name)
+        .filter((name) => name.includes("/lessons/")),
+    }))).toEqual({ registryExposed: false, lessonResources: [] });
+  });
+});
+
 test.describe("D1 — event bus", () => {
   test("scripted session emits the expected semantic events in order", async ({ page }) => {
     await boot(page);
@@ -27,7 +41,7 @@ test.describe("D1 — event bus", () => {
     expect(summary.terminal_reason).toBe("completed");
     await page.evaluate(() => window.plp.memory.goTo(1)); // user scrub
     await page.evaluate(() => { // hover a name cell
-      const td = [...document.querySelectorAll("td.name")].find((c) => c.textContent.trim() === "a");
+      const td = [...document.querySelectorAll(".mm-name-box.name")].find((c) => c.textContent.trim() === "a");
       td.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     });
     const types = await page.evaluate(() => window.plp.events.log().map((e) => e.type));
@@ -41,6 +55,7 @@ test.describe("D1 — event bus", () => {
     expect(runEnded.reason).toBe("completed");
     const hover = await page.evaluate(() => window.plp.events.log().find((e) => e.type === "hover-name"));
     expect(hover.name).toBe("a");
+    expect(hover.active).toBe(true);
   });
 
   test("edited fires on user-origin editor changes only", async ({ page }) => {
@@ -59,26 +74,40 @@ test.describe("D1 — event bus", () => {
 test.describe("D2 — lesson lint", () => {
   test("reference lesson lints clean; malformed lessons fail loudly", async ({ page }) => {
     await boot(page);
-    const clean = await page.evaluate(() => window.plp.lintLesson(window.plp.lessons[0]));
+    const clean = await page.evaluate((lesson) => window.plp.lintLesson(lesson), referenceLesson);
     expect(clean).toEqual([]);
 
     const errors = await page.evaluate(() => window.plp.lintLesson({
       id: "bad",
       beats: [
-        { id: "a", do: [{ spotlight: "nonsense-target" }, { frobnicate: true }], until: { idleMs: 100 } },
-        { id: "a", until: { event: "not-an-event" } }, // dup id + bad event
+        { id: "a", do: [
+          { spotlight: "nonsense-target" },
+          { say: { at: "run", avoid: "editor" } },
+          { cue: { at: "run", motion: "teleport" } },
+          { frobnicate: true },
+        ], until: { idleMs: 100 } },
+        { id: "a", until: { event: "not-an-event", dwellMs: -1 } }, // dup id + bad event/dwell
         { id: "c", until: { check: "noSuchCheck" }, next: "ghost",
-          hints: [{ when: { signal: "nope", gte: 1 }, popover: {} }] },
+          hints: [
+            { when: { signal: "nope", gte: 1 }, popover: {} },
+            { when: { event: "hover-name", dwellMs: 100 }, popover: { at: "run", md: "wait" } },
+          ] },
         { id: "d" }, // non-final beat without until
         { id: "e" },
       ],
     }));
     const text = errors.join("\n");
     expect(text).toContain("invalid target");
+    expect(text).toContain("say.md required");
+    expect(text).toContain("avoid must be an array");
+    expect(text).toContain("unknown motion");
     expect(text).toContain("unknown action");
     expect(text).toContain("idleMs is hint-only");
     expect(text).toContain("duplicate beat id");
     expect(text).toContain('non-learner event "not-an-event"');
+    expect(text).toContain('dwellMs requires event "hover-name"');
+    expect(text).toContain("dwellMs must be positive");
+    expect(text).toContain("dwellMs is until-only");
     expect(text).toContain('unknown condition "noSuchCheck"');
     expect(text).toContain('unknown beat "ghost"');
     expect(text).toContain("unknown signal");
@@ -146,6 +175,13 @@ test.describe("D4 — stage targets and effects", () => {
     // pulse
     await page.evaluate(() => window.plp.stage.pulse("console"));
     await expect(page.locator("#console-pane")).toHaveClass(/stage-pulse/);
+    // cue grammar supports distinct, restartable attention motions
+    await page.evaluate(() => {
+      window.plp.stage.cue("run", { motion: "bounce" });
+      window.plp.stage.cue("console", { motion: "wiggle" });
+    });
+    await expect(page.locator("#btn-run")).toHaveClass(/stage-cue-bounce/);
+    await expect(page.locator("#console-pane")).toHaveClass(/stage-cue-wiggle/);
     // popover with rich text, dismiss via Esc
     await page.evaluate(() => window.plp.stage.popover("run", "Press **Run** and `watch`", { sticky: false }));
     await expect(page.locator(".stage-popover")).toContainText("Press Run and watch");
@@ -170,7 +206,8 @@ test.describe("D4 — stage targets and effects", () => {
       veils: document.querySelectorAll(".stage-veiled").length,
       backdrop: document.querySelectorAll(".stage-backdrop").length,
       popovers: document.querySelectorAll(".stage-popover").length,
-    }))).toEqual({ spots: 0, veils: 0, backdrop: 0, popovers: 0 });
+      cues: document.querySelectorAll(".stage-cue").length,
+    }))).toEqual({ spots: 0, veils: 0, backdrop: 0, popovers: 0, cues: 0 });
     expect(await page.evaluate(() => window.plp.stage.resolveTarget("bogus"))).toBe(null);
   });
 
@@ -179,13 +216,125 @@ test.describe("D4 — stage targets and effects", () => {
     await run(page, "total = 0\nfor n in [1, 2, 3]:\n    total = total + n\n");
     // target a Names cell by semantic spec
     await page.evaluate(() => window.plp.stage.spotlight({ name: "total", scope: "global" }, { dim: false }));
-    await expect(page.locator("td.name.stage-spot")).toHaveText("total");
+    await expect(page.locator(".mm-name-box.name.stage-spot")).toHaveText("total");
     // scrubbing re-renders the table (cells recreated) — effect re-anchors
     await page.evaluate(() => window.plp.memory.goTo(1));
-    await expect(page.locator("td.name.stage-spot")).toHaveText("total");
+    await expect(page.locator(".mm-name-box.name.stage-spot")).toHaveText("total");
     // veil re-applies across re-renders too
     await page.evaluate(() => { window.plp.stage.veil("memory-objects"); window.plp.memory.goTo(2); });
     await expect(page.locator("[data-role=objects-table]")).toBeHidden();
+    await page.evaluate(() => window.plp.stage.reset());
+  });
+
+  test("tutor say types rich text over glass, supports reveal/why, and dismisses", async ({ page }) => {
+    await boot(page);
+    const started = await page.evaluate(() => {
+      window.plp.stage.say(
+        "run",
+        "Try **Run** and watch `x`.",
+        {
+          sticky: false,
+          typingSpeedMs: 55,
+          avoid: ["editor", "memory"],
+          onWhy: () => "Running produces the trace.",
+        },
+      );
+      const body = document.querySelector(".stage-popover-body");
+      return { text: body.textContent, busy: body.getAttribute("aria-busy"), label: body.getAttribute("aria-label") };
+    });
+    expect(started).toEqual({ text: "", busy: "true", label: "Try Run and watch x." });
+    const speech = page.locator(".stage-popover.teacher");
+    await expect(speech).toBeVisible();
+    await expect(speech).toHaveAttribute("role", "note");
+    await expect.poll(() => speech.locator(".stage-popover-body").textContent())
+      .toMatch(/^Try(?! Run and watch x\.$)/);
+    await speech.locator(".stage-popover-body").dispatchEvent("click");
+    await expect(speech.locator(".stage-popover-body")).toContainText("Try Run and watch x.");
+    await expect(speech.locator(".stage-popover-body")).toHaveAttribute("aria-busy", "false");
+    await expect(speech.locator("b")).toHaveText("Run");
+    await expect(speech.locator("code")).toHaveText("x");
+    await expect.poll(() => page.evaluate(() => {
+      const art = document.querySelector(".stage-teacher-art");
+      const bubble = document.querySelector(".stage-popover.teacher");
+      const editor = document.querySelector("#editor-pane").getBoundingClientRect();
+      const memory = document.querySelector("#memory-pane").getBoundingClientRect();
+      const speech = bubble?.getBoundingClientRect();
+      const overlap = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
+        * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+      return {
+        loaded: art?.complete && art.naturalWidth > 0,
+        projectAsset: art?.src.includes("/PLP/assets/director-tutor.png"),
+        positioned: bubble?.style.top.endsWith("px") && bubble?.style.left.endsWith("px"),
+        protectedAreasClear: speech ? overlap(speech, editor) === 0 && overlap(speech, memory) === 0 : false,
+        insideViewport: speech ? speech.left >= 0 && speech.top >= 0
+          && speech.right <= innerWidth && speech.bottom <= innerHeight : false,
+        placementNamed: Boolean(bubble?.dataset.placement),
+        glass: getComputedStyle(bubble, "::before").backgroundColor.includes("0.68"),
+        blurred: (getComputedStyle(bubble, "::before").backdropFilter
+          || getComputedStyle(bubble, "::before").webkitBackdropFilter).includes("blur"),
+      };
+    })).toEqual({
+      loaded: true,
+      projectAsset: true,
+      positioned: true,
+      protectedAreasClear: true,
+      insideViewport: true,
+      placementNamed: true,
+      glass: true,
+      blurred: true,
+    });
+    await page.click(".stage-popover-actions button:has-text('why?')");
+    await expect(speech.locator(".stage-popover-body")).toHaveAttribute("aria-busy", "true");
+    await speech.locator(".stage-popover-body").dispatchEvent("click");
+    await expect(speech).toContainText("Running produces the trace.");
+    await page.keyboard.press("Escape");
+    await expect(speech).toHaveCount(0);
+
+    // Motion preferences make both speech and cues immediate/still.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    const reduced = await page.evaluate(() => {
+      window.plp.stage.say("run", "The **whole message** appears now.", { sticky: false });
+      window.plp.stage.cue("run", { motion: "bounce" });
+      const body = document.querySelector(".stage-popover-body");
+      return {
+        text: body.textContent,
+        busy: body.getAttribute("aria-busy"),
+        cueAnimation: getComputedStyle(document.querySelector("#btn-run")).animationName,
+      };
+    });
+    expect(reduced).toEqual({ text: "The whole message appears now.", busy: null, cueAnimation: "none" });
+    await page.evaluate(() => window.plp.stage.reset());
+  });
+
+  test("tutor placement automatically avoids the pane that owns its target", async ({ page }) => {
+    await boot(page);
+    const placements = await page.evaluate(() => {
+      const cases = [
+        { target: "run", pane: "#editor-pane" },
+        { target: "memory", pane: "#memory-pane" },
+        { target: "console", pane: "#console-pane" },
+      ];
+      const overlap = (a, b) => Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left))
+        * Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+      return cases.map(({ target, pane }) => {
+        window.plp.stage.say(target, "Placement check", { typing: false, sticky: false });
+        const bubble = document.querySelector(".stage-popover.teacher");
+        const speech = bubble.getBoundingClientRect();
+        const protectedPane = document.querySelector(pane).getBoundingClientRect();
+        return {
+          target,
+          overlap: overlap(speech, protectedPane),
+          insideViewport: speech.left >= 0 && speech.top >= 0
+            && speech.right <= innerWidth && speech.bottom <= innerHeight,
+          named: Boolean(bubble.dataset.placement),
+        };
+      });
+    });
+    expect(placements).toEqual([
+      { target: "run", overlap: 0, insideViewport: true, named: true },
+      { target: "memory", overlap: 0, insideViewport: true, named: true },
+      { target: "console", overlap: 0, insideViewport: true, named: true },
+    ]);
     await page.evaluate(() => window.plp.stage.reset());
   });
 });
@@ -278,7 +427,7 @@ test.describe("D6 — director runtime grammar (synthetic lessons)", () => {
     // branched to detour, not end
     expect(await page.evaluate(() => window.plp.director.state().beat)).toBe("detour");
     await page.evaluate(() => {
-      const td = [...document.querySelectorAll("td.name")].find((c) => c.textContent.trim() === "x");
+      const td = [...document.querySelectorAll(".mm-name-box.name")].find((c) => c.textContent.trim() === "x");
       td.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     });
     expect(await page.evaluate(() => window.plp.director.state().beat)).toBe("end");
@@ -287,6 +436,42 @@ test.describe("D6 — director runtime grammar (synthetic lessons)", () => {
     expect(await page.evaluate(() => window.plp.director.isActive())).toBe(false);
     await expect(page.locator("#btn-quiz")).toBeEnabled();
     expect(await page.evaluate(() => window.plp.director.progress()["synthetic-1"]?.done)).toBe(true);
+  });
+
+  test("hover dwell waits for a continuous hover and cancels on leave", async ({ page }) => {
+    await boot(page);
+    await run(page, "y = 3\nprint(\"y is\", y)\n");
+    await expect(page.locator(".mm-name-box.name", { hasText: /^y$/ })).toHaveCount(1);
+    await page.evaluate(() => window.plp.director.start({
+      id: "synthetic-hover-dwell",
+      beats: [
+        { id: "hover", until: { event: "hover-name", name: "y", dwellMs: 300 } },
+        { id: "done" },
+      ],
+    }));
+    const beat = () => page.evaluate(() => window.plp.director.state()?.beat);
+    const hoverY = () => page.evaluate(() => {
+      const td = [...document.querySelectorAll(".mm-name-box.name")].find((c) => c.textContent.trim() === "y");
+      td.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    });
+    await hoverY();
+    await page.waitForTimeout(100);
+    await page.evaluate(() => {
+      const td = [...document.querySelectorAll(".mm-name-box.name")].find((c) => c.textContent.trim() === "y");
+      td.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: document.body }));
+    });
+    await page.waitForTimeout(300);
+    expect(await beat()).toBe("hover");
+
+    await hoverY();
+    await page.waitForTimeout(150);
+    expect(await beat()).toBe("hover");
+    await expect.poll(beat, { timeout: 1500 }).toBe("done");
+    const phases = await page.evaluate(() => window.plp.events.log()
+      .filter((e) => e.type === "hover-name" && e.name === "y")
+      .map((e) => e.active));
+    expect(phases).toEqual([true, false, true]);
+    await page.evaluate(() => window.plp.director.exit("test"));
   });
 
   test("hints: idle (once), event-pattern, signal-threshold; why-on-demand; strip; exit restores", async ({ page }) => {
@@ -303,7 +488,7 @@ test.describe("D6 — director runtime grammar (synthetic lessons)", () => {
           why: "because reasons",
           until: { event: "run-ended", reason: "completed" },
           hints: [
-            { when: { idleMs: 500 }, popover: { at: "run", md: "idle hint" } },
+            { when: { idleMs: 500 }, say: { at: "run", md: "idle hint" } },
             { when: { event: "run-ended", reason: "uncaught_exception" },
               popover: { at: "console", md: "crash hint" }, once: false },
           ] },
@@ -322,6 +507,7 @@ test.describe("D6 — director runtime grammar (synthetic lessons)", () => {
     await expect.poll(() => page.evaluate(() =>
       document.querySelector(".stage-popover")?.textContent ?? ""), { timeout: 5000 })
       .toContain("idle hint");
+    await expect(page.locator(".stage-popover.teacher.hint")).toBeVisible();
     expect(await page.evaluate(() => window.plp.director.state().signals.hintsShown)).toBe(1);
     // event-pattern hint on crash (and once:false means it can repeat)
     await run(page, "boom = 1 // 0\n");
@@ -370,23 +556,37 @@ test.describe("D6 — director runtime grammar (synthetic lessons)", () => {
 test.describe("D7 — reference lesson end-to-end", () => {
   test("a learner can walk meet-the-machine start to finish", async ({ page }) => {
     await boot(page);
-    await page.click("#btn-lesson");
+    await expect(page.locator("#btn-lesson")).toHaveCount(0);
+    await page.evaluate((lesson) => window.plp.director.start(lesson), referenceLesson);
     const beat = () => page.evaluate(() => window.plp.director.state()?.beat ?? "(none)");
 
     // Beat 1: everything but Run is gated; objects table veiled
     expect(await beat()).toBe("press-run");
+    await expect(page.locator(".stage-popover.teacher")).toBeVisible();
+    expect(await page.evaluate(() => {
+      const speech = document.querySelector(".stage-popover.teacher").getBoundingClientRect();
+      const overlap = (selector) => {
+        const r = document.querySelector(selector).getBoundingClientRect();
+        return Math.max(0, Math.min(speech.right, r.right) - Math.max(speech.left, r.left))
+          * Math.max(0, Math.min(speech.bottom, r.bottom) - Math.max(speech.top, r.top));
+      };
+      return { editor: overlap("#editor-pane"), memory: overlap("#memory-pane") };
+    })).toEqual({ editor: 0, memory: 0 });
     await expect(page.locator("[data-role=objects-table]")).toBeHidden();
     expect(await page.evaluate(() => window.plp.editor.isReadOnly())).toBe(true);
     await expect(page.locator("#btn-quiz")).toBeDisabled();
     await page.click("#btn-run");
     await expect.poll(beat, { timeout: 180_000 }).toBe("read-names");
+    await expect(page.locator(".mm-name-box.name", { hasText: /^y$/ })).toHaveCount(1);
 
     // Beat 2: hover y (objects stays veiled only during beat 1 — cleared now)
     await page.evaluate(() => {
-      const td = [...document.querySelectorAll("td.name")].find((c) => c.textContent.trim() === "y");
+      const td = [...document.querySelectorAll(".mm-name-box.name")].find((c) => c.textContent.trim() === "y");
       td.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     });
-    await expect.poll(beat).toBe("scrub-time");
+    await page.waitForTimeout(400);
+    expect(await beat()).toBe("read-names");
+    await expect.poll(beat, { timeout: 2500 }).toBe("scrub-time");
 
     // Beat 3: scrub unlocked now; scrub anywhere (predicate ranLine 2 holds)
     await expect(page.locator("[data-role=step-slider]")).toBeEnabled();
@@ -427,7 +627,7 @@ test.describe("D7 — reference lesson end-to-end", () => {
   test("branch path: three wrong quiz answers detour to review", async ({ page }) => {
     await boot(page);
     // jump straight to the mastery beat by starting the lesson and skipping
-    await page.click("#btn-lesson");
+    await page.evaluate((lesson) => window.plp.director.start(lesson), referenceLesson);
     for (const target of ["read-names", "scrub-time", "answer-input", "rerun"]) {
       await page.evaluate(() => window.plp.director.skip());
       expect(await page.evaluate(() => window.plp.director.state().beat)).toBe(target);

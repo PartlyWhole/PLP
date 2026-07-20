@@ -9,10 +9,10 @@
 // tears down to free play; stage.reset() runs on every exit path.
 
 import { events } from "./events.mjs";
-import { isValidTargetSpec } from "./stage.mjs";
+import { CUE_MOTIONS, isValidTargetSpec } from "./stage.mjs";
 import { isValidCheck, evaluateCheck } from "./conditions.mjs";
 
-const ACTION_KEYS = new Set(["set", "gate", "veil", "unveil", "spotlight", "pulse", "popover", "quiz", "clear"]);
+const ACTION_KEYS = new Set(["set", "gate", "veil", "unveil", "spotlight", "cue", "pulse", "popover", "say", "quiz", "clear"]);
 const LEARNER_EVENTS = new Set([
   "run-started", "run-ended", "run-rejected", "input-answered", "interrupt-requested",
   "edited", "scrubbed", "hover-name", "chip-clicked", "mode-changed",
@@ -36,12 +36,22 @@ export function lintLesson(lesson) {
   const checkTargetish = (spec, where) => {
     if (!isValidTargetSpec(spec)) err(`${where}: invalid target ${JSON.stringify(spec)}`);
   };
-  const checkTrigger = (spec, where, allowIdle) => {
+  const checkAvoid = (specs, where) => {
+    if (specs === undefined) return;
+    if (!Array.isArray(specs)) { err(`${where}: avoid must be an array`); return; }
+    specs.forEach((spec, i) => checkTargetish(spec, `${where}[${i}]`));
+  };
+  const checkTrigger = (spec, where, allowIdle, allowDwell = false) => {
     if (!spec || typeof spec !== "object") { err(`${where}: trigger must be an object`); return; }
-    if (spec.all) { spec.all.forEach((s, i) => checkTrigger(s, `${where}.all[${i}]`, allowIdle)); return; }
-    if (spec.any) { spec.any.forEach((s, i) => checkTrigger(s, `${where}.any[${i}]`, allowIdle)); return; }
+    if (spec.all) { spec.all.forEach((s, i) => checkTrigger(s, `${where}.all[${i}]`, allowIdle, allowDwell)); return; }
+    if (spec.any) { spec.any.forEach((s, i) => checkTrigger(s, `${where}.any[${i}]`, allowIdle, allowDwell)); return; }
     if (spec.event !== undefined) {
       if (!LEARNER_EVENTS.has(spec.event)) err(`${where}: unknown/non-learner event "${spec.event}"`);
+      if (spec.dwellMs !== undefined) {
+        if (!allowDwell) err(`${where}: dwellMs is until-only`);
+        if (spec.event !== "hover-name") err(`${where}: dwellMs requires event "hover-name"`);
+        if (!Number.isFinite(spec.dwellMs) || spec.dwellMs <= 0) err(`${where}: dwellMs must be positive`);
+      }
       return;
     }
     if (spec.check !== undefined) {
@@ -66,17 +76,39 @@ export function lintLesson(lesson) {
       if (!keys.some((k) => ACTION_KEYS.has(k))) err(`${w}: unknown action ${JSON.stringify(a)}`);
       if (a.spotlight) checkTargetish(a.spotlight, `${w}.spotlight`);
       if (a.pulse) checkTargetish(a.pulse, `${w}.pulse`);
+      if (a.cue) {
+        checkTargetish(a.cue.at, `${w}.cue.at`);
+        if (a.cue.motion !== undefined && !CUE_MOTIONS.includes(a.cue.motion)) {
+          err(`${w}.cue.motion: unknown motion ${JSON.stringify(a.cue.motion)}`);
+        }
+      }
       if (a.veil) checkTargetish(a.veil, `${w}.veil`);
       if (a.unveil) checkTargetish(a.unveil, `${w}.unveil`);
-      if (a.popover) checkTargetish(a.popover.at, `${w}.popover.at`);
+      if (a.popover) {
+        checkTargetish(a.popover.at, `${w}.popover.at`);
+        checkAvoid(a.popover.avoid, `${w}.popover.avoid`);
+      }
+      if (a.say) {
+        checkTargetish(a.say.at, `${w}.say.at`);
+        checkAvoid(a.say.avoid, `${w}.say.avoid`);
+        if (!a.say.md) err(`${w}.say.md required`);
+      }
       if (a.set && a.set !== "code") err(`${w}: unknown set "${a.set}"`);
     }
-    if (b.until) checkTrigger(b.until, `${w}.until`, false);
+    if (b.until) checkTrigger(b.until, `${w}.until`, false, true);
     else if (bi < lesson.beats.length - 1) err(`${w}: only the final beat may omit "until"`);
     for (const [hi, h] of (b.hints ?? []).entries()) {
       checkTrigger(h.when, `${w}.hints[${hi}].when`, true);
-      if (!h.popover?.md) err(`${w}.hints[${hi}]: popover.md required`);
-      if (h.popover) checkTargetish(h.popover.at, `${w}.hints[${hi}].popover.at`);
+      if (!h.say && !h.popover?.md) err(`${w}.hints[${hi}]: popover.md required`);
+      if (h.say && !h.say.md) err(`${w}.hints[${hi}]: say.md required`);
+      if (h.popover) {
+        checkTargetish(h.popover.at, `${w}.hints[${hi}].popover.at`);
+        checkAvoid(h.popover.avoid, `${w}.hints[${hi}].popover.avoid`);
+      }
+      if (h.say) {
+        checkTargetish(h.say.at, `${w}.hints[${hi}].say.at`);
+        checkAvoid(h.say.avoid, `${w}.hints[${hi}].say.avoid`);
+      }
     }
     const nexts = Array.isArray(b.next) ? b.next : b.next ? [b.next] : [];
     for (const n of nexts) {
@@ -102,6 +134,7 @@ export function createDirector({ stage, app, timers = {} }) {
   let beatEnteredAt = 0;
   let matched = null; // Set of event-pattern leaves matched during this beat
   let hintState = null; // per-hint { shown, timerId }
+  const dwellTimers = new Map(); // trigger leaf -> timerId
   let unsub = null;
   let advancing = false;
   const telemetry = loadStore().telemetry ?? [];
@@ -145,7 +178,7 @@ export function createDirector({ stage, app, timers = {} }) {
   function matchEvent(pattern, e) {
     if (!e || pattern.event !== e.type) return false;
     for (const [k, v] of Object.entries(pattern)) {
-      if (k === "event") continue;
+      if (k === "event" || k === "dwellMs") continue;
       if (e[k] !== v) return false;
     }
     return true;
@@ -162,12 +195,40 @@ export function createDirector({ stage, app, timers = {} }) {
     if (spec.all) return spec.all.every((s) => satisfied(s, e));
     if (spec.any) return spec.any.some((s) => satisfied(s, e));
     if (spec.event !== undefined) {
+      if (spec.dwellMs !== undefined) return matched.has(spec);
       if (matchEvent(spec, e)) { matched.add(spec); return true; }
       return matched.has(spec);
     }
     if (spec.check !== undefined) return evaluateCheck(spec, app);
     if (spec.signal !== undefined) return signalSatisfied(spec);
     return false;
+  }
+
+  function updateDwellTriggers(spec, e) {
+    if (!spec) return;
+    if (spec.all) { spec.all.forEach((s) => updateDwellTriggers(s, e)); return; }
+    if (spec.any) { spec.any.forEach((s) => updateDwellTriggers(s, e)); return; }
+    if (spec.event !== "hover-name" || spec.dwellMs === undefined || !matchEvent(spec, e)) return;
+    const existing = dwellTimers.get(spec);
+    if (e.active === false) {
+      if (existing) T.clear(existing);
+      dwellTimers.delete(spec);
+      return;
+    }
+    if (existing || matched.has(spec)) return;
+    const scheduledBeat = beat;
+    const timerId = T.set(() => {
+      dwellTimers.delete(spec);
+      if (!lesson || beat !== scheduledBeat) return;
+      matched.add(spec);
+      try {
+        if (beat.until && satisfied(beat.until, null)) advance("trigger");
+      } catch (err) {
+        console.error("director: dwell trigger evaluation failed:", err);
+        exit("error");
+      }
+    }, spec.dwellMs);
+    dwellTimers.set(spec, timerId);
   }
 
   // ---- hints (P4: responses to behavior, never a schedule) -----------------
@@ -191,7 +252,8 @@ export function createDirector({ stage, app, timers = {} }) {
     if (h.once !== false && st.shown) return;
     st.shown += 1;
     signals.hintsShown += 1;
-    stage.popover(h.popover.at ?? "memory", h.popover.md, { kind: "hint" });
+    if (h.say) stage.say(h.say.at ?? "memory", h.say.md, { kind: "hint", avoid: h.say.avoid ?? [] });
+    else stage.popover(h.popover.at ?? "memory", h.popover.md, { kind: "hint", avoid: h.popover.avoid ?? [] });
     events.emit("lesson-hint", { lesson: lesson.id, beat: beat.id, hint: i });
   }
 
@@ -214,11 +276,21 @@ export function createDirector({ stage, app, timers = {} }) {
     if (a.veil) { stage.veil(a.veil); return; }
     if (a.unveil) { stage.unveil(a.unveil); return; }
     if (a.spotlight) { stage.spotlight(a.spotlight, { dim: a.dim ?? true }); return; }
+    if (a.cue) { stage.cue(a.cue.at, { motion: a.cue.motion ?? "pulse" }); return; }
     if (a.pulse) { stage.pulse(a.pulse); return; }
     if (a.popover) {
       stage.popover(a.popover.at, a.popover.md, {
         sticky: a.popover.sticky ?? true,
         onWhy: beat.why ? () => beat.why : null,
+        avoid: a.popover.avoid ?? [],
+      });
+      return;
+    }
+    if (a.say) {
+      stage.say(a.say.at, a.say.md, {
+        sticky: a.say.sticky ?? true,
+        onWhy: beat.why ? () => beat.why : null,
+        avoid: a.say.avoid ?? [],
       });
       return;
     }
@@ -271,6 +343,7 @@ export function createDirector({ stage, app, timers = {} }) {
     try {
       recordTelemetry(how);
       clearHintTimers();
+      clearDwellTimers();
       const nextId = resolveNext();
       if (nextId === null) { complete(); return; }
       const idx = lesson.beats.findIndex((b) => b.id === nextId);
@@ -285,6 +358,11 @@ export function createDirector({ stage, app, timers = {} }) {
     for (const st of hintState ?? []) if (st.timerId) T.clear(st.timerId);
   }
 
+  function clearDwellTimers() {
+    for (const timerId of dwellTimers.values()) T.clear(timerId);
+    dwellTimers.clear();
+  }
+
   function onEvent(e) {
     if (!lesson || !beat || !LEARNER_EVENTS.has(e.type)) return;
     if (e.type === "run-ended") signals.attempts += 1;
@@ -292,6 +370,7 @@ export function createDirector({ stage, app, timers = {} }) {
     resetIdleTimers();
     checkEventHints(e);
     try {
+      updateDwellTriggers(beat.until, e);
       if (beat.until && satisfied(beat.until, e)) advance("trigger");
     } catch (err) {
       console.error("director: trigger evaluation failed:", err);
@@ -328,6 +407,7 @@ export function createDirector({ stage, app, timers = {} }) {
 
   function teardown() {
     clearHintTimers();
+    clearDwellTimers();
     unsub?.();
     unsub = null;
     lesson = null;

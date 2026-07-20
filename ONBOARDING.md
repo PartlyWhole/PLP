@@ -48,7 +48,7 @@ node tools/dev-server.mjs        # → http://127.0.0.1:8619/PLP/
    (xterm.js): try re-running and pressing **Ctrl+C** mid-wait.
 4. **Scrub time.** Drag the slider in the memory pane fully left, then
    step forward with ▶ one line at a time. Watch three things move
-   together: the highlighted line, the Names/Objects tables, the console.
+   together: the highlighted line, the binding canvas, the console.
 5. **Meet the debug API.** Open the browser devtools console and type:
    ```js
    plp.records().length          // raw trace records of the last run
@@ -59,11 +59,9 @@ node tools/dev-server.mjs        # → http://127.0.0.1:8619/PLP/
    `window.plp` is not a debugging afterthought — **it is the app's
    contract surface**. Every Playwright test asserts through it, and so
    will you.
-6. **Walk the lesson.** Click **Lesson** in the editor pane header and do
-   what it says. You are experiencing `app/director.mjs` — the same
-   machinery you may soon author lessons for. Notice what it does *not*
-   do: no modals, nothing runs without your action, skip/exit always
-   present.
+6. **Inspect the dormant Director prototype.** The learner-facing Lesson
+   control is deprecated during the core UI redesign. Run the D-series tests
+   to exercise `app/director.mjs` and its preserved reference lesson.
 7. **Run the tests.**
    ```sh
    npx playwright test           # ~2 min, all series
@@ -258,12 +256,12 @@ terminal. The fix moved the echo to the single choke point both paths
 share, and made typed characters an erasable *preview*. Rule generalized:
 when something must happen exactly once, give it exactly one owner.
 
-**5. Every ref chip resolves to a rendered row — under every filter
-combination** ([app/MEMORY.md](app/MEMORY.md)). The display filters
-(chip-reachable-only, inline bases/functions/modules, hidden bindings)
-each carve the Objects table down; the invariant that keeps them honest
-is closure under reachability *from visible names*. There's a DOM sweep
-test asserting zero dangling chips. When you add a filter, that sweep is
+**5. Every object target resolves to exactly one object pill under every
+filter combination** ([app/MEMORY.md](app/MEMORY.md)). The display filters
+(name-reachable-only, inline bases/functions/modules, hidden bindings)
+each carve the Data In Memory list down; the invariant that keeps them honest
+is closure under reachability *from visible names*. There is a DOM sweep
+test asserting zero dangling targets. When you add a filter, that sweep is
 your safety net.
 
 **6. Uids are per-step, per-run.** The engine's identity encoding
@@ -342,16 +340,18 @@ explain why `text()` ≠ `buffer()` in general.
 
 ### 4.3 Memory model ([app/memory.mjs](app/memory.mjs) · [app/MEMORY.md](app/MEMORY.md))
 
-Owns both tables, the **display-filter pipeline** (six toggleable
-constituents — read the doc's rationale table), **line-step scrubbing**
+Owns the visual binding canvas, contextual reference paths, object ordering,
+the **display-filter pipeline** (six toggleable constituents; read the doc's
+rationale table), **line-step scrubbing**
 (synthetic position 0; each position shows the state its line *produced*;
-engine-step mode preserves raw semantics), scope-aware hover
-highlighting, and the trace-derived scope info that powers it.
+engine-step mode preserves raw semantics), scope-aware textual hover
+highlighting (including strings/comments), active hover phases, and the
+trace-derived scope info that powers it.
 
 *Exercises*: toggle every filter from devtools and predict each change
 before `refresh()`; run the `[[0,0]]*3` aliasing program and narrate the
-Objects table; add a throwaway seventh filter locally (hide `None`
-bindings, say), then delete it — you now know the pipeline.
+repeated ids and object pills; add a throwaway seventh filter locally (hide
+`None` bindings, say), then delete it. You now know the pipeline.
 
 ### 4.4 Questions & quiz ([app/questions.mjs](app/questions.mjs) · [app/QUESTIONS.md](app/QUESTIONS.md) · [app/quiz.mjs](app/quiz.mjs))
 
@@ -490,11 +490,11 @@ showing the state it produced, with a synthetic "before the program
 runs" anchor. *Principle*: *don't average two mental models; build each
 one honestly and let the user switch.*
 
-**Case 3 — Display policy as filters.** *Problem*: the Objects table
-drowned learners (builtin `object` base, function/module rows). *Options*:
+**Case 3 — Display policy as filters.** *Problem*: the raw heap view
+drowned learners (builtin `object` base, function/module objects). *Options*:
 hardcode a curated view; hide things ad hoc. *Decision*: a pipeline of
 individually toggleable filters over untouched records, with one
-invariant (chips always resolve) enforced across all combinations, and
+invariant (object targets always resolve) enforced across all combinations, and
 truth markers (`opaque`/`elided`) dimmed but never hidden. *Principle*:
 *opinionated defaults, inspectable mechanism, reversible in code — and
 never let simplification become dishonesty.*
@@ -608,12 +608,12 @@ plans set.
 | step | a complete per-line snapshot (stack, bindings, heap, output deltas) |
 | position | line-step mode's unit: one executed source line (+ synthetic position 0); ≠ raw step index |
 | uid | per-step heap identity; never compare across steps/runs |
-| chip | the `obj N` reference link in the memory tables |
+| data id | the clickable data<sub>N</sub> identity handle in the memory canvas |
 | chunk store | the console's authoritative output log; the xterm screen is its projection |
 | echo | the transcript copy of an accepted input line (exactly once, via `runner.provideInput`) |
 | beat | one unit of a lesson: arrange (`do`) → learner acts (`until`) → advance |
 | gate | a capability the stage can deny (run/edit/scrub/…); fails open |
-| veil / spotlight / popover / pulse | the stage's attention effects (per-beat) |
+| veil / spotlight / say / popover / cue / pulse | the stage's per-beat attention effects; `say` types through the illustrated tutor, and `cue` selects pulse/bounce/wiggle motion |
 | signal | per-beat fluency counter (`attempts`, `quizTries`, `hintsShown`, `elapsedMs`) |
 | driver / follower | collab roles per run: who executes vs who replays |
 | degraded mode | non-isolated posture: pre-supplied stdin, hard-kill interrupt |

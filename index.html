@@ -17,12 +17,17 @@
 <link rel="stylesheet" href="vendor/codemirror/codemirror.css">
 <link rel="stylesheet" href="vendor/xterm/xterm.css">
 <link rel="stylesheet" href="app/style.css">
+<link rel="stylesheet" href="app/construction.css">
 </head>
 <body>
 <header>
   <h1>Python Learning Platform</h1>
   <span class="badge" id="run-status">idle</span>
   <span class="badge" id="coi-badge">isolation: …</span>
+  <span class="spacer"></span>
+  <span class="badge" id="collab-badge" hidden>● <span id="collab-peers">1</span></span>
+  <button id="btn-share" type="button">Share session</button>
+  <button id="btn-leave" type="button" hidden>Leave</button>
 </header>
 <main id="layout">
   <section class="pane" id="editor-pane">
@@ -42,6 +47,9 @@
     <div class="pane-head">
       <span class="pane-title">Memory model</span>
       <span class="spacer"></span>
+      <!-- Dormant question-pilot hook. Kept for Director/debug compatibility,
+           but intentionally absent from the learner-facing surface. -->
+      <button id="btn-quiz" type="button" hidden aria-hidden="true">Quiz</button>
       <button class="max-btn" data-max="memory-pane" type="button" title="Maximize pane">⤢</button>
     </div>
     <div class="pane-body memory-body">
@@ -56,15 +64,10 @@
       </div>
       <div class="hint" data-role="step-event"></div>
       <div data-role="step-flags"></div>
-      <div class="mem-tables">
-        <div class="mem-box">
-          <h4>Names (frames)</h4>
-          <table class="mem-table" data-role="names-table"></table>
-        </div>
-        <div class="mem-box">
-          <h4>Objects</h4>
-          <table class="mem-table" data-role="objects-table"></table>
-        </div>
+      <div class="memory-canvas" data-role="memory-canvas">
+        <svg class="mm-binding-lines" data-role="binding-lines" aria-hidden="true"></svg>
+        <div class="memory-region memory-scopes" data-role="names-table" aria-label="Variable names"></div>
+        <div class="memory-region memory-values" data-role="objects-table" aria-label="Values and objects"></div>
       </div>
     </div>
   </section>

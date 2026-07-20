@@ -4,9 +4,9 @@ A minimal, build-free static site that runs Python in the browser (Pyodide via
 the PyTrace engine) with:
 
 - **Code editor** (left, CodeMirror 5)
-- **Memory model** (right): a Names table (globals + call-stack frames) and an
-  Objects table (heap: id, type, contents), updating live while the program
-  runs, with a step scrubber to replay execution
+- **Memory model** (right): scoped name boxes paired with values or data ids,
+  plus a compact expandable Data In Memory list and contextual reference arrows,
+  updating live with a step scrubber to replay execution
 - **Console** (bottom): a real terminal emulator (vendored xterm.js 6):
   interleaved stdout/stderr, ANSI colors, `\r` progress bars, inline
   `input()` typed at the prompt with history and Backspace editing, Ctrl+C
@@ -74,59 +74,66 @@ policy is implemented as **individually toggleable filters**
 (`plp.memory.filters` + `plp.memory.refresh()`; see
 [app/MEMORY.md](app/MEMORY.md) for the full as-built documentation):
 
-1. **Immutable scalars render inline** (int, str, bool, None, float, bytes,
-   …) in the Names table and inside object contents. Identity is only
-   visualized where identity has observable consequences (aliasing and
-   mutation), so scalars get no `obj N` rows.
-2. **Everything with meaningful identity gets an Objects row**: lists,
-   tuples, sets, dicts, instances, classes, functions, generators, cells.
-   References render as `obj N` chips that flash/scroll the target row.
-3. **The Objects table shows only chip-reachable objects**: nodes reachable
-   from the Names table (globals, frame locals, closure cells) by following
-   refs through displayed contents. Invariant: every rendered chip resolves
-   to a rendered row, and every rendered row is reachable from a name.
-4. **Class bases render inline by name, not as chips** (e.g.
+Hovering a name box highlights every scoped whole-word
+text match in the editor, including matches inside strings and comments.
+
+1. **Boxes are variable names; pills are data.** Immutable values stay paired
+   directly with their name as typed pills such as `int · 3`. A heap-object
+   binding uses a compact data<sub>N</sub> reference pill; its canonical Data In
+   Memory entry adds `: type · description`.
+2. **Everything with meaningful identity gets one expandable data pill** in
+   the Data In Memory list, formatted as `data<sub>N</sub> : type · description`:
+   lists, tuples, sets, dicts, instances, classes, functions, generators, and
+   cells. Two names bound to the same object show the same id. Hovering an id or
+   data pill reveals solid arrows from bound names and dashed arrows from
+   containing objects. Clicking a binding pill scrolls its canonical data pill
+   to the same vertical level without reordering the list. Short lists do not
+   scroll. Clicking the canonical pill moves it to the top and toggles its
+   details.
+3. **Only name-reachable objects appear**: nodes reachable from visible globals,
+   frame locals, and closure cells by following refs through displayed
+   contents. Every rendered data target resolves to exactly one pill.
+4. **Class bases render inline by name** (e.g.
    `class Puppy(Dog)`); unnameable builtin bases (the implicit `object`) are
    omitted. This keeps the ubiquitous opaque `object` base from cluttering
-   every class example, without breaking rule 3 — real user superclasses
+   every class example, without breaking rule 3; real user superclasses
    still appear because names reference them.
 5. **Bare `def` and `import` add nothing** (`inlinePlainFunctions`,
    `inlineModules`, `hideFunctionBindings`, `hideModuleBindings`): a
-   plain function or module binding produces no Names row and no Objects
-   row — plumbing, not state. Called functions still appear as frame
-   labels; closures always keep their bindings, chips, and rows. Toggle
+   plain function or module binding produces no name box or data pill.
+   Called functions still appear as scope labels; closures keep their
+   bindings and identity-bearing pills. Toggle
    the `hide*Bindings` flags off to teach that `def`/`import` bind names
-   like any assignment (values then render inline: *`function add`*,
+   like any assignment (values then render as pills: *`function add`*,
    *`module math`*).
 6. **Truth markers are never hidden.** Objects the engine truthfully
-   declines to inspect (`opaque` — builtins, imported objects, file handles)
-   still appear when a learner's own data reaches them, as dimmed rows;
+   declines to inspect (`opaque`: builtins, imported objects, file handles)
+   still appear when a learner's own data reaches them, as dimmed pills;
    `elided` markers (budget truncation) always render. Hiding them would
    turn "not inspected" into "doesn't exist".
 
 Rules 3–6 are the `displayFilters` flags in [app/memory.mjs](app/memory.mjs);
 rules 1–2 follow the engine's value encoding.
 
-## Generative questions (pilot)
+## Generative questions (dormant pilot)
 
-The **Quiz** button (memory pane) opens a pilot panel of questions
-generated from the current program and its trace: predict the memory after
-the next line (or across a span) with changed values blanked; arrange
-shuffled code lines; write the structural lines vs the detail lines; fill
-in a call's arguments. Memory questions are graded against what the
-program actually did. Engine and extension points:
+The question pilot is currently deprecated while the learner UI is redesigned.
+No Quiz control appears in the learner-facing application. The preserved engine
+and programmatic panel can build memory from a blank or partial state, update a
+complete state after one or more lines, create nested data, bind variable names
+to data, and construct a supported expression's evaluation sequence. Graph
+grading checks values, bindings, contents, and aliasing without requiring
+particular data-id numbers. See
+[app/CONSTRUCTION.md](app/CONSTRUCTION.md) and
 [app/QUESTIONS.md](app/QUESTIONS.md).
 
-## Guided lessons (director)
+## Director prototype (dormant)
 
-The **Lesson** button starts a guided, game-tutorial-style walkthrough:
-the app gates itself down to one meaningful action per step, spotlights
-it, and advances only on your own real actions (running, hovering,
-scrubbing, answering) — with quiet behavior-triggered hints, on-demand
-"why?" explanations, and struggle-aware branching. Lessons are
-human-authored data over an implemented grammar; authoring manual:
-[app/DIRECTOR.md](app/DIRECTOR.md). The shipped lesson is a
-grammar-validation placeholder.
+The lesson product surface is currently deprecated while the core learner UI
+is redesigned. The tested Director, Stage, tutor, and reference lesson remain
+in the repository as experimental infrastructure, but no lesson data loads and
+no Lesson control appears in the learner-facing application. See
+[app/DIRECTOR.md](app/DIRECTOR.md) for the preserved grammar.
 
 ## Live collaboration
 

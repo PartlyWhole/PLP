@@ -66,3 +66,27 @@ b336ec65a086c056d4804b3d4c2347da5663d3f23c3f25be866467bd8857ad59  vendor/xterm/x
 2d87e1bddc73be9111de8beee5370c3bb7aac9c94e18e6f245f02ca741ef1769  vendor/xterm/addon-fit.mjs
 b569f629d00f2626a8100df2a1798210535621e42164dfd426a6fe5aac7b0ccd  vendor/xterm/LICENSE
 ```
+
+## automerge-collab bundle (added 2026-07-18, live collaboration)
+
+`vendor/automerge-collab.mjs` is BUILT (not fetched): esbuild bundle of
+pinned npm packages, recipe + lockfile in `tools/collab-vendor-build/`
+(recipe adapted from the pygame-playground repo, the origin of this
+collaboration stack). Rebuild with `cd tools/collab-vendor-build && npm
+install && npm run build` — the output is deterministic for the locked
+dependency set. Contents (all MIT): `@automerge/automerge` 2.2.9 (WASM
+inlined as base64, self-initializing), `@automerge/automerge-repo` 2.5.6,
+`…-network-websocket` 2.5.6, `…-network-broadcastchannel` ^2.5.6,
+`trystero` ^0.25.3 (Nostr strategy), `cbor-x` ^1.6.4, plus the local
+`trystero-adapter.mjs` (automerge-repo NetworkAdapter over trystero,
+appId `plp-collab`). Self-contained ESM — no CDN/network use at import
+time, COEP-safe; the network endpoints it *dials* when a room starts are
+`wss://sync.automerge.org` and trystero's public Nostr relays.
+
+```
+19fd214196f4bf31f676bf630b836b8c7292e43c8d3fd1d33fb37879cd5ae819  vendor/automerge-collab.mjs
+```
+
+Dev-only (NOT served, NOT vendored): `@automerge/automerge-repo-sync-server`
+0.2.8 as a devDependency — spawned by `tests/collab.spec.mjs` as a local
+throwaway relay for fault-injection tests.

@@ -24,6 +24,14 @@
 // don't appear in snapshots) so questions match what students see.
 
 import { displayFilters } from "./memory.mjs";
+import {
+  buildEvaluationPlan,
+  gradeEvaluationOrder,
+  gradeMemoryGraph,
+  memoryGraphAt,
+  mergeGraphScopes,
+  starterGraph,
+} from "./construction.mjs";
 
 // ---- deterministic RNG ----------------------------------------------------
 export function mulberry32(seed) {
@@ -170,17 +178,29 @@ function memoryQuestion(ctx, fromPos, toPos, kind) {
   const span = toPos - fromPos === 1
     ? `after the next line (line ${P[toPos].line}) runs`
     : `after execution reaches the state produced by line ${P[toPos].line}`;
+  const givenGraph = memoryGraphAt(ctx.steps, P[fromPos].stateIndex);
+  const targetGraph = memoryGraphAt(ctx.steps, P[toPos].stateIndex);
+  const legacyGrade = gradeBlanks(blanks);
   return {
     kind,
-    prompt: `The memory below is the state produced by line ${P[fromPos].line}. `
-      + `Fill in the blanks to predict the memory ${span}.`,
+    prompt: `Start from the memory produced by line ${P[fromPos].line}. `
+      + `Construct the memory ${span}.`,
     fromLine: P[fromPos].line,
     toLine: P[toPos].line,
     given,
     target: { entries },
+    construction: {
+      type: "memory-graph",
+      mode: "transform",
+      starter: mergeGraphScopes(givenGraph, targetGraph),
+      target: targetGraph,
+    },
     removed: d.removed, // UI may mention frames/names that disappear
     blanks,
-    grade: gradeBlanks(blanks),
+    grade(answer) {
+      if (answer?.type === "memory-graph-answer") return gradeMemoryGraph(answer.graph, targetGraph);
+      return legacyGrade(answer);
+    },
   };
 }
 
@@ -201,14 +221,43 @@ function pickMemoryPositions(ctx, opts, gap) {
 
 function generateMemoryKind(ctx, opts, gap, kind) {
   const picked = pickMemoryPositions(ctx, opts, gap);
-  if (Array.isArray(picked)) return memoryQuestion(ctx, picked[0], picked[1], kind);
+  if (Array.isArray(picked)) {
+    const question = memoryQuestion(ctx, picked[0], picked[1], kind);
+    if (question && opts.renderer === "legacy") question.presentation = "legacy";
+    return question;
+  }
   const { candidates, off } = picked;
   for (let n = 0; n < candidates.length; n++) {
     const [i, j] = candidates[(n + off) % candidates.length];
     const q = memoryQuestion(ctx, i, j, kind);
-    if (q) return q;
+    if (q) {
+      if (opts.renderer === "legacy") q.presentation = "legacy";
+      return q;
+    }
   }
   return null;
+}
+
+function memoryConstructQuestion(ctx, opts = {}) {
+  const positions = ctx.positions ?? [];
+  const position = opts.position ?? positions.length - 1;
+  if (!positions[position]) return null;
+  const target = memoryGraphAt(ctx.steps, positions[position].stateIndex);
+  if (!target.scopes.some((scope) => scope.bindings.length)) return null;
+  const mode = ["blank", "partial", "complete"].includes(opts.mode) ? opts.mode : "blank";
+  return {
+    kind: "memory-construct",
+    prompt: `${mode === "partial" ? "Complete" : "Construct"} the memory state produced by line ${positions[position].line}.`,
+    line: positions[position].line,
+    construction: { type: "memory-graph", mode, starter: starterGraph(target, mode), target },
+    blanks: [],
+    grade(answer) {
+      if (answer?.type !== "memory-graph-answer") {
+        return { correct: false, feedback: ["Construct the memory graph before checking."], expected: target };
+      }
+      return gradeMemoryGraph(answer.graph, target);
+    },
+  };
 }
 
 // ---- code-prediction questions --------------------------------------------
@@ -302,8 +351,43 @@ function codeArgsQuestion(ctx, opts = {}) {
   };
 }
 
+function expressionSequenceQuestion(ctx, opts = {}) {
+  const lines = ctx.source.split("\n");
+  const candidates = [];
+  lines.forEach((line, index) => {
+    const plan = buildEvaluationPlan(line);
+    if (plan?.cards.length > 1) candidates.push({ line: index + 1, plan });
+  });
+  let selected;
+  if (opts.line != null) selected = candidates.find((candidate) => candidate.line === opts.line);
+  else if (candidates.length) {
+    const rng = mulberry32(opts.seed ?? 42);
+    selected = candidates[Math.floor(rng() * candidates.length)];
+  }
+  if (!selected) return null;
+  const rng = mulberry32((opts.seed ?? 42) + selected.line);
+  let palette = shuffle(selected.plan.cards, rng);
+  if (palette.every((card, index) => card.id === selected.plan.cards[index].id)) palette = [...palette].reverse();
+  return {
+    kind: "expression-sequence",
+    prompt: `Construct Python's evaluation sequence for line ${selected.line}.`,
+    line: selected.line,
+    evaluation: {
+      source: selected.plan.source,
+      cards: selected.plan.cards,
+      palette,
+    },
+    grade(order = []) { return gradeEvaluationOrder(order, selected.plan.cards); },
+  };
+}
+
 // ---- registry -------------------------------------------------------------
 export const questionGenerators = {
+  "memory-construct": {
+    label: "Construct memory",
+    needsTrace: true,
+    generate: memoryConstructQuestion,
+  },
   "memory-next-line": {
     label: "Predict memory: next line",
     needsTrace: true,
@@ -313,6 +397,11 @@ export const questionGenerators = {
     label: "Predict memory: line X → line Y",
     needsTrace: true,
     generate: (ctx, opts = {}) => generateMemoryKind(ctx, opts, 3, "memory-line-to-line"),
+  },
+  "expression-sequence": {
+    label: "Build expression evaluation",
+    needsTrace: false,
+    generate: expressionSequenceQuestion,
   },
   "code-order": {
     label: "Arrange the code lines",
@@ -338,3 +427,5 @@ export function generateQuestion(kind, ctx, opts = {}) {
   if (gen.needsTrace && !(ctx.steps?.length && ctx.positions?.length)) return null;
   return gen.generate(ctx, opts);
 }
+
+export { buildEvaluationPlan, gradeMemoryGraph, memoryGraphAt };

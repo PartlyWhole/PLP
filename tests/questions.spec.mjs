@@ -79,6 +79,61 @@ test.describe("PLP questions (Q-series)", () => {
     expect(r.blanks).toBeGreaterThan(0);
   });
 
+  test("memory construction: graph grading ignores local data ids and preserves identity", async ({ page }) => {
+    await setupRun(page);
+    const r = await page.evaluate((ctxSrc) => {
+      const ctx = eval(ctxSrc);
+      const q = window.plp.questions.generateQuestion("memory-construct", ctx, { position: 2 });
+      const renamed = structuredClone(q.construction.target);
+      const ids = new Map(renamed.data.map((node, index) => [node.id, `learner-data-${index + 1}`]));
+      const renameValue = (value) => {
+        if (value?.kind === "ref") value.target = ids.get(value.target);
+      };
+      for (const scope of renamed.scopes) for (const binding of scope.bindings) renameValue(binding.value);
+      for (const node of renamed.data) {
+        node.id = ids.get(node.id);
+        for (const value of node.items ?? []) renameValue(value);
+        for (const entry of node.entries ?? []) { renameValue(entry.key); renameValue(entry.value); }
+        for (const field of node.fields ?? []) renameValue(field.value);
+      }
+      const wrong = structuredClone(renamed);
+      wrong.scopes.find((scope) => scope.label === "Globals").bindings
+        .find((binding) => binding.name === "prices").value = null;
+      return {
+        mode: q.construction.mode,
+        dataCount: q.construction.target.data.length,
+        right: q.grade({ type: "memory-graph-answer", graph: renamed }),
+        wrong: q.grade({ type: "memory-graph-answer", graph: wrong }),
+      };
+    }, ctxExpr);
+    expect(r.mode).toBe("blank");
+    expect(r.dataCount).toBeGreaterThan(1);
+    expect(r.right.correct).toBe(true);
+    expect(r.wrong.correct).toBe(false);
+    expect(r.wrong.perArea.bindings).toBe(false);
+  });
+
+  test("expression sequence: augmented assignment includes RHS construction and store", async ({ page }) => {
+    await setupRun(page);
+    const r = await page.evaluate(() => {
+      const plan = window.plp.questions.buildEvaluationPlan("items += [4]");
+      const q = window.plp.questions.generateQuestion("expression-sequence", {
+        source: "items += [4]", steps: [], positions: [],
+      }, { line: 1, seed: 9 });
+      const order = q.evaluation.cards.map((card) => card.id);
+      return {
+        labels: plan.cards.map((card) => card.label),
+        paletteDiffers: q.evaluation.palette.some((card, index) => card.id !== order[index]),
+        right: q.grade(order),
+        wrong: q.grade([...order].reverse()),
+      };
+    });
+    expect(r.labels).toEqual(["Read target", "Produce literal", "Construct list", "Apply +=", "Store result"]);
+    expect(r.paletteDiffers).toBe(true);
+    expect(r.right.correct).toBe(true);
+    expect(r.wrong.correct).toBe(false);
+  });
+
   test("code-order: shuffled items grade by position", async ({ page }) => {
     await setupRun(page);
     const r = await page.evaluate((ctxSrc) => {
@@ -140,26 +195,64 @@ test.describe("PLP questions (Q-series)", () => {
     expect(r.wrong).toBe(false);
   });
 
-  test("quiz pilot UI: renders a memory question, checks answers", async ({ page }) => {
-    await setupRun(page);
-    await page.click("#btn-quiz");
+  test("quiz UI: constructs a memory answer and an evaluation sequence", async ({ page }) => {
+    await page.goto(SITE);
+    await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
+    await page.waitForFunction(() => Boolean(window.plp));
+    await page.evaluate(() => window.plp.editor.setValue("x = 3\n"));
+    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    await expect(page.locator("#btn-quiz")).toBeHidden();
+    await page.evaluate(() => window.plp.quiz.open());
     await expect(page.locator(".quiz-panel")).toBeVisible();
     const q = await page.evaluate(() =>
-      window.plp.quiz.newQuestion("memory-next-line", { from: 1, to: 2 }));
-    expect(q.blanks.length).toBe(1);
-    await page.fill('.quiz-panel input[data-blank]', "[3, 5]");
+      window.plp.quiz.newQuestion("memory-construct", { position: 0 }));
+    expect(q.construction.type).toBe("memory-graph");
+    await expect(page.locator(".memory-construction")).toBeVisible();
+    await page.locator(".construction-add-name").click();
+    await page.locator(".construction-name-input").fill("x");
+    await page.locator(".construction-value-kind").fill("int");
+    await page.locator(".construction-value-kind").press("Enter");
+    await page.locator(".construction-scalar-input").fill("3");
     const result = await page.evaluate(() => window.plp.quiz.check());
     expect(result.correct).toBe(true);
-    await expect(page.locator(".quiz-panel input.ok")).toHaveCount(1);
-    // Wrong answer marks the blank and reveals the expected value on hover.
-    await page.fill('.quiz-panel input[data-blank]', "[5, 3]");
+    await expect(page.locator(".memory-construction.correct")).toBeVisible();
+    await page.locator(".construction-scalar-input").fill("4");
     const result2 = await page.evaluate(() => window.plp.quiz.check());
     expect(result2.correct).toBe(false);
-    await expect(page.locator(".quiz-panel input.bad")).toHaveCount(1);
+    await expect(page.locator(".memory-construction.incorrect")).toBeVisible();
+
+    // Common data types are suggested immediately. Advanced types stay hidden
+    // until the learner searches for them, then remain fully constructible.
+    await page.getByRole("button", { name: "+ Data", exact: true }).click();
+    const dataType = page.locator(".construction-data-kind");
+    await dataType.fill("");
+    const initialTypeOptions = await dataType.evaluate((input) =>
+      [...document.getElementById(input.getAttribute("list")).options].map((entry) => entry.value));
+    expect(initialTypeOptions).toEqual(["list", "dict", "tuple", "set", "instance"]);
+    await dataType.fill("gen");
+    const filteredTypeOptions = await dataType.evaluate((input) =>
+      [...document.getElementById(input.getAttribute("list")).options].map((entry) => entry.value));
+    expect(filteredTypeOptions).toEqual(["generator"]);
+    await dataType.press("Enter");
+    await expect(page.locator(".construction-data-kind")).toHaveValue("generator");
+    await expect(page.locator(".construction-description-input")).toBeVisible();
+
+    const expression = await page.evaluate(() => {
+      window.plp.editor.setValue("items += [4]\n");
+      return window.plp.quiz.newQuestion("expression-sequence", { line: 1, seed: 9 });
+    });
+    await expect(page.locator(".evaluation-construction")).toBeVisible();
+    for (const card of expression.evaluation.cards) {
+      await page.locator(`.evaluation-palette-card[data-card-id="${card.id}"]`).click();
+    }
+    const expressionResult = await page.evaluate(() => window.plp.quiz.check());
+    expect(expressionResult.correct).toBe(true);
+    await expect(page.locator(".evaluation-construction.correct")).toBeVisible();
+
     // Trace-needing question without a run reports gracefully.
     const none = await page.evaluate(() => {
       window.plp.memory.reset();
-      return window.plp.quiz.newQuestion("memory-next-line");
+      return window.plp.quiz.newQuestion("memory-construct");
     });
     expect(none).toBeNull();
   });

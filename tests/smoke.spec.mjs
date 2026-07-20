@@ -74,7 +74,7 @@ test.describe("PLP smoke", () => {
     await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toContain("ZeroDivisionError");
   });
 
-  test("isolated: objects table shows chip-reachable objects only; class bases inline", async ({ page }) => {
+  test("isolated: memory canvas shows reachable objects only; class bases inline", async ({ page }) => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue(
       "class Dog:\n"
@@ -89,21 +89,123 @@ test.describe("PLP smoke", () => {
     expect(summary.terminal_reason).toBe("completed");
 
     const objects = page.locator("[data-role=objects-table]");
-    // User classes and instance visible; base rendered inline by name.
-    await expect(objects).toContainText("class Puppy(Dog)");
-    await expect(objects).toContainText("name=\"Rex\"");
+    // User classes and instance are compact pills; base rendered by name.
+    await expect(objects).toContainText("class · Puppy(Dog)");
+    const instance = objects.locator(".mm-object-node").filter({ hasText: "Puppy · 1 attribute" }).first();
+    await instance.locator(".mm-object-pill").click();
+    await expect(instance.locator(".mm-object-detail")).toBeVisible();
+    await expect(instance.locator(".mm-object-detail")).toContainText("name");
+    await expect(instance.locator(".mm-object-detail")).toContainText('"Rex"');
     // The implicit builtin `object` base is not rendered as a row.
     await expect(objects).not.toContainText("opaque");
-    // Every rendered chip resolves to a rendered row (display invariant).
+    // Every binding/reference target resolves to one rendered object node.
     const dangling = await page.evaluate(() => {
-      const table = document.querySelector("[data-role=objects-table]");
-      const rows = new Set([...table.querySelectorAll("tr[data-uid]")].map((r) => r.dataset.uid));
-      return [...document.querySelectorAll("a.mm-ref")].filter((a) => !rows.has(a.dataset.uid)).length;
+      const canvas = document.querySelector("[data-role=memory-canvas]");
+      const nodes = new Set([...canvas.querySelectorAll(".mm-object-node[data-uid]")].map((node) => node.dataset.uid));
+      const bound = [...canvas.querySelectorAll('.mm-binding-ref[data-target^="object-"]')]
+        .map((ref) => ref.dataset.target.slice("object-".length));
+      const internal = [...canvas.querySelectorAll(".mm-inner-ref[data-uid]")].map((ref) => ref.dataset.uid);
+      return [...bound, ...internal].filter((uid) => !nodes.has(uid)).length;
     });
     expect(dangling).toBe(0);
   });
 
-  test("isolated: plain functions render inline, not as object rows (display filter)", async ({ page }) => {
+  test("isolated: visual grammar uses boxes, pills, arrows, and shared identity", async ({ page }) => {
+    await gotoIsolated(page);
+    await page.evaluate(() => window.plp.editor.setValue("a = [1, 2]\nb = a\ncount = 3\nb.append(3)\n"));
+    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    await expect.poll(() => page.locator(".mm-name-box").count()).toBe(3);
+
+    const graph = await page.evaluate(() => {
+      const boxes = [...document.querySelectorAll(".mm-name-box")]
+        .filter((box) => ["a", "b"].includes(box.textContent.trim()));
+      const refs = boxes.map((box) => box.closest(".mm-binding").querySelector(".mm-binding-ref"));
+      const target = refs[0]?.dataset.target;
+      const scalar = [...document.querySelectorAll(".mm-name-box")]
+        .find((box) => box.textContent.trim() === "count").closest(".mm-binding");
+      return {
+        names: boxes.map((box) => box.textContent.trim()),
+        bindingPillParts: refs.map((ref) => [...ref.children].map((part) => part.textContent.trim())),
+        bindingPillLabels: refs.map((ref) => ref.getAttribute("aria-label")),
+        subscripts: refs.map((ref) => ref.querySelector("sub")?.textContent),
+        scalarType: scalar.querySelector(".mm-value-type")?.textContent,
+        scalarValue: scalar.querySelector(".mm-value-content")?.textContent,
+        listTitle: document.querySelector(".mm-object-list-title")?.textContent,
+        sameTarget: refs.length === 2 && refs.every((ref) => ref.dataset.target === target),
+        objectNodes: document.querySelectorAll(`.mm-object-node[data-value-id="${target}"]`).length,
+        dataPillParts: [...document.querySelector(`.mm-object-node[data-value-id="${target}"] .mm-object-pill`).children]
+          .map((part) => part.textContent.trim()),
+        sharedPillShape: refs.every((ref) => ref.matches(".mm-value-pill.mm-data-pill"))
+          && document.querySelector(`.mm-object-node[data-value-id="${target}"] .mm-object-pill`).matches(".mm-value-pill.mm-data-pill"),
+        dataPillControls: document.querySelectorAll(`.mm-object-node[data-value-id="${target}"] .mm-object-line > button`).length,
+        legacyObjectLabels: document.querySelector("[data-role=memory-canvas]").innerText.includes("obj"),
+      };
+    });
+    expect(graph.names).toEqual(["a", "b"]);
+    expect(graph.bindingPillParts).toHaveLength(2);
+    expect(graph.bindingPillParts[0]).toEqual(graph.bindingPillParts[1]);
+    expect(graph.bindingPillParts[0]).toEqual([`data${graph.subscripts[0]}`]);
+    expect(graph.bindingPillLabels).toEqual([`data ${graph.subscripts[0]}`, `data ${graph.subscripts[0]}`]);
+    expect(graph.subscripts[0]).toBe(graph.subscripts[1]);
+    expect(graph).toMatchObject({
+      scalarType: "int",
+      scalarValue: "3",
+      listTitle: "Data In Memory",
+      sameTarget: true,
+      objectNodes: 1,
+      dataPillParts: [`data${graph.subscripts[0]}`, ":", "list", "·", "3 items", "▸"],
+      sharedPillShape: true,
+      dataPillControls: 1,
+      legacyObjectLabels: false,
+    });
+    await expect.poll(() => page.locator('.mm-binding-path[data-target^="object-"]').count()).toBe(2);
+    await page.locator(".mm-binding-ref").first().hover();
+    await expect(page.locator(".mm-binding-path.active")).toHaveCount(2);
+
+    const shortListNavigation = await page.evaluate(() => {
+      const scroller = document.querySelector(".mm-object-scroll");
+      return {
+        order: [...scroller.querySelectorAll(".mm-object-node")].map((node) => node.dataset.uid),
+        scrollTop: scroller.scrollTop,
+        scrollable: scroller.dataset.scrollable,
+      };
+    });
+    await page.locator(".mm-binding-ref").first().click();
+    await expect.poll(() => page.evaluate(() => document.querySelector(".mm-object-scroll").scrollTop)).toBe(0);
+    expect(await page.evaluate(() => [...document.querySelectorAll(".mm-object-scroll .mm-object-node")]
+      .map((node) => node.dataset.uid))).toEqual(shortListNavigation.order);
+    expect(shortListNavigation).toMatchObject({ scrollTop: 0, scrollable: "false" });
+
+    const list = page.locator(".mm-object-node").filter({ hasText: "list · 3 items" });
+    await expect(list.locator(".mm-object-pill")).toHaveAttribute("aria-expanded", "false");
+    await list.locator(".mm-object-pill").click();
+    await expect(list.locator(".mm-object-pill")).toHaveAttribute("aria-expanded", "true");
+    await expect(list.locator(".mm-object-detail")).toBeVisible();
+    await expect(list.locator(".mm-mini-pill")).toHaveCount(3);
+  });
+
+  test("isolated: indirect references appear on hover; clicking a data pill surfaces it", async ({ page }) => {
+    await gotoIsolated(page);
+    await page.evaluate(() => window.plp.editor.setValue("outer = [[1]]\n"));
+    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    await expect.poll(() => page.locator(".mm-object-node").count()).toBe(2);
+
+    const childUid = await page.evaluate(() => {
+      const directlyBound = new Set([...document.querySelectorAll(".mm-binding-ref")]
+        .map((ref) => ref.dataset.uid));
+      return [...document.querySelectorAll(".mm-object-node")]
+        .find((node) => !directlyBound.has(node.dataset.uid)).dataset.uid;
+    });
+    const child = page.locator(`.mm-object-node[data-uid="${childUid}"]`);
+    await child.locator(".mm-object-pill").hover();
+    await expect(page.locator(`.mm-object-path.active[data-target="object-${childUid}"]`)).toHaveCount(1);
+    await expect(page.locator(`.mm-binding-path.active[data-target="object-${childUid}"]`)).toHaveCount(0);
+
+    await child.locator(".mm-object-pill").click();
+    await expect(page.locator(".mm-object-node").first()).toHaveAttribute("data-uid", childUid);
+  });
+
+  test("isolated: plain functions stay paired values, not data pills (display filter)", async ({ page }) => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue(
       "x = 1\ny = x\nx = x+y\ny = x+x\ndef add(x,y):\n    return x+y\nz = add(x,y)\nprint(z)\n",
@@ -116,36 +218,37 @@ test.describe("PLP smoke", () => {
     expect(namesHtml).not.toContain("add");
     expect(namesHtml).not.toContain("mm-ref"); // scalars only
 
-    // hideFunctionBindings off -> binding returns as inline text (no chip).
+    // hideFunctionBindings off -> the name box and inline value pill return.
     await page.evaluate(() => {
       window.plp.memory.filters.hideFunctionBindings = false;
       window.plp.memory.refresh();
     });
     await expect(page.locator("[data-role=names-table]")).toContainText("function add");
 
-    // Objects: no function row (this program allocates no other objects).
-    const objectsText = await page.evaluate(() => document.querySelector("[data-role=objects-table]").textContent);
-    expect(objectsText).not.toContain("function");
-    // No dangling chips anywhere (core invariant, filters on or off).
+    // Inline values stay paired with names, not in the object list.
+    expect(await page.evaluate(() => document.querySelector("[data-role=objects-table]").textContent))
+      .not.toContain("function");
+    // No dangling object targets anywhere (core invariant, filters on or off).
     const dangling = await page.evaluate(() => {
-      const rows = new Set([...document.querySelectorAll("[data-role=objects-table] tr[data-uid]")].map((r) => r.dataset.uid));
-      return [...document.querySelectorAll("a.mm-ref")].filter((a) => !rows.has(a.dataset.uid)).length;
+      const nodes = new Set([...document.querySelectorAll(".mm-object-node[data-uid]")].map((node) => node.dataset.uid));
+      return [...document.querySelectorAll('.mm-binding-ref[data-target^="object-"]')]
+        .filter((ref) => !nodes.has(ref.dataset.target.slice("object-".length))).length;
     });
     expect(dangling).toBe(0);
 
-    // Toggling the filter off in code restores the object row + chip.
+    // Toggling the filter off restores an identity-bearing object pill.
     await page.evaluate(() => {
       window.plp.memory.filters.inlinePlainFunctions = false;
       window.plp.memory.refresh();
     });
-    await expect(page.locator("[data-role=objects-table]")).toContainText("function add");
+    await expect(page.locator("[data-role=objects-table] .mm-object-node")).toContainText("function · add");
     await page.evaluate(() => {
       window.plp.memory.filters.inlinePlainFunctions = true;
       window.plp.memory.filters.hideFunctionBindings = true;
       window.plp.memory.refresh();
     });
 
-    // Modules: `import math` adds nothing — no Names row, no Objects row.
+    // Modules: `import math` adds no name binding or object pill by default.
     await page.evaluate(() => window.plp.editor.setValue("import math\nx = 1\n"));
     const summary2 = await page.evaluate(() => window.plp.run());
     expect(summary2.terminal_reason).toBe("completed");
@@ -156,7 +259,7 @@ test.describe("PLP smoke", () => {
     expect(names2).not.toContain("math");
     expect(await page.evaluate(() => document.querySelector("[data-role=objects-table]").textContent))
       .not.toContain("module");
-    // hideModuleBindings off -> the binding returns, inline (still no row).
+    // hideModuleBindings off -> the name and inline module pill return.
     await page.evaluate(() => {
       window.plp.memory.filters.hideModuleBindings = false;
       window.plp.memory.refresh();
@@ -170,18 +273,23 @@ test.describe("PLP smoke", () => {
 
   test("isolated: hovering a name highlights its occurrences in the editor", async ({ page }) => {
     await gotoIsolated(page);
-    await page.evaluate(() => window.plp.editor.setValue("count = 1\ncount = count + 1\nprint(count)\n"));
+    await page.evaluate(() => window.plp.editor.setValue('count = 1\ncount = count + 1\nprint("count", count)\n'));
     const summary = await page.evaluate(() => window.plp.run());
     expect(summary.terminal_reason).toBe("completed");
     await expect.poll(() => page.evaluate(() => document.querySelector("[data-role=names-table]").textContent))
       .toContain("count");
     const marks = await page.evaluate(() => {
-      const td = [...document.querySelectorAll("[data-role=names-table] td.name")]
+      const td = [...document.querySelectorAll("[data-role=names-table] .mm-name-box.name")]
         .find((c) => c.textContent.trim() === "count");
       td.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-      return document.querySelectorAll(".cm-name-hl").length;
+      return {
+        total: document.querySelectorAll(".cm-name-hl").length,
+        inStrings: document.querySelectorAll(
+          ".cm-name-hl.cm-string, .cm-string .cm-name-hl, .cm-name-hl .cm-string",
+        ).length,
+      };
     });
-    expect(marks).toBe(4); // count appears 4 times in the source
+    expect(marks).toEqual({ total: 5, inStrings: 1 });
     const cleared = await page.evaluate(() => {
       document.querySelector("[data-role=names-table]")
         .dispatchEvent(new MouseEvent("mouseleave"));
@@ -209,12 +317,12 @@ test.describe("PLP smoke", () => {
       let frameCell = null;
       for (let i = 0; i < m.stepCount() && !frameCell; i++) {
         m.goTo(i);
-        frameCell = document.querySelector('td.name[data-scope="frame"][data-fn="total"]');
+        frameCell = document.querySelector('.mm-name-box.name[data-scope="frame"][data-fn="total"]');
       }
       const lines = () => [...document.querySelectorAll(".cm-name-hl")]
         .map((el) => el.closest(".CodeMirror-line")).length;
       const hover = (cell) => cell.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
-      const pricesCells = [...document.querySelectorAll("td.name")]
+      const pricesCells = [...document.querySelectorAll(".mm-name-box.name")]
         .filter((c) => c.textContent.trim() === "prices");
       const local = pricesCells.find((c) => c.dataset.scope === "frame");
       const global = pricesCells.find((c) => c.dataset.scope === "global");
@@ -270,5 +378,40 @@ test.describe("PLP smoke", () => {
     const summary = await page.evaluate(() => window.plp.run());
     expect(summary.terminal_reason).toBe("needs_input");
     await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toContain("live input is unavailable");
+  });
+
+  test("isolated: binding reference scrolls to matching data without reordering", async ({ page }) => {
+    await gotoIsolated(page);
+    const source = [
+      ...Array.from({ length: 5 }, (_, i) => `s${i} = ${i}`),
+      ...Array.from({ length: 12 }, (_, i) => `d${i} = [${i}]`),
+    ].join("\n");
+    await page.evaluate((code) => window.plp.editor.setValue(code), source);
+    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+
+    const scroller = page.locator(".mm-object-scroll");
+    await expect(scroller).toHaveAttribute("data-scrollable", "true");
+    const target = await page.evaluate(() => [...document.querySelectorAll(".mm-binding")]
+      .find((row) => row.querySelector(".mm-name-box")?.textContent.trim() === "d0")
+      .querySelector(".mm-binding-ref").dataset.target);
+    const reference = page.locator(`.mm-binding-ref[data-target="${target}"]`);
+    const before = await page.evaluate(() => ({
+      order: [...document.querySelectorAll(".mm-object-scroll .mm-object-node")].map((node) => node.dataset.uid),
+      scrollTop: document.querySelector(".mm-object-scroll").scrollTop,
+    }));
+
+    await reference.click();
+    await expect.poll(() => page.evaluate((targetId) => {
+      const referencePill = document.querySelector(`.mm-binding-ref[data-target="${targetId}"]`);
+      const dataPill = document.querySelector(`.mm-object-node[data-value-id="${targetId}"] .mm-object-pill`);
+      const referenceRect = referencePill.getBoundingClientRect();
+      const dataRect = dataPill.getBoundingClientRect();
+      return Math.round(Math.abs(
+        (referenceRect.top + referenceRect.height / 2) - (dataRect.top + dataRect.height / 2),
+      ));
+    }, target)).toBeLessThanOrEqual(2);
+    expect(await page.evaluate(() => [...document.querySelectorAll(".mm-object-scroll .mm-object-node")]
+      .map((node) => node.dataset.uid))).toEqual(before.order);
+    expect(await page.evaluate(() => document.querySelector(".mm-object-scroll").scrollTop)).not.toBe(before.scrollTop);
   });
 });

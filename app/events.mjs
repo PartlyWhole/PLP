@@ -10,7 +10,7 @@
 //   interrupt-requested {}
 //   edited             {}                   (user edits only, not setValue)
 //   scrubbed           { position, line, stateIndex }  (user scrub only)
-//   hover-name         { scope, name }
+//   hover-name         { scope, name, active }         (enter/leave phase)
 //   chip-clicked       { uid }
 //   mode-changed       { lineMode }
 //   memory-rendered    { position }         (view redraw; stage re-anchors)

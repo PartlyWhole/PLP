@@ -8,6 +8,13 @@ import { createMemoryModel } from "./memory.mjs";
 import { createConsole } from "./console.mjs";
 import { createRunner } from "./runner.mjs";
 import { initLayout } from "./layout.mjs";
+import { createCollab } from "./collab.mjs";
+import { createQuiz } from "./quiz.mjs";
+import * as questions from "./questions.mjs";
+import { createStage } from "./stage.mjs";
+import { createDirector, lintLesson } from "./director.mjs";
+import { evaluateCheck } from "./conditions.mjs";
+import { events } from "./events.mjs";
 
 const SAMPLE = `def total(prices):
     result = 0
@@ -36,7 +43,10 @@ const consoleUI = createConsole({
 const memory = createMemoryModel({
   root: document.getElementById("memory-pane"),
   editor,
-  onUserScrub: (index, steps) => consoleUI.showUpTo(steps, index),
+  onUserScrub: (index, steps) => {
+    consoleUI.showUpTo(steps, index);
+    collab.notifyUserScrub(); // no-op solo; guarded against remote-apply echo
+  },
 });
 
 const statusEl = document.getElementById("run-status");
@@ -55,8 +65,54 @@ coiEl.title = crossOriginIsolated
   ? "crossOriginIsolated — live input() and cooperative Stop available"
   : "not cross-origin isolated — input() cannot be answered live; Stop hard-kills the run";
 
+// ---- collaboration (lazy: the CRDT bundle loads only when a room starts) --
+const shareBtn = document.getElementById("btn-share");
+const leaveBtn = document.getElementById("btn-leave");
+const collabBadge = document.getElementById("collab-badge");
+const collabPeers = document.getElementById("collab-peers");
+
+const collab = createCollab({
+  editor, memory, consoleUI,
+  onUiState(s) {
+    if (s.type === "state") {
+      const live = s.state === "live";
+      shareBtn.textContent = live ? "🔗 Copy link" : s.state === "connecting" ? "⏳ Connecting…" : "Share session";
+      shareBtn.disabled = s.state === "connecting";
+      leaveBtn.hidden = !live;
+      collabBadge.hidden = !live;
+      if (s.state === "unreachable") setStatus("room unreachable — solo", "bad");
+    } else if (s.type === "peers") {
+      collabPeers.textContent = s.count;
+    } else if (s.type === "remote-run") {
+      setStatus(s.phase === "running" ? "shared run…" : s.reason, s.reason === "completed" ? "good" : "");
+    } else if (s.type === "usurped") {
+      // Another peer's Run won the shared-run race; stop our session.
+      runner.interrupt();
+      setStatus("another peer is running", "");
+    }
+  },
+});
+
+shareBtn.addEventListener("click", async () => {
+  if (!collab.isActive()) {
+    try { await collab.start(); } catch (e) {
+      console.error(e);
+      setStatus("couldn't create room", "bad");
+      shareBtn.textContent = "Share session";
+      shareBtn.disabled = false;
+      return;
+    }
+  }
+  const url = location.origin + location.pathname + location.search + location.hash;
+  navigator.clipboard?.writeText(url).catch(() => {});
+  shareBtn.textContent = "✓ link copied";
+  setTimeout(() => { shareBtn.textContent = "🔗 Copy link"; }, 1500);
+});
+leaveBtn.addEventListener("click", () => collab.leave());
+
 const runner = createRunner({
   editor, memory, consoleUI,
+  hooks: collab.hooks,
   onStatus(s) {
     if (s.type === "state") setStatus(s.state === "booting" ? "starting Python…" : "running…");
     else if (s.type === "header") {
@@ -71,6 +127,7 @@ const runner = createRunner({
 
 async function run() {
   if (runner.isRunning()) return null;
+  if (!collab.canRun()) { setStatus("a peer is running — watch along", ""); return null; }
   runBtn.disabled = true;
   try {
     return await runner.run();
@@ -82,8 +139,26 @@ async function run() {
 runBtn.addEventListener("click", run);
 stopBtn.addEventListener("click", () => { runner.interrupt(); setStatus("stopping…"); });
 
+// Dormant generative-question pilot (see app/QUESTIONS.md). The learner-facing
+// control is hidden, while the debug API and Director integration remain.
+const quiz = createQuiz({ memory, editor });
+document.getElementById("btn-quiz").addEventListener("click", () => quiz.toggle());
+
+// Dormant Director infrastructure (see app/DIRECTOR.md). The lesson product
+// surface is deprecated while the core learner UI is redesigned; Stage and
+// Director remain available through window.plp for tests and experiments.
+const stage = createStage({ editor, consoleUI });
+const director = createDirector({ stage, app: { runner, memory, consoleUI, editor, quiz } });
+
 initLayout({ onResize: () => { editor.refresh(); consoleUI.fit(); } });
 window.addEventListener("resize", () => consoleUI.fit());
+
+// Auto-join when the URL carries a room link (#room=…). The COI-shim reload
+// preserves the hash, so a first visit joins after the isolation reload.
+collab.maybeAutoJoin().catch((e) => {
+  console.error(e);
+  setStatus("room join failed", "bad");
+});
 
 // Debug/test API.
 window.plp = {
@@ -96,4 +171,12 @@ window.plp = {
   provideInput: (line) => runner.provideInput(line),
   records: () => runner.records(),
   checkErrors: () => runner.checkErrors(),
+  collab,
+  quiz,
+  questions, // pure engine module (generateQuestion, snapshotAt, …)
+  stage,
+  director,
+  events,
+  lintLesson,
+  __eval: evaluateCheck, // condition-library test hook
 };

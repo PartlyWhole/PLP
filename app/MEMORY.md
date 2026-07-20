@@ -1,96 +1,108 @@
-# Memory model — as-built documentation
+# Memory model - as-built documentation
 
-The memory pane ([memory.mjs](memory.mjs)) renders PyTrace step records as
-two tables plus a step scrubber. It is presentation-only: records arrive
-already validated by the engine's facade, are stored unmodified, and every
-display decision below is a *view* choice that can be turned off.
+The memory pane ([memory.mjs](memory.mjs)) renders PyTrace step records as a
+visual binding canvas plus a step scrubber. It is presentation-only: records
+arrive already validated by the engine facade, are stored unmodified, and
+every display decision below is a view choice that can be turned off.
 
-## The two tables
+## Visual grammar
 
-**Names (frames)** — one section per scope, top to bottom:
+**Boxes are names.** Scope cards appear top to bottom:
 
 1. `globals` (`__main__`, plus any `trace_modules`-allowlisted module),
-2. each call-stack frame **root → active** (the innermost frame is marked
-   `← active`; the `<module>` frame is skipped — it duplicates globals),
+2. each call-stack frame root to active (the active frame is marked; the
+   `<module>` frame is skipped because it duplicates globals),
 3. closure environments (`closure env N` with their cells).
 
-Rows are `Name | Value`.
+**Pills are data.** Immutable values stay paired directly with their name box
+as typed pills such as `int · 3`, because the trace does not assign them stable
+ids. Identity-bearing heap objects appear in a "Data In Memory" list as single
+`data<sub>N</sub> : type · description` pills and expand in place to show items,
+entries, or attributes.
 
-**Objects** — one row per displayed heap node: `Id | Type | Value`, where
-Id is the engine's per-step uid (`obj N`), Type is `type_name`, and Value
-renders the node's contents (items, entries, attributes, …).
+**data<sub>N</sub> handles expose identity.** A name bound to a heap object is paired with
+a compact `data<sub>N</sub>` reference pill. Its canonical Data In Memory pill
+adds `: type · description`. Hovering either reference pill or the canonical data pill reveals incoming
+references: solid arrows from names and dashed arrows from containing objects.
+This lets an object with no direct name binding still show that it is held by a
+list, dictionary, instance, or other object. Clicking a binding reference
+scrolls its canonical Data In Memory pill to the same vertical level without
+reordering data; short, non-overflowing lists do not scroll. Clicking a
+canonical Data In Memory pill moves it to the top and toggles its details.
 
-## Value rendering (engine's closed vocabulary)
+Every displayed heap object has exactly one pill, so two names bound to the same
+mutable object show the same id. Reassignment changes the paired id; mutation
+changes the existing data pill contents.
 
-Immutable scalars render **inline**: `none`, `bool`, `int` (arbitrary
-precision), `float` (incl. `Infinity`/`NaN`), `str` (quoted), `bytes`
-(preview + length), `complex`, `range`, `slice`, `ellipsis`,
-`not_implemented`. Unknown kinds render as raw JSON (forward safety).
-`elided` values render as a visible `⟨elided: reason⟩` marker — never
+## Value rendering
+
+Immutable scalars render as complete typed value pills: `none`, `bool`, `int`
+(arbitrary precision), `float` (including `Infinity`/`NaN`), `str` (quoted),
+`bytes` (preview + length), `complex`, `range`, `slice`, `ellipsis`, and
+`not_implemented`. Unknown kinds render as raw JSON for forward safety.
+`elided` values render as visible `⟨elided: reason⟩` markers and are never
 hidden.
 
-`ref` values render as **chips** (`obj N`) linking to the Objects row;
-clicking a chip scrolls to and flashes the row. Identity is only
-visualized where it has observable consequences (aliasing, mutation) —
-scalars get no rows, so sharing of `3` is unobservable, exactly as in
-Python.
+`ref` values become data-id targets. References inside an expanded object show
+the target data<sub>N</sub> and surface the existing data pill instead of duplicating it. Identity
+is only visualized where it has observable consequences such as aliasing and
+mutation; scalar pills do not expose identity.
 
-**Core invariant (filters on or off): every rendered chip resolves to a
-rendered row.**
+**Core invariant, filters on or off: every rendered data target resolves to
+exactly one rendered data pill.**
 
-## Display filters — the policy as toggleable constituents
+## Display filters
 
-What the Objects table shows is a *filter pipeline*, defined as flags in
-`displayFilters` (exported from memory.mjs, exposed as
-`window.plp.memory.filters`). Each constituent can be toggled in code;
-after mutating flags call `plp.memory.refresh()`:
+The values region uses a filter pipeline defined by `displayFilters` in
+[memory.mjs](memory.mjs), exposed as `window.plp.memory.filters`. Mutate a flag
+and call `plp.memory.refresh()`:
 
 ```js
-plp.memory.filters.inlinePlainFunctions = false; // show every def as a row
+plp.memory.filters.inlinePlainFunctions = false; // show every def as a data pill
 plp.memory.refresh();
 ```
 
 | flag (default) | effect when ON | rationale |
 |---|---|---|
-| `chipReachableOnly` (true) | Objects table shows only heap nodes reachable from a chip: Names-table roots (globals, frame locals, closure cells) closed over displayed contents (container items, dict keys/values, instance/class attributes, cell contents) | rows the learner cannot navigate to are noise; OFF shows the engine's full per-step heap |
-| `inlineClassBases` (true) | class `bases` render by name in the class row (`class Puppy(Dog)`); unnameable builtin bases (the implicit `object`) are omitted | stops an opaque builtin row appearing in every class example; OFF renders bases as ordinary chips |
-| `inlinePlainFunctions` (true) | function nodes with **no closure environment** render inline as *`function name`* wherever referenced (no chip, no row) | a bare `def` is not an interesting object for a learner tracing `z = add(x, y)`; closures keep chips + rows because their environment is the point |
-| `inlineModules` (true) | module nodes render inline as *`module math`* wherever referenced (no chip, no row) | `import math` binds a name to a module object; true, but not the story the Objects table is telling |
-| `hideModuleBindings` (true) | module bindings are omitted from the **Names** table entirely — `import math` adds no row | for most lessons an import is plumbing, not state; turn OFF to teach that imports bind names like any assignment (the binding then shows as inline *`module math`* per `inlineModules`) |
-| `hideFunctionBindings` (true) | plain-function bindings are omitted from the **Names** table — `def total(...)` adds no row (`total()` still appears as the frame label when called; closure bindings always stay) | same plumbing argument as imports; turn OFF to teach that `def` binds a name like any assignment |
+| `chipReachableOnly` (true) | Shows only heap nodes reachable from visible name boxes through displayed contents | Unreachable objects are noise; OFF shows the full per-step heap |
+| `inlineClassBases` (true) | Class bases render by name in the class pill (`class Puppy(Dog)`); the implicit builtin `object` is omitted | Avoids an opaque builtin pill in every class example |
+| `inlinePlainFunctions` (true) | Plain functions render as value pills instead of identity-bearing data pills | A bare `def` is usually not the state story; closures keep data pills because their environment matters |
+| `inlineModules` (true) | Modules render as value pills such as *`module math`* | Imports remain available without dominating the object graph |
+| `hideModuleBindings` (true) | Module name boxes are omitted | Turn OFF when teaching that imports bind names |
+| `hideFunctionBindings` (true) | Plain-function name boxes are omitted; called functions still appear as scope cards | Turn OFF when teaching that `def` binds a name |
+| `dimOpaque` (true) | Opaque nodes render as dimmed pills | De-emphasized but never hidden; hiding would turn "not inspected" into "doesn't exist" |
 
-Hidden bindings also don't seed Objects-table reachability — rows are
-reachable from *visible* names.
-| `dimOpaque` (true) | `opaque` nodes (builtins/imported objects the engine truthfully declines to inspect) render as dimmed rows | de-emphasized but **never hidden** — hiding would turn "truthfully not inspected" into "silently doesn't exist" |
-
-Filtering happens at render time only; `plp.memory.steps()` always returns
-the untouched records, and turning every flag off shows the engine's
-unfiltered truth.
+Hidden bindings do not seed reachability. Filtering happens only during
+rendering; `plp.memory.steps()` always returns untouched records, and turning
+every flag off shows the engine's unfiltered truth.
 
 ## Stepping and live rendering
 
-- **Line-step mode** (default) and raw **engine-step mode** are documented
-  in README "Stepping model": synthetic position 0, one position per
-  executed line showing the state it *produced*, iteration collapsing,
-  and the toggle. `goTo()`/`stepCount()` are position-space; `steps()` is
-  raw.
-- The editor's current-line highlight follows the selected position (for
-  `__main__` locations); the console shows output reconstructed up to the
-  position's state step.
-- Live renders are throttled to **one per animation frame** showing the
-  latest position — records arrive at thousands per second and per-record
-  rendering freezes the tab. User scrubbing renders immediately and
-  pauses follow; scrubbing to the end resumes it.
+- Line-step mode (default) and raw engine-step mode are documented in README
+  "Stepping model": synthetic position 0, one position per executed line
+  showing the state it produced, iteration collapsing, and the toggle.
+  `goTo()`/`stepCount()` use position space; `steps()` always returns raw steps.
+- The editor current-line highlight follows the selected position for
+  `__main__` locations. The console reconstructs output through that state.
+- Hovering a name box highlights every scoped whole-word text match in the
+  editor, including matches inside strings and comments. Hover events include
+  active enter/leave phases.
+- Live renders are throttled to one per animation frame. User scrubbing renders
+  immediately and pauses follow; scrubbing to the end resumes it.
+- Reference paths are a derived SVG overlay shown only while an id or data pill is
+  hovered. Resizing, reordering, or expanding an object redraws paths without
+  changing the underlying memory snapshot.
 
-## Identity caveats (engine semantics)
+## Identity caveats
 
 Uids are stable only while an object stays observed across consecutive
-snapshots; never compare uids, frame ids, environment ids, or unordered
-set order across runs. Sets containing refs are `unordered` — don't diff
-their order even within a run.
+snapshots. Never compare uids, frame ids, environment ids, or unordered set
+order across runs. Sets containing refs are `unordered`; do not diff their
+order even within a run.
 
 ## Validation
 
-VALIDATION.md M-series (tables/policy) and P-series (stepping); automated
-coverage in `tests/smoke.spec.mjs` (display policy, inline functions with
-filter toggle, line-step grouping/produced-state, dangling-chip sweeps).
+VALIDATION.md M-series covers the visual grammar and display policy; P-series
+covers stepping. Automated coverage in `tests/smoke.spec.mjs` includes binding
+identity, expansion, reachability, filter toggles, hover behavior, and line-step
+produced-state semantics.

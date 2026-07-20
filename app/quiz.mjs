@@ -1,11 +1,12 @@
 // Pilot quiz UI over the question engine (questions.mjs). Deliberately
 // thin: a floating panel that renders whatever payload shape the generator
-// produced (memory tables with blank cells, orderable code lines, code with
-// blanked lines, a call with blanked arguments) and grades on demand.
+// produced (graph construction, expression sequences, orderable code lines,
+// code with blanked lines, or call arguments) and grades on demand.
 // The UI is disposable; the engine is the product.
 
 import { questionGenerators, generateQuestion } from "./questions.mjs";
 import { events } from "./events.mjs";
+import { createEvaluationConstruction, createMemoryConstruction } from "./construction-ui.mjs";
 
 export function createQuiz({ memory, editor }) {
   const panel = document.createElement("div");
@@ -74,11 +75,25 @@ export function createQuiz({ memory, editor }) {
     const body = el("quiz-body");
     body.textContent = "";
     el("quiz-result").textContent = "";
+    panel.classList.remove("construction-open");
     const prompt = document.createElement("p");
     prompt.textContent = q.prompt;
     body.appendChild(prompt);
 
-    if (q.kind === "memory-next-line" || q.kind === "memory-line-to-line") {
+    if (q.construction?.type === "memory-graph" && q.presentation !== "legacy") {
+      panel.classList.add("construction-open");
+      const context = document.createElement("p");
+      context.className = "construction-context";
+      context.textContent = q.construction.mode === "transform"
+        ? `Start with the state after line ${q.fromLine}, then update it for line ${q.toLine}.`
+        : q.construction.mode === "partial"
+          ? "Some pieces are already present. Complete every name, value, data pill, and connection."
+          : "Start from the blank scopes and construct the complete state.";
+      body.appendChild(context);
+      const construction = createMemoryConstruction(body, q.construction);
+      editor.highlightLine(q.toLine ?? q.line);
+      current = { question: q, collect: construction.getAnswer, mark: construction.mark };
+    } else if (q.kind === "memory-next-line" || q.kind === "memory-line-to-line") {
       const h1 = document.createElement("h4");
       h1.textContent = `Given — after line ${q.fromLine}`;
       body.appendChild(h1);
@@ -89,6 +104,11 @@ export function createQuiz({ memory, editor }) {
       renderMemoryTable(body, q.target, true);
       editor.highlightLine(q.fromLine);
       current = { question: q, collect: collectBlankInputs };
+    } else if (q.kind === "expression-sequence") {
+      panel.classList.add("construction-open");
+      const construction = createEvaluationConstruction(body, q.evaluation);
+      editor.highlightLine(q.line);
+      current = { question: q, collect: construction.getAnswer, mark: construction.mark };
     } else if (q.kind === "code-order") {
       const list = document.createElement("div");
       list.className = "quiz-order";
@@ -182,6 +202,7 @@ export function createQuiz({ memory, editor }) {
     if (!current) return null;
     const answers = current.collect();
     const result = current.question.grade(answers);
+    current.mark?.(result);
     // Mark blanks.
     for (const inp of panel.querySelectorAll("input[data-blank]")) {
       const ok = result.perBlank?.[inp.dataset.blank];
@@ -219,6 +240,7 @@ export function createQuiz({ memory, editor }) {
     newQuestion, // (kind?, opts?) — options pass through to the generator
     check,
     current: () => current?.question ?? null,
+    currentAnswer: () => current?.collect() ?? null,
     setKind: (k) => { kindSel.value = k; },
   };
 }

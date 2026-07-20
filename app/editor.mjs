@@ -31,7 +31,10 @@ export function createEditor({ hostEl }) {
     cm.scrollIntoView({ line: idx, ch: 0 }, 60);
   }
 
-  // Occurrence highlight for a variable name (memory-model hover).
+  // Textual occurrence highlight for a variable name (memory-model hover).
+  // This intentionally includes whole-word matches inside strings/comments:
+  // the teaching gesture is "where do these characters appear?", not a
+  // Python name-resolution query. lineFilter still enforces frame scope.
   let nameMarks = [];
   function clearNameHighlight() {
     for (const mk of nameMarks) mk.clear();

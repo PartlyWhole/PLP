@@ -1,8 +1,9 @@
-// Memory model: two tables driven by PyTrace step records.
-//   Names   — one section per scope (globals, then each stack frame
-//             root → active), rows Name | Value; refs render as clickable
-//             chips linking into the Objects table.
-//   Objects — one row per heap node in the current step: Id | Type | Value.
+// Memory model: a visual binding canvas driven by PyTrace step records.
+//   Names   - boxes grouped by scope (globals, frames root to active,
+//             closures).
+//   Values  - scalar pills and one expandable pill per displayed heap node.
+//   Binding - SVG arrows from name boxes to value/object pills; aliases
+//             converge on the same object pill.
 // Live renders are throttled to one per animation frame (records can arrive
 // at thousands per second); user scrubbing renders immediately.
 // Value/heap rendering adapted from the Engine Pilot trace view.
@@ -10,38 +11,39 @@
 import { events } from "./events.mjs";
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const dataIdLabel = (uid) => `data<sub>${esc(uid)}</sub>`;
 
 // ---------------------------------------------------------------------------
-// Display filters — the Objects-table policy as individually toggleable
+// Display filters: the object-list policy as individually toggleable
 // constituents (documented in app/MEMORY.md). Flip a flag to false to see
 // the unfiltered engine truth for that aspect; the underlying step records
 // are never altered. Also exposed as `window.plp.memory.filters` for
 // console experimentation.
 // ---------------------------------------------------------------------------
 export const displayFilters = {
-  // Objects table shows only heap nodes reachable from a visible reference
-  // chip (Names table -> displayed contents closure). Keeps the invariant:
-  // every chip resolves to a row, every row is reachable from a name.
+  // Show only heap nodes reachable from visible names through displayed
+  // contents. Keeps the invariant that every object target resolves to one
+  // pill and every object pill is reachable from a name.
   chipReachableOnly: true,
   // Class `bases` render inline by name (e.g. `class Puppy(Dog)`) instead
-  // of as chips, so the implicit builtin `object` base doesn't add an
-  // opaque row to every class example.
+  // as object references, so the implicit builtin `object` base does not add
+  // an opaque pill to every class example.
   inlineClassBases: true,
   // Plain named functions (resolved provenance, no closure environment)
-  // render inline as `function name` wherever they are referenced, instead
-  // of as a chip + object row — a bare `def` is not an interesting object
-  // for learners. Closures keep their rows (their environment matters).
+  // render as `function name` value pills wherever referenced, instead
+  // of as identity-bearing object pills; a bare `def` is not an interesting object
+  // for learners. Closures keep object pills because their environment matters.
   inlinePlainFunctions: true,
-  // Hide plain-function bindings from the Names table entirely — a bare
-  // `def total(...)` adds no row (`total` still appears as the frame label
+  // Hide plain-function name boxes entirely. A bare
+  // `def total(...)` adds no box (`total` still appears as the frame label
   // when called). Closure bindings always stay. Turn OFF to teach that
   // def binds a name like any assignment.
   hideFunctionBindings: true,
-  // Module objects (import math -> `math` bound to a module) render inline
-  // as `module math` — an import binding is not an interesting object row.
+  // Module objects (import math -> `math` bound to a module) render as
+  // `module math` value pills; an import is not usually an identity story.
   inlineModules: true,
-  // Go further: hide module bindings from the Names table entirely —
-  // `import math` adds no row at all. Turn OFF to teach that imports bind
+  // Go further: hide module name boxes entirely. `import math` adds no box.
+  // Turn OFF to teach that imports bind
   // names like any other assignment.
   hideModuleBindings: true,
   // Opaque nodes (builtins/imported objects the engine truthfully declines
@@ -49,7 +51,7 @@ export const displayFilters = {
   dimOpaque: true,
 };
 
-// Nodes that render as inline text instead of a chip + object row.
+// Nodes that render as paired values instead of identity-bearing object pills.
 // Returns the inline HTML, or null when the node should chip normally.
 function inlineRendering(node) {
   if (!node) return null;
@@ -95,16 +97,24 @@ export function renderValue(v, heapByUid) {
     case "ref": {
       const inline = inlineRendering(heapByUid?.get(v.uid));
       if (inline) return inline;
-      return `<a class="mm-ref" href="#" data-uid="${v.uid}">obj ${v.uid}</a>`;
+      return `<button class="mm-inner-ref mm-object-id" type="button" data-target="object-${v.uid}" data-uid="${v.uid}" aria-label="data ${v.uid}">${dataIdLabel(v.uid)}</button>`;
     }
     case "elided": return `<span class="mm-elided">⟨elided: ${esc(v.reason)}${v.omitted_count ? `, ${v.omitted_count} omitted` : ""}⟩</span>`;
     default: return `<code>${esc(JSON.stringify(v))}</code>`;
   }
 }
 
-// One scope section: a vertically-written label cell (rowspan over the
-// scope's rows) to the LEFT of the Name column, then name/value rows.
-// Bindings hidden from the Names table wholesale (see displayFilters).
+function scalarTypeName(v) {
+  if (!v?.kind) return "value";
+  if (v.kind === "none") return "NoneType";
+  if (v.kind === "not_implemented") return "NotImplementedType";
+  return v.kind;
+}
+
+function renderTypedValue(v, heapByUid) {
+  return `<span class="mm-value-type">${esc(scalarTypeName(v))}</span><span class="mm-value-separator" aria-hidden="true">·</span><span class="mm-value-content">${renderValue(v, heapByUid)}</span>`;
+}
+
 function isHiddenBinding(b, heapByUid) {
   if (b.value?.kind !== "ref") return false;
   const node = heapByUid?.get(b.value.uid);
@@ -114,21 +124,10 @@ function isHiddenBinding(b, heapByUid) {
   return false;
 }
 
-function scopeRows(label, allBindings, heapByUid, scopeAttr = "") {
-  const bindings = (allBindings ?? []).filter((b) => !isHiddenBinding(b, heapByUid));
-  const rows = bindings?.length
-    ? bindings.map((b) => `<td class="name" ${scopeAttr}>${esc(b.name)}</td><td>${renderValue(b.value, heapByUid)}</td>`)
-    : ['<td class="name" colspan="2"><i class="hint">no names</i></td>'];
-  return rows.map((cells, i) =>
-    `<tr${i === 0 ? ' class="scope-start"' : ""}>${
-      i === 0 ? `<td class="scope-label" rowspan="${rows.length}"><span>${label}</span></td>` : ""
-    }${cells}</tr>`).join("");
-}
-
-// Objects-table display policy: implemented by the `displayFilters` flags
-// above; full rationale and per-filter documentation in app/MEMORY.md (and
-// README "Memory model display rules"). Core invariant regardless of flag
-// state: every rendered `obj N` chip resolves to a rendered row.
+// Object display policy: implemented by the `displayFilters` flags above;
+// full rationale and per-filter documentation in app/MEMORY.md (and README
+// "Memory model display rules"). Core invariant regardless of flag state:
+// every object target resolves to exactly one object pill.
 
 // Walk an EncodedValue (or array of them) and yield every ref uid, including
 // refs nested inside complex/range/slice payloads.
@@ -145,8 +144,8 @@ function* valueRefs(v) {
   }
 }
 
-// Refs a heap node's *rendered content* exposes as chips (bases excluded —
-// they render inline by name).
+// Refs exposed by a heap node's rendered content (bases excluded because
+// they render by name).
 function* nodeContentRefs(n) {
   switch (n.kind) {
     case "list": case "tuple": case "set": case "frozenset":
@@ -155,8 +154,12 @@ function* nodeContentRefs(n) {
     case "dict":
       for (const e of n.entries ?? []) { yield* valueRefs(e.key); yield* valueRefs(e.value); }
       break;
-    case "instance": case "class":
+    case "instance":
       yield* valueRefs((n.attributes ?? []).map((a) => a.value));
+      break;
+    case "class":
+      yield* valueRefs((n.attributes ?? []).map((a) => a.value));
+      if (!displayFilters.inlineClassBases) yield* valueRefs(n.bases ?? []);
       break;
     case "cell":
       if (n.state === "value") yield* valueRefs(n.content);
@@ -164,9 +167,9 @@ function* nodeContentRefs(n) {
   }
 }
 
-// Uids reachable from the Names table (roots) through displayed contents.
-// Refs that render inline (plain functions, modules) emit no chip, so they
-// are not followed and get no row.
+// Uids reachable from visible names through displayed contents. Refs that
+// render inline (plain functions, modules) are not followed and get no
+// identity-bearing pill.
 function reachableUids(step, heapByUid) {
   const roots = [
     ...(step.globals ?? []).map((g) => g.bindings),
@@ -187,7 +190,7 @@ function reachableUids(step, heapByUid) {
   return seen;
 }
 
-// Heap node -> the "Value" cell of the Objects table.
+// Heap node fallback/detail rendering for less common engine kinds.
 function heapNodeValue(n, heapByUid) {
   switch (n.kind) {
     case "list": case "tuple": case "set": case "frozenset": {
@@ -243,8 +246,106 @@ function heapNodeValue(n, heapByUid) {
   }
 }
 
+function countLabel(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function objectPresentation(n, heapByUid) {
+  if (!n) return { type: "unknown", description: "data" };
+  switch (n.kind) {
+    case "list": case "tuple": case "set": case "frozenset":
+      return { type: n.kind, description: countLabel((n.items ?? []).length + (n.elided_count ?? 0), "item") };
+    case "dict":
+      return { type: "dict", description: countLabel((n.entries ?? []).length + (n.elided_count ?? 0), "entry", "entries") };
+    case "instance":
+      return { type: n.class_qualname ?? n.type_name ?? "object", description: countLabel((n.attributes ?? []).length, "attribute") };
+    case "class": {
+      let bases = "";
+      if (displayFilters.inlineClassBases) {
+        const names = (n.bases ?? [])
+          .map((base) => base?.kind === "ref" ? heapByUid?.get(base.uid) : null)
+          .filter((base) => base?.kind === "class" && base.qualname)
+          .map((base) => base.qualname);
+        bases = names.length ? `(${names.join(", ")})` : "";
+      }
+      return { type: "class", description: `${n.qualname ?? "?"}${bases}` };
+    }
+    case "function": return { type: "function", description: n.qualname ?? "?" };
+    case "generator": return { type: "generator", description: n.state ?? "unknown" };
+    case "cell": return { type: "closure cell", description: n.state === "value" ? "value" : "empty" };
+    case "module": return { type: "module", description: n.module ?? "?" };
+    case "opaque": return { type: n.type_name ?? "object", description: "opaque" };
+    case "elided": return { type: "elided", description: "object" };
+    default: return { type: n.type_name ?? n.kind ?? "object", description: "data" };
+  }
+}
+
+function objectSummary(n, heapByUid) {
+  const { type, description } = objectPresentation(n, heapByUid);
+  return `${type} · ${description}`;
+}
+
+function renderDataPillContent(uid, presentation, disclosure = null) {
+  return `<span class="mm-object-data-id">${dataIdLabel(uid)}</span>
+    <span class="mm-object-separator" aria-hidden="true">:</span>
+    <span class="mm-object-type">${esc(presentation.type)}</span>
+    <span class="mm-value-separator" aria-hidden="true">·</span>
+    <span class="mm-object-description">${esc(presentation.description)}</span>
+    ${disclosure == null ? "" : `<span class="mm-disclosure" aria-hidden="true">${disclosure}</span>`}`;
+}
+
+function innerValue(v, heapByUid) {
+  if (v?.kind === "ref") {
+    const node = heapByUid?.get(v.uid);
+    const inline = inlineRendering(node);
+    if (inline) return `<span class="mm-mini-pill">${inline}</span>`;
+    return `<button class="mm-inner-ref mm-object-id" type="button" data-target="object-${v.uid}" data-uid="${v.uid}" title="Move data ${v.uid} to the top" aria-label="data ${v.uid}, ${esc(objectSummary(node, heapByUid))}">↗ ${dataIdLabel(v.uid)} ${esc(objectSummary(node, heapByUid))}</button>`;
+  }
+  return `<span class="mm-mini-pill">${renderTypedValue(v, heapByUid)}</span>`;
+}
+
+function objectDetails(n, heapByUid) {
+  if (!n) return '<div class="mm-object-note">Object details unavailable</div>';
+  switch (n.kind) {
+    case "list": case "tuple": case "set": case "frozenset": {
+      const rows = (n.items ?? []).map((v, i) =>
+        `<div class="mm-detail-row"><span class="mm-slot">${n.ordering === "unordered" ? "•" : i}</span>${innerValue(v, heapByUid)}</div>`);
+      if (n.elided_count) rows.push(`<div class="mm-object-note">+${n.elided_count} elided</div>`);
+      return rows.join("") || '<div class="mm-object-note">empty</div>';
+    }
+    case "dict":
+      return (n.entries ?? []).map((entry) =>
+        `<div class="mm-detail-row mm-dict-entry">${innerValue(entry.key, heapByUid)}<span class="mm-detail-arrow">→</span>${innerValue(entry.value, heapByUid)}</div>`)
+        .concat(n.elided_count ? [`<div class="mm-object-note">+${n.elided_count} elided</div>`] : [])
+        .join("") || '<div class="mm-object-note">empty</div>';
+    case "instance":
+      return (n.attributes ?? []).map((attribute) =>
+        `<div class="mm-detail-row"><span class="mm-slot">${esc(attribute.name)}</span>${innerValue(attribute.value, heapByUid)}</div>`)
+        .join("") || '<div class="mm-object-note">no attributes</div>';
+    case "class": {
+      const bases = displayFilters.inlineClassBases ? [] : (n.bases ?? []).map((base, index) =>
+        `<div class="mm-detail-row"><span class="mm-slot">base${index || ""}</span>${innerValue(base, heapByUid)}</div>`);
+      const attributes = (n.attributes ?? []).map((attribute) =>
+        `<div class="mm-detail-row"><span class="mm-slot">${esc(attribute.name)}</span>${innerValue(attribute.value, heapByUid)}</div>`);
+      return [...bases, ...attributes].join("") || '<div class="mm-object-note">no attributes</div>';
+    }
+    case "cell":
+      return n.state === "value" ? innerValue(n.content, heapByUid) : '<div class="mm-object-note">empty</div>';
+    case "function":
+      return n.closure_environment_id != null
+        ? `<div class="mm-object-note">closure environment ${n.closure_environment_id}</div>`
+        : '<div class="mm-object-note">plain function</div>';
+    case "opaque": case "elided":
+      return `<div class="mm-object-note">${esc(n.reason ?? "details unavailable")}</div>`;
+    default:
+      return `<div class="mm-object-note">${heapNodeValue(n, heapByUid)}</div>`;
+  }
+}
+
 export function createMemoryModel({ root, editor, onUserScrub }) {
   const els = {
+    canvas: root.querySelector("[data-role=memory-canvas]"),
+    lines: root.querySelector("[data-role=binding-lines]"),
     slider: root.querySelector("[data-role=step-slider]"),
     prev: root.querySelector("[data-role=step-prev]"),
     next: root.querySelector("[data-role=step-next]"),
@@ -259,6 +360,11 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
   let index = 0; // position index in the CURRENT mode's position space
   let stateIndex = 0; // raw step index whose snapshot is displayed
   let follow = true; // live mode: keep showing the latest position
+  let hoveredName = null; // { cell, scope, name }; survives child mouseovers
+  let hoveredObjectTarget = null;
+  let surfacedUid = null;
+  const expandedUids = new Set();
+  let arrowFrame = 0;
 
   // ---- line-step positions -------------------------------------------------
   // The engine emits a snapshot per trace event, and a `line` snapshot shows
@@ -287,13 +393,75 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
   // from a visible starting point. Positions 1..N are the executed lines.
   const positionCount = () => (lineMode() ? groups.length + 1 : steps.length);
 
+  function drawBindingArrows() {
+    arrowFrame = 0;
+    if (!els.canvas || !els.lines) return;
+    const canvasRect = els.canvas.getBoundingClientRect();
+    const width = els.canvas.scrollWidth;
+    const height = els.canvas.scrollHeight;
+    els.lines.setAttribute("width", String(width));
+    els.lines.setAttribute("height", String(height));
+    els.lines.style.width = `${width}px`;
+    els.lines.style.height = `${height}px`;
+
+    const targets = new Map([...els.canvas.querySelectorAll("[data-value-id]")]
+      .map((node) => [node.dataset.valueId, node]));
+    const directPaths = [...els.names.querySelectorAll(".mm-binding-ref[data-target]")].map((source) => {
+      const targetId = source.dataset.target;
+      const target = targets.get(targetId)?.querySelector(".mm-object-pill");
+      if (!target) return "";
+      const from = source.getBoundingClientRect();
+      const to = target.getBoundingClientRect();
+      const x1 = from.right - canvasRect.left + els.canvas.scrollLeft;
+      const y1 = from.top + from.height / 2 - canvasRect.top + els.canvas.scrollTop;
+      const x2 = to.left - canvasRect.left + els.canvas.scrollLeft - 5;
+      const y2 = to.top + Math.min(to.height, 34) / 2 - canvasRect.top + els.canvas.scrollTop;
+      const bend = Math.max(22, (x2 - x1) * 0.52);
+      const d = `M ${x1} ${y1} C ${x1 + bend} ${y1}, ${x2 - bend} ${y2}, ${x2} ${y2}`;
+      const active = hoveredObjectTarget === targetId ? " active" : "";
+      return `<path class="mm-binding-path${active}" data-target="${esc(targetId)}" d="${d}" marker-end="url(#mm-arrowhead)"></path>`;
+    }).join("");
+
+    const objectPaths = [...els.objects.querySelectorAll(".mm-object-node[data-child-targets]")]
+      .flatMap((sourceNode) => sourceNode.dataset.childTargets.split(" ").filter(Boolean).map((targetId) => {
+        const source = sourceNode.querySelector(".mm-object-pill");
+        const target = targets.get(targetId)?.querySelector(".mm-object-pill");
+        if (!source || !target || source === target) return "";
+        const from = source.getBoundingClientRect();
+        const to = target.getBoundingClientRect();
+        const x1 = from.left - canvasRect.left + els.canvas.scrollLeft;
+        const y1 = from.top + Math.min(from.height, 34) / 2 - canvasRect.top + els.canvas.scrollTop;
+        const x2 = to.left - canvasRect.left + els.canvas.scrollLeft - 5;
+        const y2 = to.top + Math.min(to.height, 34) / 2 - canvasRect.top + els.canvas.scrollTop;
+        const outside = Math.min(x1, x2) - 26;
+        const d = `M ${x1} ${y1} C ${outside} ${y1}, ${outside} ${y2}, ${x2} ${y2}`;
+        const active = hoveredObjectTarget === targetId ? " active" : "";
+        return `<path class="mm-object-path${active}" data-target="${esc(targetId)}" d="${d}" marker-end="url(#mm-arrowhead)"></path>`;
+      })).join("");
+    els.lines.innerHTML = '<defs><marker id="mm-arrowhead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M 0 0 L 8 4 L 0 8 z"></path></marker></defs>' + directPaths + objectPaths;
+  }
+
+  function scheduleBindingArrows() {
+    if (arrowFrame) cancelAnimationFrame(arrowFrame);
+    arrowFrame = requestAnimationFrame(drawBindingArrows);
+  }
+
+  new ResizeObserver(scheduleBindingArrows).observe(els.canvas);
+  els.names.addEventListener("scroll", scheduleBindingArrows, { passive: true });
+
   function show(i) {
+    // A redraw replaces every Names cell. End any active hover first so
+    // Director dwell triggers cannot survive after their visual target did.
+    endNameHover();
+    endObjectHover();
     if (!steps.length) {
       els.counter.textContent = "no steps";
       els.event.textContent = "";
       els.flags.innerHTML = "";
-      els.names.innerHTML = "";
+      els.canvas.classList.add("is-empty");
+      els.names.innerHTML = '<div class="memory-empty">Run your program to see names bind to values.</div>';
       els.objects.innerHTML = "";
+      els.lines.innerHTML = "";
       els.slider.max = "0";
       editor?.clearHighlight();
       return;
@@ -306,8 +474,10 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
       els.counter.textContent = `line 0/${groups.length}`;
       els.event.innerHTML = "<i>before the program runs</i>";
       els.flags.innerHTML = "";
-      els.names.innerHTML = "<tr><th>Name</th><th>Value</th></tr>";
-      els.objects.innerHTML = "<tr><th>Id</th><th>Type</th><th>Value</th></tr>";
+      els.canvas.classList.add("is-empty");
+      els.names.innerHTML = '<div class="memory-empty">Nothing is bound yet.</div>';
+      els.objects.innerHTML = "";
+      els.lines.innerHTML = "";
       els.slider.max = String(positionCount() - 1);
       els.slider.value = "0";
       editor?.clearHighlight();
@@ -336,6 +506,7 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     }
     els.slider.max = String(positionCount() - 1);
     els.slider.value = String(index);
+    els.canvas.classList.remove("is-empty");
 
     els.flags.innerHTML = Object.entries(s.flags ?? {})
       .filter(([, v]) => v)
@@ -343,33 +514,120 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
 
     const heapByUid = new Map((s.heap ?? []).map((n) => [n.uid, n]));
 
-    // Names: globals first, then stack frames root → active. Scope labels
-    // are vertical cells to the left of the Name column (rowspan).
-    let names = '<tr><th class="scope-label-head"></th><th>Name</th><th>Value</th></tr>';
-    for (const g of s.globals ?? []) {
-      names += scopeRows(`globals${g.module === "__main__" ? "" : ` (${esc(g.module)})`}`, g.bindings, heapByUid,
-        g.module === "__main__" ? 'data-scope="global"' : "");
-    }
-    (s.stack ?? []).forEach((f, fi, arr) => {
-      if (f.function === "<module>") return; // module frame duplicates globals
-      const active = fi === arr.length - 1;
-      // Marker must read the same under the label's 180° rotation.
-      names += scopeRows(`${esc(f.function)}()${active ? " ●" : ""}`, f.locals, heapByUid,
-        `data-scope="frame" data-fn="${esc(f.function)}"`);
-    });
-    for (const c of s.closure_environments ?? []) {
-      names += scopeRows(`closure env ${c.environment_id}`, c.cells, heapByUid);
-    }
-    els.names.innerHTML = names;
-
-    // Objects: filtered per displayFilters (see app/MEMORY.md).
+    // Names pair with scalar pills or data-reference pills matching the
+    // canonical Data In Memory form. Heap objects live in a separate ordered
+    // list and render exactly once. Contextual SVG paths connect reference
+    // pills and containing objects to the hovered target.
     const visible = displayFilters.chipReachableOnly
       ? reachableUids(s, heapByUid)
       : new Set((s.heap ?? []).map((n) => n.uid));
-    els.objects.innerHTML = "<tr><th>Id</th><th>Type</th><th>Value</th></tr>"
-      + (s.heap ?? []).filter((n) => visible.has(n.uid)).map((n) =>
-        `<tr data-uid="${n.uid}"${displayFilters.dimOpaque && n.kind === "opaque" ? ' class="dim"' : ""}><td class="uid">obj ${n.uid}</td><td>${esc(n.type_name ?? n.kind)}</td><td>${heapNodeValue(n, heapByUid)}</td></tr>`,
-      ).join("");
+    const targets = new Map();
+    const targetOrder = [];
+
+    function registerTarget(id, spec) {
+      if (!targets.has(id)) {
+        targets.set(id, spec);
+        targetOrder.push(id);
+      }
+      return id;
+    }
+
+    function bindingPresentation(value) {
+      if (value?.kind === "ref") {
+        const node = heapByUid.get(value.uid);
+        const inline = inlineRendering(node);
+        if (inline) return { html: `<span class="mm-value-pill mm-bound-value">${inline}</span>` };
+        const target = registerTarget(`object-${value.uid}`, { kind: "object", node, uid: value.uid });
+        return {
+          html: `<button class="mm-value-pill mm-data-pill mm-binding-data-pill mm-binding-ref" type="button" data-target="${target}" data-uid="${value.uid}" title="Find data ${value.uid} in Data In Memory" aria-label="data ${value.uid}"><span class="mm-object-data-id">${dataIdLabel(value.uid)}</span></button>`,
+        };
+      }
+      return { html: `<span class="mm-value-pill mm-bound-value">${renderTypedValue(value, heapByUid)}</span>` };
+    }
+
+    function renderScope(label, allBindings, { scope = null, fn = null, active = false } = {}) {
+      const bindings = (allBindings ?? []).filter((binding) => !isHiddenBinding(binding, heapByUid));
+      const rows = bindings.length
+        ? bindings.map((binding) => {
+          const presentation = bindingPresentation(binding.value);
+          const attrs = `${scope ? ` data-scope="${esc(scope)}"` : ""}${fn ? ` data-fn="${esc(fn)}"` : ""}`;
+          return `<div class="mm-binding"><div class="mm-name-box name"${attrs}>${esc(binding.name)}</div><span class="mm-bind-symbol" aria-hidden="true">→</span>${presentation.html}</div>`;
+        }).join("")
+        : '<div class="mm-no-names">no names yet</div>';
+      return `<section class="mm-scope${active ? " active" : ""}"><div class="mm-scope-title">${esc(label)}${active ? '<span class="mm-active-dot" title="Active scope"></span>' : ""}</div>${rows}</section>`;
+    }
+
+    let names = "";
+    for (const g of s.globals ?? []) {
+      names += renderScope(g.module === "__main__" ? "Globals" : `Globals · ${g.module}`, g.bindings,
+        { scope: g.module === "__main__" ? "global" : null });
+    }
+    (s.stack ?? []).forEach((frame, frameIndex, stack) => {
+      if (frame.function === "<module>") return;
+      names += renderScope(`${frame.function}()`, frame.locals, {
+        scope: "frame",
+        fn: frame.function,
+        active: frameIndex === stack.length - 1,
+      });
+    });
+    for (const closure of s.closure_environments ?? []) {
+      names += renderScope(`Closure ${closure.environment_id}`, closure.cells, { scope: "closure" });
+    }
+    els.names.innerHTML = names || '<div class="memory-empty">Nothing is bound at this step.</div>';
+
+    // Include reachable child objects that have no direct name binding. They
+    // remain single nodes and are reached from expanded object contents.
+    for (const node of s.heap ?? []) {
+      if (visible.has(node.uid)) registerTarget(`object-${node.uid}`, { kind: "object", node, uid: node.uid });
+    }
+
+    const orderedTargets = [...targetOrder];
+    if (surfacedUid != null) {
+      const surfacedId = `object-${surfacedUid}`;
+      const surfacedIndex = orderedTargets.indexOf(surfacedId);
+      if (surfacedIndex > 0) orderedTargets.unshift(...orderedTargets.splice(surfacedIndex, 1));
+    }
+
+    const objectItems = orderedTargets.map((id) => {
+      const target = targets.get(id);
+      const node = target.node;
+      const presentation = objectPresentation(node, heapByUid);
+      const summary = `${presentation.type} · ${presentation.description}`;
+      const expanded = expandedUids.has(target.uid);
+      const dim = displayFilters.dimOpaque && node?.kind === "opaque" ? " dim" : "";
+      const childTargets = [...new Set(node ? [...nodeContentRefs(node)] : [])]
+        .filter((uid) => visible.has(uid) && !inlineRendering(heapByUid.get(uid)))
+        .map((uid) => `object-${uid}`).join(" ");
+      return `<div class="mm-value-node mm-object-node${dim}" data-value-id="${id}" data-uid="${target.uid}"${childTargets ? ` data-child-targets="${childTargets}"` : ""}>
+        <div class="mm-object-line">
+          <button class="mm-value-pill mm-data-pill mm-object-pill" type="button" data-target="${id}" data-uid="${target.uid}" aria-expanded="${expanded}" title="${expanded ? "Collapse" : "Expand"} ${esc(summary)}" aria-label="data ${target.uid}: ${esc(summary)}">${renderDataPillContent(target.uid, presentation, expanded ? "▾" : "▸")}</button>
+        </div>
+        <div class="mm-object-detail"${expanded ? "" : " hidden"}>${objectDetails(node, heapByUid)}</div>
+      </div>`;
+    }).join("");
+    els.objects.innerHTML = objectItems
+      ? `<div class="mm-object-list-title">Data In Memory</div><div class="mm-object-scroll">${objectItems}</div>`
+      : '<div class="mm-object-list-title">No Identity-Bearing Data In Memory</div>';
+    const objectScroller = els.objects.querySelector(".mm-object-scroll");
+    if (objectScroller) {
+      // Alignment gutters are added only when the unpadded data list already
+      // overflows. They let the first and last entries align with any visible
+      // binding without making short lists artificially scrollable.
+      const naturallyScrollable = objectScroller.scrollHeight > objectScroller.clientHeight + 1;
+      objectScroller.dataset.scrollable = String(naturallyScrollable);
+      if (naturallyScrollable) {
+        const gutter = Math.max(0, objectScroller.clientHeight - 34);
+        objectScroller.style.setProperty("--mm-alignment-gutter", `${gutter}px`);
+        objectScroller.classList.add("is-alignment-scrollable");
+        const firstObject = objectScroller.querySelector(".mm-object-node");
+        if (firstObject) {
+          const scrollerTop = objectScroller.getBoundingClientRect().top;
+          objectScroller.scrollTop = firstObject.getBoundingClientRect().top - scrollerTop;
+        }
+      }
+      objectScroller.addEventListener("scroll", scheduleBindingArrows, { passive: true });
+    }
+    scheduleBindingArrows();
 
     if (editor && hlModule === "__main__") editor.highlightLine(hlLine);
     else editor?.clearHighlight();
@@ -443,27 +701,142 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     return null; // closure envs etc.: no scope restriction
   }
 
-  // Hovering a name highlights its occurrences in the editor (scope-aware).
-  els.names.addEventListener("mouseover", (ev) => {
-    const td = ev.target.closest("td.name");
-    if (!td) return;
-    const name = td.textContent.trim();
-    editor?.highlightName(name, lineFilterFor(td.dataset.scope, td.dataset.fn, name));
-    events.emit("hover-name", { scope: td.dataset.scope ?? null, name });
-  });
-  els.names.addEventListener("mouseleave", () => editor?.clearNameHighlight());
+  function endNameHover() {
+    if (!hoveredName) return;
+    const { scope, name } = hoveredName;
+    hoveredName = null;
+    editor?.clearNameHighlight();
+    events.emit("hover-name", { scope, name, active: false });
+  }
 
-  // Ref chips (in either table) flash + scroll to the object's row.
+  // Hovering a name highlights its occurrences in the editor (scope-aware).
+  // The active phase lets lessons require a sustained hover before moving on.
+  els.names.addEventListener("mouseover", (ev) => {
+    const nameBox = ev.target.closest(".mm-name-box.name");
+    if (!nameBox) return;
+    if (hoveredName?.cell === nameBox) return;
+    endNameHover();
+    const name = nameBox.textContent.trim();
+    const scope = nameBox.dataset.scope ?? null;
+    hoveredName = { cell: nameBox, scope, name };
+    editor?.highlightName(name, lineFilterFor(scope, nameBox.dataset.fn, name));
+    events.emit("hover-name", { scope, name, active: true });
+  });
+  els.names.addEventListener("mouseout", (ev) => {
+    const nameBox = ev.target.closest(".mm-name-box.name");
+    if (!nameBox || hoveredName?.cell !== nameBox || nameBox.contains(ev.relatedTarget)) return;
+    endNameHover();
+  });
+  els.names.addEventListener("mouseleave", endNameHover);
+
+  function objectTargetFor(element) {
+    if (!(element instanceof Element)) return null;
+    const reference = element.closest(".mm-binding-ref[data-target], .mm-inner-ref[data-target]");
+    if (reference) return reference.dataset.target;
+    return element.closest(".mm-object-node")?.dataset.valueId ?? null;
+  }
+
+  function showObjectReferences(target) {
+    if (!target || hoveredObjectTarget === target) return;
+    endObjectHover();
+    hoveredObjectTarget = target;
+    const object = els.objects.querySelector(`.mm-object-node[data-value-id="${target}"]`);
+    object?.classList.add("reference-active");
+    for (const reference of root.querySelectorAll(`.mm-binding-ref[data-target="${target}"], .mm-inner-ref[data-target="${target}"]`)) {
+      reference.classList.add("reference-active");
+      reference.closest(".mm-binding")?.classList.add("reference-source");
+    }
+    for (const parent of els.objects.querySelectorAll(".mm-object-node[data-child-targets]")) {
+      if (parent.dataset.childTargets.split(" ").includes(target)) parent.classList.add("reference-source");
+    }
+    scheduleBindingArrows();
+  }
+
+  function endObjectHover() {
+    if (!hoveredObjectTarget) return;
+    hoveredObjectTarget = null;
+    for (const element of root.querySelectorAll(".reference-active, .reference-source")) {
+      element.classList.remove("reference-active", "reference-source");
+    }
+    scheduleBindingArrows();
+  }
+
+  root.addEventListener("mouseover", (ev) => {
+    const target = objectTargetFor(ev.target);
+    if (target) showObjectReferences(target);
+  });
+  root.addEventListener("mouseout", (ev) => {
+    const target = objectTargetFor(ev.target);
+    if (!target || target !== hoveredObjectTarget) return;
+    if (objectTargetFor(ev.relatedTarget) === target) return;
+    endObjectHover();
+  });
+
+  function focusDataForBinding(reference) {
+    const target = reference.dataset.target;
+    const object = target ? els.objects.querySelector(`.mm-object-node[data-value-id="${target}"]`) : null;
+    if (!object) return;
+    const targetPill = object.querySelector(".mm-object-pill");
+    const scroller = object.closest(".mm-object-scroll");
+
+    if (targetPill && scroller?.dataset.scrollable === "true") {
+      const sourceRect = reference.getBoundingClientRect();
+      const targetRect = targetPill.getBoundingClientRect();
+      const delta = (targetRect.top + targetRect.height / 2) - (sourceRect.top + sourceRect.height / 2);
+      const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+      const nextScroll = Math.max(0, Math.min(maxScroll, scroller.scrollTop + delta));
+      if (Math.abs(nextScroll - scroller.scrollTop) > 1) {
+        scroller.scrollTo({ top: nextScroll, behavior: "smooth" });
+      }
+    }
+
+    object.classList.remove("flash");
+    requestAnimationFrame(() => object.classList.add("flash"));
+    setTimeout(() => object.classList.remove("flash"), 900);
+    events.emit("chip-clicked", { uid: Number(reference.dataset.uid) });
+  }
+
+  // Compound pills expand in place. Binding references navigate to their
+  // canonical data pill without changing data order. References inside an
+  // expanded object retain their existing surface-to-top behavior.
   root.addEventListener("click", (ev) => {
-    const a = ev.target.closest("a.mm-ref");
-    if (!a) return;
+    const bindingReference = ev.target.closest(".mm-binding-ref[data-uid]");
+    if (bindingReference) {
+      focusDataForBinding(bindingReference);
+      return;
+    }
+
+    const innerReference = ev.target.closest(".mm-inner-ref[data-uid]");
+    if (innerReference) {
+      const uid = Number(innerReference.dataset.uid);
+      surfacedUid = uid;
+      events.emit("chip-clicked", { uid });
+      show(index);
+      return;
+    }
+
+    const objectPill = ev.target.closest(".mm-object-pill");
+    if (objectPill) {
+      const node = objectPill.closest(".mm-object-node");
+      const uid = Number(node.dataset.uid);
+      const willExpand = objectPill.getAttribute("aria-expanded") !== "true";
+      if (willExpand) expandedUids.add(uid);
+      else expandedUids.delete(uid);
+      surfacedUid = uid;
+      events.emit("chip-clicked", { uid });
+      show(index);
+      return;
+    }
+
+    const ref = ev.target.closest(".mm-inner-ref, a.mm-ref");
+    if (!ref) return;
     ev.preventDefault();
-    const row = els.objects.querySelector(`tr[data-uid="${a.dataset.uid}"]`);
-    if (!row) return;
-    row.scrollIntoView({ block: "nearest" });
-    row.classList.add("flash");
-    setTimeout(() => row.classList.remove("flash"), 900);
-    events.emit("chip-clicked", { uid: Number(a.dataset.uid) });
+    const node = els.objects.querySelector(`.mm-object-node[data-uid="${ref.dataset.uid}"]`);
+    if (!node) return;
+    node.scrollIntoView({ block: "nearest" });
+    node.classList.add("flash");
+    setTimeout(() => node.classList.remove("flash"), 900);
+    events.emit("chip-clicked", { uid: Number(ref.dataset.uid) });
   });
 
   // Rendering a snapshot is O(step contents); doing it synchronously per
@@ -485,6 +858,8 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     else requestAnimationFrame(render);
   }
 
+  show(0);
+
   return {
     appendRecord(r) {
       if (r.kind === "step") {
@@ -494,7 +869,16 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
         scheduleShowLatest();
       }
     },
-    reset() { steps = []; groups = []; index = 0; follow = true; scopeInfo = null; show(0); },
+    reset() {
+      steps = [];
+      groups = [];
+      index = 0;
+      follow = true;
+      scopeInfo = null;
+      surfacedUid = null;
+      expandedUids.clear();
+      show(0);
+    },
     // Position-space API (positions = executed lines in line-step mode,
     // raw engine steps otherwise).
     goTo: (i) => userShow(i),

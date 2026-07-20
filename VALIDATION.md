@@ -23,7 +23,7 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | R1 | First-run boot with status + console notice | Status badge transitions `starting Python… → running… → completed`; boot notice line present | partial (S-1 asserts completion, not transitions) |
 | R2 | Warm reruns near-instant | Timing: second `plp.run()` of a trivial program completes < 2 s | GAP |
 | R3 | Re-entrancy guard before state reset | Start a long run, call `plp.run()` again → rejects; first run's `records()` array is unclobbered and still completes | GAP |
-| R4 | Terminal reasons → console closing notes | One program per reason (`completed`, `uncaught_exception`, `interrupted`, `killed`, `needs_input`, `step_limit`, `trace_limit`) → assert `summary.terminal_reason` AND the console note text. `engine_error`: not reliably drivable; code-review the switch instead | S-1 (completed), S-2 (uncaught), S-5 (needs_input); GAP: interrupted, killed, step_limit, trace_limit |
+| R4 | Terminal reasons → console closing notes | One program per reason (`completed`, `uncaught_exception`, `interrupted`, `killed`, `needs_input`, `step_limit`, `trace_limit`) → assert `summary.terminal_reason` AND the console note text. `engine_error`: not reliably drivable; code-review the switch instead | S-1 (completed), S-2 (uncaught), S-9 (needs_input); GAP: interrupted, killed, step_limit, trace_limit |
 | R5 | Exception summary line (type, message, line) | `1//0` at a known line → console contains `ZeroDivisionError` + `(line N)`, styled stderr | S-2 (partial: type only) |
 | R6 | Stop: cooperative under COI / hard-kill degraded | COI: interrupt a loop with per-iteration ms-scale C work → `interrupted`, `trace_complete: true`. Degraded: same → `killed`, `trace_complete: false`, records end with synthetic terminal | GAP |
 | R7 | Diagnostics surfaced (quiet list suppressed) | Thread program → console shows `⚠ unsupported_thread`; no `host_limit_unavailable` line ever appears | GAP |
@@ -42,33 +42,37 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | C5 | Empty line is a valid input | Reply `""` → run proceeds, echo is just the newline | GAP |
 | C6 | Input rejected when nothing waiting | `plp.provideInput("x")` while idle → throws; console shows "input rejected" | GAP |
 | C7 | DOM cap with full-fidelity memory | 3000-print flood → DOM chunk count ≤ cap+1 with cap notice; `plp.console.text()` still contains all 3000 lines; page stays responsive | GAP |
-| C8 | Scrub reconstruction | At a mid position: transcript = output through that position's state step + banner; at position 0: "no output yet"; at last position: full live view returns | S-1, S-4 (partial) |
-| C9 | Degraded `needs_input` explanation | Non-isolated run of an input program → explanatory closing note | S-5 |
+| C8 | Scrub reconstruction | At a mid position: transcript = output through that position's state step + banner; at position 0: "no output yet"; at last position: full live view returns | S-1, S-8 (partial) |
+| C9 | Degraded `needs_input` explanation | Non-isolated run of an input program → explanatory closing note | S-9 |
 
-## Memory model — tables
+## Memory model - visual canvas
 
 | # | Feature | Best evidence | Coverage |
 |---|---|---|---|
-| M1 | Names: globals section + frames root→active with active marker; module frame not duplicated | Program two calls deep → table text contains sections in order, `← active` on innermost only, no `<module>()` section | partial (S-1 asserts names exist) |
-| M2 | Closure environments section | Closure program (`make_counter`) → `closure env N` section with cell bindings | GAP |
-| M3 | Scalars render inline per encoding (int/str/bool/None/float/bytes/complex/range/elided) | One program binding each kind → Names cells match expected strings; no `obj` chips for scalars | GAP (spot-covered) |
-| M4 | Ref chips resolve; click flashes/scrolls target row | Zero dangling chips (S-3's DOM sweep); click dispatch → target row gains `.flash` | S-3 (dangling=0); GAP (click) |
-| M5 | Chip-reachable display policy | S-3's assertions: reachable rows present, unreachable builtin base absent | S-3 |
-| M6 | Class bases inline by name; builtin base omitted | `class Puppy(Dog)` text; no `opaque` row | S-3 |
-| M7 | Opaque rows dimmed but shown when learner data reaches them | `f = open(...)`-style program → `opaque` row present with `.dim` class | GAP |
-| M8 | Aliasing: one row, many chips | `[[0,0]]*3` → outer list's three chips share one uid; heap has exactly 2 list rows | S-4 (via names presence) — strengthen with uid equality |
-| M9 | Cycles render | `loop.append(loop)` → row's own uid appears as chip inside itself | GAP |
+| M1 | Scope cards: globals + frames root to active with active marker; module frame not duplicated | Program two calls deep → cards appear in order, active card marked, no `<module>()` card | partial (S-1 asserts names exist) |
+| M2 | Closure environment scope card | Closure program (`make_counter`) → closure card with cell bindings | GAP |
+| M3 | Scalars render as paired typed value pills per encoding (int/str/bool/None/float/bytes/complex/range/elided) | One program binding each kind → type and value match; no invented data id | S-4 (int spot check); broader encodings GAP |
+| M4 | Contextual reference arrows resolve to rendered objects | Hover a bound id → solid incoming paths active; hover indirectly held object → dashed parent path active; no dangling targets | S-3, S-4, S-5 |
+| M5 | Name-reachable display policy | Reachable pills present; unreachable builtin base absent | S-3 |
+| M6 | Class bases inline by name; builtin base omitted | `class Puppy(Dog)` pill; no `opaque` builtin pill | S-3 |
+| M7 | Opaque pills dimmed but shown when learner data reaches them | `f = open(...)`-style program → opaque pill present with `.dim` class | GAP |
+| M8 | Aliasing: repeated compact id pills | `a = [1,2]; b = a` → both bindings show the same compact data<sub>N</sub>; the canonical entry shows `data<sub>N</sub> : list · 2 items`; one list data node; two hover paths | S-4 |
+| M9 | Cycles render without recursive duplication | `loop.append(loop)` → expanded list contains an internal reference to its own existing pill | GAP |
 | M10 | Elision markers visible | Run with tiny `max_heap_nodes`/`max_container_elems` via direct session options → `⟨elided⟩` text + flags row shows `heap_elided`/`container_elided` | GAP |
 | M11 | Flags row renders set flags only | Same run: only tripped flags appear | GAP |
+| M12 | Hovering a Names binding highlights scoped whole-word source matches, including string literals; leaving clears all marks | source with identifier + string matches, hover/leave DOM mark counts | S-7 |
+| M13 | Compound data renders as one `data<sub>N</sub> : type · description` pill and expands or collapses in place | One control per Data In Memory row; click list pill → `aria-expanded` true and indexed child pills visible; click again collapses | S-4 (single control + expand); collapse GAP |
+| M14 | Clicking a data pill surfaces it | Click an indirectly held child's unified data pill → its data node becomes first in the Data In Memory list | S-5 |
+| M15 | Binding-pill navigation preserves order | Click a binding pill in an overflowing data list → matching canonical pill scrolls to its vertical level; data-node order is unchanged. A non-overflowing list keeps scroll position 0 | S-4 (short list), S-10 (overflow alignment + order) |
 
 ## Memory model — stepping
 
 | # | Feature | Best evidence | Coverage |
 |---|---|---|---|
-| P1 | Line mode default; position 0 anchor | `lineMode()` true; `goTo(0)` → `line 0/N`, empty tables, "before the program runs", no highlight, console "no output yet" | S-1 |
-| P2 | Grouping: one position per executed line; iterations collapse | 4-line grid program → `stepCount()` = 5; raw steps > positions; comprehension position labeled `(k engine steps)` | S-4 |
-| P3 | Produced-state semantics | Position "line 1" shows the binding line 1 created | S-4 |
-| P4 | Engine-step mode toggle | Uncheck → counter `step k/n`, before-line semantics (state at step `line N` lacks line N's effect) | S-4 (counter only) — add semantics assertion |
+| P1 | Line mode default; position 0 anchor | `lineMode()` true; `goTo(0)` → `line 0/N`, empty canvas, "before the program runs", no highlight, console "no output yet" | S-1 |
+| P2 | Grouping: one position per executed line; iterations collapse | 4-line grid program → `stepCount()` = 5; raw steps > positions; comprehension position labeled `(k engine steps)` | S-8 |
+| P3 | Produced-state semantics | Position "line 1" shows the binding line 1 created | S-8 |
+| P4 | Engine-step mode toggle | Uncheck → counter `step k/n`, before-line semantics (state at step `line N` lacks line N's effect) | S-8 (counter only); add semantics assertion |
 | P5 | Prev/next/slider parity | `goTo(i)`, next, prev round-trips index | GAP (trivial) |
 | P6 | Live follow + resume-at-end | During a slow run: view tracks latest; scrub back → frozen while records grow; slider to end → follows again | GAP |
 | P7 | Render throttling under load | 10k-step trace: page responsive; renders ≈ animation frames, not records (instrument via rAF counter) | GAP (perf) |
@@ -85,23 +89,32 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | Q6 | code-args blanks call arguments | known line → `before`/expected args; grade right/wrong | Q-5 |
 | Q7 | quiz pilot renders + checks; graceful without trace | panel question, fill → correct, wrong → `.bad` mark; after reset `newQuestion` → null | Q-6 |
 | Q8 | Determinism under explicit seed/options | same opts → same question (spot: implied by fixed expectations in Q-1..Q-5) | implicit |
+| Q9 | Memory construction graph preserves nested data and aliases while ignoring learner-local data ids | rename every target data id consistently → correct; remove a binding → binding-area failure | Q-3 |
+| Q10 | Blank memory builder creates names, typed scalars, data, and references; Check displays graph feedback | construct `x → int · 3` from blank → correct; change to 4 → incorrect | Q-8 |
+| Q11 | Expression evaluation sequence for augmented assignment includes target read, RHS literal/list construction, overloaded operation, and store | `items += [4]` exact action list; correct order passes, reverse fails | Q-4, Q-8 |
+| Q12 | Construction type fields allow typing and filtering without showing advanced types initially | empty data-type field suggests five common types; typing `gen` narrows to `generator` and commits it | Q-8 |
 
 ## Director layer (D-series = `tests/director.spec.mjs`)
+
+Dormant infrastructure: the learner-facing Lesson control is intentionally
+absent and lesson data is not loaded by `app/main.mjs`. D-series tests import
+the reference fixture directly.
 
 | # | Feature | Best evidence | Coverage |
 |---|---|---|---|
 | DR1 | Event bus: semantic events in order, correct payloads; `edited` only for user-origin changes | scripted session → ordered log assertions | D-1a/b |
-| DR2 | Lesson lint catches unknown targets/actions/events/conditions/signals/beat refs, dup ids, idleMs-in-until, missing until; `start()` refuses | malformed lesson → every specific message asserted; reference lesson lints clean | D-2 |
+| DR2 | Lesson lint catches unknown targets/actions/cue motions/events/conditions/signals/beat refs, invalid hover dwell, dup ids, idleMs-in-until, missing until; `start()` refuses | malformed lesson → every specific message asserted; reference lesson lints clean | D-2 |
 | DR3 | Gates: every capability denies (DOM/behavioral) and restores; `reset()` leaves zero artifacts | per-cap DOM/state assertions; gatedCaps bookkeeping | D-3a |
 | DR4 | console-input gate: prompt shows, line mode never engages, interrupt escape works | input program under gate → transcript has prompt, isWaiting false | D-3b |
-| DR5 | Effects: spotlight/dim backdrop, pulse, rich-text popover + Esc dismiss, veil/unveil, clearEffects | class/count assertions per effect | D-4a |
+| DR5 | Effects: spotlight/dim backdrop, pulse/bounce/wiggle cues, rich-text popover + Esc dismiss, veil/unveil, clearEffects | class/count assertions per effect | D-4a |
 | DR6 | Structured `{name}` targets resolve and effects re-anchor across memory re-renders | spotlight a Names cell → scrub (table rebuilt) → still spotted; veil persists re-render | D-4b |
 | DR7 | Condition library: every predicate true+false case incl. `sameObject` aliasing and typed `raisedException` | known trace → exact boolean table | D-5 |
-| DR8 | Runtime: event/check/all triggers with latching, gates persist across beats while effects clear, signal branching, terminal resting beat, progress recorded | synthetic lesson walk | D-6a |
+| DR8 | Runtime: event/check/all triggers with latching, continuous-hover `dwellMs` with leave cancellation, gates persist across beats while effects clear, signal branching, terminal resting beat, progress recorded | synthetic lesson walks | D-6a/d |
 | DR9 | Hints: idle (once semantics), event-pattern (repeatable), signal-threshold; why-on-demand; strip dots; exit restores everything; telemetry rows | synthetic lesson with 500ms idle hint | D-6b |
 | DR10 | Crash safety: a beat that throws while staging tears down to free play (gates fail open) | crashing quiz action → director inactive, caps restored | D-6c |
-| DR11 | Reference lesson end-to-end as a learner (run, hover, scrub, input, rerun, quiz) + struggle branch to review | full walk; 3-wrong-answers detour | D-7a/b |
+| DR11 | Reference lesson end-to-end as a learner (run, sustained hover, scrub, input, rerun, quiz) + struggle branch to review | full walk with pre-dwell hold assertion; 3-wrong-answers detour | D-7a/b |
 | DR12 | Solo-only guard (collab × director) | manual/GAP (needs a room fixture) | GAP |
+| DR13 | Tutor speech is a first-class `{say}` action and hint: project-local art, progressive rich-text typing, click-to-reveal, glass/blur surface, target-aware placement with author `avoid` regions, viewport containment, why/dismiss behavior, reduced-motion fallback, and teardown | lint + geometry/API assertions; reference lesson keeps editor and memory fully visible | D-2, D-4c, D-7a |
 
 ## Layout / shell
 
@@ -110,8 +123,8 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | L1 | Gutter drag resizes with floors | Pointer drag → `--col-left`/`--row-console` change; cannot shrink below minimums | GAP |
 | L2 | Sizes persist | Reload → CSS vars restored from localStorage | GAP |
 | L3 | Maximize/restore per pane; Esc; single-maximized invariant | Class toggling per pane; Esc clears; maximizing B unmaximizes A; editor refresh() called (no blank CodeMirror) | GAP |
-| L4 | COI badge truthful in both postures | Isolated: `isolated` + green, capabilities from header record; `?nonisolated`: `none (degraded)` + red | S-1/S-5 (implicit) — assert badge text |
-| L5 | COI shim ride-out; `?nonisolated` unregisters SW | First-visit reload survives (`waitForFunction(crossOriginIsolated)`); nonisolated page reports false | S-1..S-5 (helper does this every test) |
+| L4 | COI badge truthful in both postures | Isolated: `isolated` + green, capabilities from header record; `?nonisolated`: `none (degraded)` + red | S-1/S-9 (implicit); assert badge text |
+| L5 | COI shim ride-out; `?nonisolated` unregisters SW | First-visit reload survives (`waitForFunction(crossOriginIsolated)`); nonisolated page reports false | S-1..S-9 (helper does this every test) |
 | L6 | Sub-path serving correctness | Entire suite runs under `/PLP/` prefix with no COOP/COEP headers (config); zero 404s in network log | all (by config); 404 sweep GAP |
 | L7 | Debug API surface | `window.plp` exposes the documented members (guards accidental removal) | GAP (one-liner) |
 

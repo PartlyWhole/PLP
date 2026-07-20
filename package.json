@@ -10,6 +10,7 @@
     "test": "playwright test"
   },
   "devDependencies": {
+    "@automerge/automerge-repo-sync-server": "^0.2.8",
     "@playwright/test": "1.61.1"
   }
 }
