@@ -128,6 +128,9 @@ export function createEditor({ hostEl }) {
     onLocalChange: (fn) => cm.on("change", (_cm, ch) => {
       if (ch.origin !== "collab") fn();
     }),
+    // Fires for every buffer change, including collaboration splices. Used
+    // by browser-local persistence, which must save the code a follower sees.
+    onChange: (fn) => cm.on("change", fn),
     highlightLine,
     clearHighlight,
     highlightName,

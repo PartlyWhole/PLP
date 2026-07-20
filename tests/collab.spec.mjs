@@ -104,6 +104,15 @@ test.describe("collab (tabs transport, hermetic)", () => {
 
     // Transport gating: a tabs room must never touch the public sync server.
     expect(wsHits).toEqual([]);
+
+    // The last received shared buffer is browser-local too. Leaving strips
+    // room state and reloads, but must not reset the learner's code.
+    await b.getByRole("button", { name: "Leave" }).click();
+    await b.waitForFunction(() => !location.hash && window.plp && !window.plp.collab.isActive());
+    expect(await b.evaluate(() => window.plp.editor.getValue()))
+      .toBe("a_to_b = 2\nseeded = 1\n");
+    expect((await b.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    expect(await b.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
   test("shared run: follower and late joiner replay the driver's run exactly", async ({ page, context }) => {

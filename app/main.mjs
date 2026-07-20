@@ -16,6 +16,8 @@ import { createDirector, lintLesson } from "./director.mjs";
 import { evaluateCheck } from "./conditions.mjs";
 import { events } from "./events.mjs";
 
+const CODE_STORE_KEY = "plp.editor.code.v1";
+
 const SAMPLE = `def total(prices):
     result = 0
     for p in prices:
@@ -31,8 +33,21 @@ name = input("Your name? ")
 print("thanks,", name)
 `;
 
+function loadCode() {
+  try {
+    const saved = localStorage.getItem(CODE_STORE_KEY);
+    return saved === null ? SAMPLE : saved;
+  } catch {
+    return SAMPLE;
+  }
+}
+
 const editor = createEditor({ hostEl: document.getElementById("cm-host") });
-editor.setValue(SAMPLE);
+editor.setValue(loadCode());
+editor.onChange(() => {
+  try { localStorage.setItem(CODE_STORE_KEY, editor.getValue()); }
+  catch { /* private mode / quota: the current session still works */ }
+});
 
 const consoleUI = createConsole({
   root: document.getElementById("console-pane"),

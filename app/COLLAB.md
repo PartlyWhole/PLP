@@ -282,9 +282,10 @@ mode (which only affects live input/interrupt, not sync).
 - **Leave**: presence goodbye → 200 ms flush → `repo.shutdown()` → strip
   the hash → `location.reload()`. The reload is deliberate: it tears down
   every room binding (editor hooks, presence, doc listeners) with zero
-  leftover state.
+  leftover room state. The current editor buffer has already been saved to
+  browser-local storage, so the solo page restores the same code.
 
-## 8. Editor binding (the five glue invariants)
+## 8. Editor binding (the six glue invariants)
 
 1. **Echo guard**: remote applications run under `applyingRemote`;
    `editor.onLocalChange` additionally filters the `"collab"` CodeMirror
@@ -302,6 +303,10 @@ mode (which only affects live input/interrupt, not sync).
    deletion shows the caret at its deletion point. The marks fade after 1.8
    seconds, never change the local selection or scroll, and are derived UI
    only: no cursor or selection data enters the shared document or presence.
+6. **Local durability**: `main.mjs` saves every editor change, including
+   remote splices, under the versioned browser-local key
+   `plp.editor.code.v1`. Startup restores the saved string exactly; only an
+   absent or inaccessible value falls back to the sample program.
 
 ## 9. Security model (bearer capability)
 

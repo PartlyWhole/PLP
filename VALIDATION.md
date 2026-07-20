@@ -15,6 +15,7 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | E2 | Edits feed the next run | Set source via `plp.editor.setValue`, run, assert output reflects the edit | S-2..S-4 (implicitly) |
 | E3 | Current-line highlight follows scrub position | DOM: exactly one `.cm-active-step` line; its index matches the position's line under the current mode's semantics | GAP (asserted indirectly via counter/event text) |
 | E4 | Highlight cleared at start anchor and on reset | DOM: zero `.cm-active-step` after `goTo(0)` (line mode) and after reset | GAP |
+| E5 | Browser-local code persistence | Edit → reload preserves exact buffer; close and relaunch a persistent browser profile → same buffer; receive shared code → Leave reload preserves it | persistence suite, CO-1 |
 
 ## Runner / session
 

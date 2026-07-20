@@ -3,7 +3,7 @@
 A minimal, build-free static site that runs Python in the browser (Pyodide via
 the PyTrace engine) with:
 
-- **Code editor** (left, CodeMirror 5)
+- **Code editor** (left, CodeMirror 5), automatically saved in this browser
 - **Memory model** (right): scoped name boxes paired with values or data ids,
   plus a compact expandable Data In Memory list and contextual reference arrows,
   updating live with a step scrubber to replay execution
@@ -149,6 +149,11 @@ it share:
 - the **step scrubber**: scrubbing steps everyone who's following; a peer
   who scrubs on their own detaches, and scrubbing back to the end
   re-attaches.
+
+The current editor buffer is also saved locally after every change, including
+changes received from a collaborator. **Leave** removes the room connection
+and invite hash, but keeps the code. Closing and later reopening PLP in the
+same browser restores the last buffer.
 
 Rooms ride three free transports at once (whichever works carries the
 room): the public Automerge sync relay, direct WebRTC between browsers
