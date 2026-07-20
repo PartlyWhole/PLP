@@ -4,7 +4,12 @@
   --col-left: 50%;
   --row-console: 220px;
 }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #2c313c #14161a; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: #2c313c; border-radius: 5px; }
+*::-webkit-scrollbar-thumb:hover { background: #3a4150; }
+*::-webkit-scrollbar-corner { background: transparent; }
 html, body { height: 100%; margin: 0; }
 body {
   background: var(--bg); color: var(--fg);
@@ -58,7 +63,26 @@ button:disabled { opacity: 0.5; cursor: default; }
 #cm-host .CodeMirror { height: 100%; font-size: 13px; }
 .CodeMirror { background: #101216; color: #d6dae3; }
 .CodeMirror-gutters { background: #171a20; border-right: 1px solid var(--line); }
+.CodeMirror-linenumber { color: #6b7385; }
 .CodeMirror-cursor { border-left: 2px solid var(--accent); }
+.CodeMirror-selected { background: #2b3b58 !important; }
+/* Dark syntax palette (CM5 ships light-theme token colors — illegible on
+   our background). One-Dark-derived, tuned for contrast on #101216. */
+.CodeMirror .cm-keyword { color: #c678dd; }
+.CodeMirror .cm-def { color: #61afef; }
+.CodeMirror .cm-variable { color: #d6dae3; }
+.CodeMirror .cm-variable-2 { color: #e5c07b; }
+.CodeMirror .cm-builtin { color: #56b6c2; }
+.CodeMirror .cm-string { color: #98c379; }
+.CodeMirror .cm-string-2 { color: #98c379; }
+.CodeMirror .cm-number { color: #d19a66; }
+.CodeMirror .cm-atom { color: #d19a66; }
+.CodeMirror .cm-operator { color: #d6dae3; }
+.CodeMirror .cm-meta { color: #56b6c2; }
+.CodeMirror .cm-comment { color: #8a919f; font-style: italic; }
+.CodeMirror .cm-property { color: #61afef; }
+.CodeMirror .cm-error { color: #e06c75; background: none; }
+.CodeMirror-matchingbracket { color: #fff !important; outline: 1px solid var(--dim); }
 .cm-active-step { background: rgba(79, 143, 247, 0.25) !important; }
 
 /* memory model */
@@ -129,6 +153,7 @@ a.mm-ref:hover { border-color: var(--accent); }
 .stage-popover-actions button { font-size: 11px; padding: 1px 7px; }
 
 /* director lesson strip */
+.director-strip[hidden] { display: none; }
 .director-strip {
   position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 73;
   display: flex; gap: 10px; align-items: center;
