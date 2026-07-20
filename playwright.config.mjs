@@ -4,6 +4,7 @@ import { defineConfig, devices } from "@playwright/test";
 // the coi-serviceworker path exactly as GitHub Pages will serve it, under
 // the simulated /PLP/ project prefix.
 const PORT = 8633;
+const DEPLOYED_BASE_URL = process.env.PLP_BASE_URL;
 
 const browsers = [
   { name: "chromium", use: { ...devices["Desktop Chrome"] } },
@@ -24,9 +25,9 @@ export default defineConfig({
   retries: 0,
   reporter: [["list"]],
   use: {
-    baseURL: `http://127.0.0.1:${PORT}`,
+    baseURL: DEPLOYED_BASE_URL ?? `http://127.0.0.1:${PORT}`,
   },
-  webServer: {
+  webServer: DEPLOYED_BASE_URL ? undefined : {
     command: `node tools/dev-server.mjs --port ${PORT}`,
     url: `http://127.0.0.1:${PORT}/PLP/index.html`,
     reuseExistingServer: false,
