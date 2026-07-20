@@ -65,6 +65,7 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | M13 | Compound data renders as one `data<sub>N</sub> : type · description` pill and expands or collapses in place | One control per Data In Memory row; click list pill → `aria-expanded` true and indexed child pills visible; click again collapses | S-4 (single control + expand); collapse GAP |
 | M14 | Clicking a data pill surfaces it | Click an indirectly held child's unified data pill → its data node becomes first in the Data In Memory list | S-5 |
 | M15 | Binding-pill navigation preserves order | Click a binding pill in an overflowing data list → matching canonical pill scrolls to its vertical level; data-node order is unchanged. A non-overflowing list keeps scroll position 0 | S-4 (short list), S-10 (overflow alignment + order) |
+| M16 | Beginner class filtering removes Python-generated class-body metadata while preserving raw trace truth | Scrub every line-step position in a `Dog` program → no dunder name boxes; switch to engine steps and turn `hideClassBindings` OFF → `__module__` and `__qualname__` return | S-4 |
 
 ## Memory model — stepping
 

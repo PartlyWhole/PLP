@@ -96,9 +96,11 @@ text match in the editor, including matches inside strings and comments.
    contents. Every rendered data target resolves to exactly one pill.
 4. **Class-valued bindings are hidden by default** (`hideClassBindings`): instances
    already show their class name and attributes, so a bare `class Dog` adds no
-   name box or class pill. Turn the filter off when teaching that `class` binds
-   a first-class object. In that advanced view, bases render inline by name
-   (for example, `class Puppy(Dog)`) and the implicit builtin `object` is omitted.
+   name box or class pill. Python-generated class-body names such as
+   `__module__`, `__qualname__`, and `__firstlineno__` are hidden by the same
+   filter. Turn the filter off when teaching that `class` binds a first-class
+   object. In that advanced view, bases render inline by name (for example,
+   `class Puppy(Dog)`) and the implicit builtin `object` is omitted.
 5. **Bare `def` and `import` add nothing** (`inlinePlainFunctions`,
    `inlineModules`, `hideFunctionBindings`, `hideModuleBindings`): a
    plain function or module binding produces no name box or data pill.

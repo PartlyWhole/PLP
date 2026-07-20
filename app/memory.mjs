@@ -129,6 +129,23 @@ function isHiddenBinding(b, heapByUid) {
   return false;
 }
 
+// A class body executes in a temporary namespace that Python seeds with
+// implementation names such as __module__, __qualname__, and
+// __firstlineno__. The paired __module__ + __qualname__ bindings distinguish
+// that namespace from an ordinary function frame. When class definitions are
+// filtered, keep all of its dunder machinery out of the learner view too.
+function visibleBindings(allBindings, heapByUid, { classBody = false } = {}) {
+  const bindings = allBindings ?? [];
+  const classNamespace = classBody
+    && bindings.some((binding) => binding.name === "__module__")
+    && bindings.some((binding) => binding.name === "__qualname__");
+  return bindings.filter((binding) => {
+    if (isHiddenBinding(binding, heapByUid)) return false;
+    return !(displayFilters.hideClassBindings && classNamespace
+      && /^__.*__$/.test(binding.name));
+  });
+}
+
 // Object display policy: implemented by the `displayFilters` flags above;
 // full rationale and per-filter documentation in app/MEMORY.md (and README
 // "Memory model display rules"). Core invariant regardless of flag state:
@@ -177,13 +194,12 @@ function* nodeContentRefs(n) {
 // identity-bearing pill.
 function reachableUids(step, heapByUid) {
   const roots = [
-    ...(step.globals ?? []).map((g) => g.bindings),
-    ...(step.stack ?? []).map((f) => f.locals),
-    ...(step.closure_environments ?? []).map((c) => c.cells),
+    ...(step.globals ?? []).map((g) => visibleBindings(g.bindings, heapByUid)),
+    ...(step.stack ?? []).map((f) => visibleBindings(f.locals, heapByUid, { classBody: true })),
+    ...(step.closure_environments ?? []).map((c) => visibleBindings(c.cells, heapByUid)),
   ];
   const seen = new Set();
-  const queue = [...valueRefs(roots.map((b) =>
-    (b ?? []).filter((x) => !isHiddenBinding(x, heapByUid)).map((x) => x.value)))];
+  const queue = [...valueRefs(roots.map((bindings) => bindings.map((binding) => binding.value)))];
   while (queue.length) {
     const uid = queue.pop();
     if (seen.has(uid)) continue;
@@ -550,8 +566,10 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
       return { html: `<span class="mm-value-pill mm-bound-value">${renderTypedValue(value, heapByUid)}</span>` };
     }
 
-    function renderScope(label, allBindings, { scope = null, fn = null, active = false } = {}) {
-      const bindings = (allBindings ?? []).filter((binding) => !isHiddenBinding(binding, heapByUid));
+    function renderScope(label, allBindings, {
+      scope = null, fn = null, active = false, classBody = false,
+    } = {}) {
+      const bindings = visibleBindings(allBindings, heapByUid, { classBody });
       const rows = bindings.length
         ? bindings.map((binding) => {
           const presentation = bindingPresentation(binding.value);
@@ -573,6 +591,7 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
         scope: "frame",
         fn: frame.function,
         active: frameIndex === stack.length - 1,
+        classBody: true,
       });
     });
     for (const closure of s.closure_environments ?? []) {

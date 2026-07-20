@@ -131,6 +131,47 @@ test.describe("PLP smoke", () => {
     });
   });
 
+  test("isolated: class-body implementation metadata stays out of the learner view", async ({ page }) => {
+    await gotoIsolated(page);
+    await page.evaluate(() => window.plp.editor.setValue(
+      "class Dog:\n"
+      + "    def __init__(self, name, age):\n"
+      + "        self.name = name\n"
+      + "        self.age = age\n\n"
+      + "dog1 = Dog('Buddy', 3)\n",
+    ));
+    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+
+    const exposed = await page.evaluate(() => {
+      const results = [];
+      for (let position = 0; position < window.plp.memory.stepCount(); position += 1) {
+        window.plp.memory.goTo(position);
+        const names = [...document.querySelectorAll(".mm-name-box")].map((node) => node.textContent.trim());
+        const metadata = names.filter((name) => /^__.*__$/.test(name));
+        if (metadata.length) results.push({ position, metadata });
+      }
+      return results;
+    });
+    expect(exposed).toEqual([]);
+
+    // Advanced teaching can still inspect the untouched engine truth.
+    await page.locator("[data-role=step-mode]").uncheck();
+    await page.evaluate(() => {
+      const classBodyStep = window.plp.memory.steps().findIndex((step) =>
+        (step.stack ?? []).some((frame) => (frame.locals ?? [])
+          .some((binding) => binding.name === "__qualname__")));
+      window.plp.memory.filters.hideClassBindings = false;
+      window.plp.memory.goTo(classBodyStep);
+    });
+    await expect(page.locator("[data-role=names-table]")).toContainText("__module__");
+    await expect(page.locator("[data-role=names-table]")).toContainText("__qualname__");
+    await page.evaluate(() => {
+      window.plp.memory.filters.hideClassBindings = true;
+      window.plp.memory.refresh();
+    });
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
   test("isolated: visual grammar uses boxes, pills, arrows, and shared identity", async ({ page }) => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue("a = [1, 2]\nb = a\ncount = 3\nb.append(3)\n"));
