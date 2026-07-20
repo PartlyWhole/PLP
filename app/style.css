@@ -84,6 +84,29 @@ button:disabled { opacity: 0.5; cursor: default; }
 .CodeMirror .cm-error { color: #e06c75; background: none; }
 .CodeMirror-matchingbracket { color: #fff !important; outline: 1px solid var(--dim); }
 .cm-active-step { background: rgba(79, 143, 247, 0.25) !important; }
+.cm-remote-edit {
+  background: rgba(86, 182, 194, 0.32);
+  border-radius: 2px;
+  animation: collab-remote-highlight-kf 1800ms ease-out forwards;
+}
+.cm-remote-cursor {
+  position: relative; display: inline-block; width: 0; height: 1.3em;
+  vertical-align: text-bottom; pointer-events: none;
+}
+.cm-remote-cursor::before {
+  content: ""; position: absolute; z-index: 2; left: -1px; top: 0.08em;
+  width: 2px; height: 1.18em; border-radius: 2px;
+  background: #56b6c2; box-shadow: 0 0 7px rgba(86, 182, 194, 0.8);
+  animation: collab-remote-cursor-kf 1800ms ease-out forwards;
+}
+@keyframes collab-remote-highlight-kf {
+  0%, 60% { background: rgba(86, 182, 194, 0.32); }
+  100% { background: rgba(86, 182, 194, 0); }
+}
+@keyframes collab-remote-cursor-kf {
+  0%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}
 
 /* memory model */
 .memory-body { display: flex; flex-direction: column; padding: 6px 8px; gap: 4px; overflow: hidden; }
@@ -339,7 +362,8 @@ a.mm-ref:hover { border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .stage-cue, .stage-pulse, .stage-popover.teacher,
   .stage-popover.teacher.is-typing .stage-teacher-art,
-  .stage-popover.teacher .stage-popover-body.is-typing::after {
+  .stage-popover.teacher .stage-popover-body.is-typing::after,
+  .cm-remote-edit, .cm-remote-cursor::before {
     animation: none !important;
   }
 }

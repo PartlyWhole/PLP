@@ -3,6 +3,8 @@
 
 import { events } from "./events.mjs";
 
+const REMOTE_ACTIVITY_MS = 1800;
+
 export function createEditor({ hostEl }) {
   const cm = window.CodeMirror(hostEl, {
     mode: "python",
@@ -11,8 +13,45 @@ export function createEditor({ hostEl }) {
     viewportMargin: Infinity,
   });
   let marked = null; // line index of the current step highlight
+  let remoteTextMark = null;
+  let remoteCursorMark = null;
+  let remoteActivityTimer = null;
+
+  function clearRemoteActivity() {
+    if (remoteActivityTimer !== null) clearTimeout(remoteActivityTimer);
+    remoteActivityTimer = null;
+    remoteTextMark?.clear();
+    remoteTextMark = null;
+    remoteCursorMark?.clear();
+    remoteCursorMark = null;
+  }
+
+  function showRemoteActivity(fromIndex, insertedLength) {
+    clearRemoteActivity();
+    const toIndex = fromIndex + insertedLength;
+    if (insertedLength > 0) {
+      remoteTextMark = cm.markText(
+        cm.posFromIndex(fromIndex),
+        cm.posFromIndex(toIndex),
+        { className: "cm-remote-edit" },
+      );
+    }
+
+    // This is the caret implied by the remote splice, not persisted cursor
+    // presence. It also gives a deletion (whose inserted span is empty) a
+    // visible landing point without changing this learner's selection.
+    const cursor = document.createElement("span");
+    cursor.className = "cm-remote-cursor";
+    cursor.setAttribute("aria-hidden", "true");
+    remoteCursorMark = cm.setBookmark(cm.posFromIndex(toIndex), {
+      widget: cursor,
+      insertLeft: true,
+    });
+    remoteActivityTimer = setTimeout(clearRemoteActivity, REMOTE_ACTIVITY_MS);
+  }
 
   cm.on("change", (_cm, ch) => {
+    if (ch.origin !== "collab") clearRemoteActivity();
     if (ch.origin !== "setValue" && ch.origin !== "collab") events.emit("edited");
   });
 
@@ -69,12 +108,14 @@ export function createEditor({ hostEl }) {
     while (p < max && cur[p] === text[p]) p++;
     let s = 0;
     while (s < max - p && cur[cur.length - 1 - s] === text[text.length - 1 - s]) s++;
+    const inserted = text.slice(p, text.length - s);
     cm.replaceRange(
-      text.slice(p, text.length - s),
+      inserted,
       cm.posFromIndex(p),
       cm.posFromIndex(cur.length - s),
       "collab",
     );
+    showRemoteActivity(p, inserted.length);
   }
 
   return {

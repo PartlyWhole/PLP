@@ -93,6 +93,7 @@ runner.mjs  — exports renderRecordToUI / renderRunEnd / END_NOTES;
               guard before state reset — is untouched)
 editor.mjs  — applyRemote(text): common-prefix/suffix splice via
               cm.replaceRange(..., "collab") — preserves cursor/scroll/undo
+              and briefly marks changed text + the inferred remote caret
               onLocalChange(fn): change events EXCEPT origin "collab"
 collab.mjs  — everything else (room, doc, presence, transports)
 ```
@@ -283,7 +284,7 @@ mode (which only affects live input/interrupt, not sync).
   every room binding (editor hooks, presence, doc listeners) with zero
   leftover state.
 
-## 8. Editor binding (the four glue invariants)
+## 8. Editor binding (the five glue invariants)
 
 1. **Echo guard**: remote applications run under `applyingRemote`;
    `editor.onLocalChange` additionally filters the `"collab"` CodeMirror
@@ -296,6 +297,11 @@ mode (which only affects live input/interrupt, not sync).
    prefix/suffix and `replaceRange`s only the middle, so the local cursor,
    scroll, selection, and undo history survive remote edits.
 4. **Text ops only**: writes go through `updateText` (§2).
+5. **Transient remote activity**: a received splice briefly highlights its
+   inserted/replaced text and shows a caret at the resulting position. A
+   deletion shows the caret at its deletion point. The marks fade after 1.8
+   seconds, never change the local selection or scroll, and are derived UI
+   only: no cursor or selection data enters the shared document or presence.
 
 ## 9. Security model (bearer capability)
 
@@ -368,7 +374,9 @@ sync relay and Nostr relays, and only once a room starts.
 - **No follower input**: only the driver can answer `input()` (a
   "raise-hand" relay over ephemeral messages is a natural v2).
 - **No remote Stop**: followers can't interrupt the driver's run.
-- **No editor cursors/carets for peers** (roster + scrub only).
+- **No continuously shared cursor or selection presence**: remote edits show
+  a short-lived inferred caret and changed-text cue, but an idle peer's caret
+  and selection are not transmitted.
 - **Scrub positions assume the default step mode** on all peers.
 - **Start-race cosmetics**: the usurped driver's partial output may
   briefly interleave before the winner's replay resets the panes.

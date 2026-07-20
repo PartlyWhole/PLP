@@ -74,8 +74,29 @@ test.describe("collab (tabs transport, hermetic)", () => {
     // Two-way live sync (programmatic setValue counts as a local edit).
     await page.evaluate(() => window.plp.editor.setValue("a_to_b = 2\nseeded = 1\n"));
     await expect.poll(() => b.evaluate(() => window.plp.editor.getValue())).toContain("a_to_b");
+    // The receiver briefly sees the changed text and inferred remote caret;
+    // the author does not get a remote cue for their own local edit.
+    await expect.poll(() => b.locator(".cm-remote-edit").count()).toBeGreaterThan(0);
+    await expect(b.locator(".cm-remote-cursor")).toHaveCount(1);
+    await expect(page.locator(".cm-remote-edit, .cm-remote-cursor")).toHaveCount(0);
+    // Decorations fade and remove themselves instead of becoming document
+    // or presence state.
+    await expect(b.locator(".cm-remote-edit, .cm-remote-cursor"))
+      .toHaveCount(0, { timeout: 5000 });
+
     await b.evaluate(() => window.plp.editor.setValue("b_to_a = 3\na_to_b = 2\nseeded = 1\n"));
     await expect.poll(() => page.evaluate(() => window.plp.editor.getValue())).toContain("b_to_a");
+    await expect.poll(() => page.locator(".cm-remote-edit").count()).toBeGreaterThan(0);
+    await expect(page.locator(".cm-remote-cursor")).toHaveCount(1);
+    await expect(b.locator(".cm-remote-edit, .cm-remote-cursor")).toHaveCount(0);
+
+    // A deletion has no inserted span to tint, but its inferred caret still
+    // lands at the deletion point on the receiver.
+    await page.evaluate(() => window.plp.editor.setValue("a_to_b = 2\nseeded = 1\n"));
+    await expect.poll(() => b.evaluate(() => window.plp.editor.getValue()))
+      .toBe("a_to_b = 2\nseeded = 1\n");
+    await expect(b.locator(".cm-remote-edit")).toHaveCount(0);
+    await expect(b.locator(".cm-remote-cursor")).toHaveCount(1);
 
     // Roster: both sides show 2 peers.
     await expect.poll(() => page.evaluate(() => document.getElementById("collab-peers").textContent)).toBe("2");
