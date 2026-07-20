@@ -83,9 +83,10 @@ text match in the editor, including matches inside strings and comments.
    Memory entry adds `: type · description`.
 2. **Everything with meaningful identity gets one expandable data pill** in
    the Data In Memory list, formatted as `data<sub>N</sub> : type · description`:
-   lists, tuples, sets, dicts, instances, classes, functions, generators, and
-   cells. Two names bound to the same object show the same id. Hovering an id or
-   data pill reveals solid arrows from bound names and dashed arrows from
+   lists, tuples, sets, dicts, instances, generators, and cells, plus advanced
+   objects when their teaching filters expose them. Two names bound to the
+   same object show the same id. Hovering an id or data pill reveals solid
+   arrows from bound names and dashed arrows from
    containing objects. Clicking a binding pill scrolls its canonical data pill
    to the same vertical level without reordering the list. Short lists do not
    scroll. Clicking the canonical pill moves it to the top and toggles its
@@ -93,11 +94,11 @@ text match in the editor, including matches inside strings and comments.
 3. **Only name-reachable objects appear**: nodes reachable from visible globals,
    frame locals, and closure cells by following refs through displayed
    contents. Every rendered data target resolves to exactly one pill.
-4. **Class bases render inline by name** (e.g.
-   `class Puppy(Dog)`); unnameable builtin bases (the implicit `object`) are
-   omitted. This keeps the ubiquitous opaque `object` base from cluttering
-   every class example, without breaking rule 3; real user superclasses
-   still appear because names reference them.
+4. **Class-valued bindings are hidden by default** (`hideClassBindings`): instances
+   already show their class name and attributes, so a bare `class Dog` adds no
+   name box or class pill. Turn the filter off when teaching that `class` binds
+   a first-class object. In that advanced view, bases render inline by name
+   (for example, `class Puppy(Dog)`) and the implicit builtin `object` is omitted.
 5. **Bare `def` and `import` add nothing** (`inlinePlainFunctions`,
    `inlineModules`, `hideFunctionBindings`, `hideModuleBindings`): a
    plain function or module binding produces no name box or data pill.

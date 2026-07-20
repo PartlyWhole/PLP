@@ -74,7 +74,7 @@ test.describe("PLP smoke", () => {
     await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toContain("ZeroDivisionError");
   });
 
-  test("isolated: memory canvas shows reachable objects only; class bases inline", async ({ page }) => {
+  test("isolated: class definitions are filtered by default; advanced view restores bases", async ({ page }) => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue(
       "class Dog:\n"
@@ -89,14 +89,31 @@ test.describe("PLP smoke", () => {
     expect(summary.terminal_reason).toBe("completed");
 
     const objects = page.locator("[data-role=objects-table]");
-    // User classes and instance are compact pills; base rendered by name.
-    await expect(objects).toContainText("class · Puppy(Dog)");
+    const names = page.locator("[data-role=names-table]");
+    // The learner view keeps the instance story and omits definition objects.
+    await expect(names).not.toContainText("Dog");
+    await expect(names).not.toContainText("Puppy");
+    await expect(names).toContainText("rex");
+    await expect(objects).not.toContainText("class ·");
     const instance = objects.locator(".mm-object-node").filter({ hasText: "Puppy · 1 attribute" }).first();
     await instance.locator(".mm-object-pill").click();
     await expect(instance.locator(".mm-object-detail")).toBeVisible();
     await expect(instance.locator(".mm-object-detail")).toContainText("name");
     await expect(instance.locator(".mm-object-detail")).toContainText('"Rex"');
-    // The implicit builtin `object` base is not rendered as a row.
+    // The raw trace still contains both class objects.
+    expect(await page.evaluate(() => window.plp.memory.steps().at(-1).heap
+      .filter((node) => node.kind === "class").map((node) => node.qualname)))
+      .toEqual(expect.arrayContaining(["Dog", "Puppy"]));
+
+    // Advanced teaching can restore class bindings and identity pills. Bases
+    // render by name; the implicit builtin `object` still gets no row.
+    await page.evaluate(() => {
+      window.plp.memory.filters.hideClassBindings = false;
+      window.plp.memory.refresh();
+    });
+    await expect(names).toContainText("Dog");
+    await expect(names).toContainText("Puppy");
+    await expect(objects).toContainText("class · Puppy(Dog)");
     await expect(objects).not.toContainText("opaque");
     // Every binding/reference target resolves to one rendered object node.
     const dangling = await page.evaluate(() => {
@@ -108,6 +125,10 @@ test.describe("PLP smoke", () => {
       return [...bound, ...internal].filter((uid) => !nodes.has(uid)).length;
     });
     expect(dangling).toBe(0);
+    await page.evaluate(() => {
+      window.plp.memory.filters.hideClassBindings = true;
+      window.plp.memory.refresh();
+    });
   });
 
   test("isolated: visual grammar uses boxes, pills, arrows, and shared identity", async ({ page }) => {
@@ -413,5 +434,35 @@ test.describe("PLP smoke", () => {
     expect(await page.evaluate(() => [...document.querySelectorAll(".mm-object-scroll .mm-object-node")]
       .map((node) => node.dataset.uid))).toEqual(before.order);
     expect(await page.evaluate(() => document.querySelector(".mm-object-scroll").scrollTop)).not.toBe(before.scrollTop);
+  });
+
+  test("isolated: a class instance shows learner data without its definition object", async ({ page }) => {
+    await gotoIsolated(page);
+    await page.evaluate(() => window.plp.editor.setValue(
+      "class Dog:\n"
+      + "    def __init__(self, name, age):\n"
+      + "        self.name = name\n"
+      + "        self.age = age\n\n"
+      + "    def bark(self):\n"
+      + "        return f\"{self.name} says woof!\"\n\n"
+      + "dog1 = Dog(\"Buddy\", 3)\n"
+      + "print(dog1.bark())\n",
+    ));
+    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+
+    const names = page.locator("[data-role=names-table]");
+    const objects = page.locator("[data-role=objects-table]");
+    await expect(names).not.toContainText("Dog");
+    await expect(names).toContainText("dog1");
+    await expect(objects.locator(".mm-object-node")).toHaveCount(1);
+    const dog = objects.locator(".mm-object-node").filter({ hasText: "Dog · 2 attributes" });
+    await expect(dog).toHaveCount(1);
+    await dog.locator(".mm-object-pill").click();
+    await expect(dog.locator(".mm-object-detail")).toContainText("age");
+    await expect(dog.locator(".mm-object-detail")).toContainText("3");
+    await expect(dog.locator(".mm-object-detail")).toContainText("name");
+    await expect(dog.locator(".mm-object-detail")).toContainText('"Buddy"');
+    await expect(objects).not.toContainText("function Dog.bark");
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 });

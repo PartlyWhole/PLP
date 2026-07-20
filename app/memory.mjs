@@ -29,6 +29,10 @@ export const displayFilters = {
   // as object references, so the implicit builtin `object` base does not add
   // an opaque pill to every class example.
   inlineClassBases: true,
+  // Hide class-valued name boxes by default. Classes remain in the raw
+  // trace and reappear when this is OFF (or when learner data contains one).
+  // Instance pills still use the class name as their type label.
+  hideClassBindings: true,
   // Plain named functions (resolved provenance, no closure environment)
   // render as `function name` value pills wherever referenced, instead
   // of as identity-bearing object pills; a bare `def` is not an interesting object
@@ -118,6 +122,7 @@ function renderTypedValue(v, heapByUid) {
 function isHiddenBinding(b, heapByUid) {
   if (b.value?.kind !== "ref") return false;
   const node = heapByUid?.get(b.value.uid);
+  if (displayFilters.hideClassBindings && node?.kind === "class") return true;
   if (displayFilters.hideModuleBindings && node?.kind === "module") return true;
   if (displayFilters.hideFunctionBindings && node?.kind === "function"
     && node.closure_environment_id == null) return true;

@@ -55,7 +55,7 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | M3 | Scalars render as paired typed value pills per encoding (int/str/bool/None/float/bytes/complex/range/elided) | One program binding each kind → type and value match; no invented data id | S-4 (int spot check); broader encodings GAP |
 | M4 | Contextual reference arrows resolve to rendered objects | Hover a bound id → solid incoming paths active; hover indirectly held object → dashed parent path active; no dangling targets | S-3, S-4, S-5 |
 | M5 | Name-reachable display policy | Reachable pills present; unreachable builtin base absent | S-3 |
-| M6 | Class bases inline by name; builtin base omitted | `class Puppy(Dog)` pill; no `opaque` builtin pill | S-3 |
+| M6 | Class-valued bindings hidden by default; advanced view restores classes with bases inline and builtin base omitted | Default Dog/Puppy program shows only its instance; toggle `hideClassBindings` OFF → `class Puppy(Dog)` pill and no `opaque` builtin pill | S-3, S-11 |
 | M7 | Opaque pills dimmed but shown when learner data reaches them | `f = open(...)`-style program → opaque pill present with `.dim` class | GAP |
 | M8 | Aliasing: repeated compact id pills | `a = [1,2]; b = a` → both bindings show the same compact data<sub>N</sub>; the canonical entry shows `data<sub>N</sub> : list · 2 items`; one list data node; two hover paths | S-4 |
 | M9 | Cycles render without recursive duplication | `loop.append(loop)` → expanded list contains an internal reference to its own existing pill | GAP |

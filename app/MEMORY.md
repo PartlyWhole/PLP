@@ -65,6 +65,7 @@ plp.memory.refresh();
 | flag (default) | effect when ON | rationale |
 |---|---|---|
 | `chipReachableOnly` (true) | Shows only heap nodes reachable from visible name boxes through displayed contents | Unreachable objects are noise; OFF shows the full per-step heap |
+| `hideClassBindings` (true) | Class-valued name boxes are omitted; their class pills consequently do not appear unless displayed learner data contains a reference to the class | Instances already communicate their type and attributes; turn OFF when teaching that `class` binds a first-class object |
 | `inlineClassBases` (true) | Class bases render by name in the class pill (`class Puppy(Dog)`); the implicit builtin `object` is omitted | Avoids an opaque builtin pill in every class example |
 | `inlinePlainFunctions` (true) | Plain functions render as value pills instead of identity-bearing data pills | A bare `def` is usually not the state story; closures keep data pills because their environment matters |
 | `inlineModules` (true) | Modules render as value pills such as *`module math`* | Imports remain available without dominating the object graph |
@@ -72,9 +73,10 @@ plp.memory.refresh();
 | `hideFunctionBindings` (true) | Plain-function name boxes are omitted; called functions still appear as scope cards | Turn OFF when teaching that `def` binds a name |
 | `dimOpaque` (true) | Opaque nodes render as dimmed pills | De-emphasized but never hidden; hiding would turn "not inspected" into "doesn't exist" |
 
-Hidden bindings do not seed reachability. Filtering happens only during
-rendering; `plp.memory.steps()` always returns untouched records, and turning
-every flag off shows the engine's unfiltered truth.
+Hidden bindings do not seed reachability. An instance still renders its class
+name as its type and keeps all instance attributes. Filtering happens only
+during rendering; `plp.memory.steps()` always returns untouched records, and
+turning every flag off shows the engine's unfiltered truth.
 
 ## Stepping and live rendering
 
