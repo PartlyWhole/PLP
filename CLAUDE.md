@@ -41,6 +41,7 @@ No build step exists anywhere — plain ES modules, vendored dependencies.
 | `tests/` | Playwright: `smoke.spec.mjs` (core flows), `emulator.spec.mjs` (X-series console), `collab.spec.mjs` (CO-series collaboration), `questions.spec.mjs` (Q-series question engine) |
 | `VALIDATION.md` | feature → best-evidence → coverage matrix; add a row when adding a feature |
 | `README.md` | user-facing doc incl. **Stepping model** and **Memory model display rules** |
+| `ONBOARDING.md` | engineer onboarding: architecture tour, invariants-with-incidents, design case studies, growth ladder |
 
 The engines' authoritative integration reference is
 `~/Pilot/FRONTEND-INTEGRATION-GUIDE.md` (Engine Pilot repo — also the

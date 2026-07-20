@@ -64,6 +64,7 @@ and `stepCount()` operate in the current mode's position space, while
 
 Console internals are documented in [app/CONSOLE.md](app/CONSOLE.md);
 repo-wide architecture and invariants in [CLAUDE.md](CLAUDE.md).
+New to the codebase? Start with [ONBOARDING.md](ONBOARDING.md).
 
 ## Memory model display rules
 
