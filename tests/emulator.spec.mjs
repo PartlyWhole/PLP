@@ -147,10 +147,11 @@ test.describe("PLP emulator (X-series)", () => {
     expect(Date.now() - t0).toBeLessThan(1000);
   });
 
-  test("X12/X14: fit on maximize; zero cross-origin requests", async ({ page }) => {
+  test("X12/X14: fit on maximize; zero cross-origin requests", async ({ page }, testInfo) => {
     const external = [];
+    const expectedOrigin = new URL(testInfo.project.use.baseURL).origin;
     page.on("request", (req) => {
-      if (!new URL(req.url()).host.startsWith("127.0.0.1")) external.push(req.url());
+      if (new URL(req.url()).origin !== expectedOrigin) external.push(req.url());
     });
     await gotoIsolated(page);
     const summary = await runProgram(page, 'print("x" * 200)\n'); // long line for wrap check

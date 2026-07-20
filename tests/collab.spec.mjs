@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const SITE = "/PLP/";
+const DEPLOYED_SITE = Boolean(process.env.PLP_BASE_URL);
 
 async function gotoApp(page, query = "", hash = "") {
   await page.goto(SITE + query + hash);
@@ -275,6 +276,7 @@ test.describe("collab (fault injection: local sync server)", () => {
   });
 
   test("ws-only room over a local server; killed mid-stream, records resume on restart", async ({ browser }) => {
+    test.skip(DEPLOYED_SITE, "requires ws:// loopback from the local HTTP test site");
     test.slow();
     await startSyncServer();
     // Separate contexts: no BroadcastChannel between A and B — the local
