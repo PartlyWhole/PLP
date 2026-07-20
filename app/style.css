@@ -107,6 +107,24 @@ button:disabled { opacity: 0.5; cursor: default; }
   0%, 60% { opacity: 1; }
   100% { opacity: 0; }
 }
+.cm-peer-selection {
+  border-radius: 2px;
+}
+.cm-peer-cursor {
+  --peer-color: #56b6c2;
+  position: relative; z-index: 4; display: inline-block;
+  width: 0; height: 1.3em; vertical-align: text-bottom;
+  border-left: 2px solid var(--peer-color); pointer-events: none;
+}
+.cm-peer-label {
+  position: absolute; left: 2px; top: calc(100% + 2px);
+  max-width: 150px; overflow: hidden; text-overflow: ellipsis;
+  padding: 2px 6px; border-radius: 5px; white-space: nowrap;
+  color: #101216; background: var(--peer-color);
+  font: 600 10px/1.35 system-ui, sans-serif;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, .4);
+  pointer-events: none;
+}
 
 /* memory model */
 .memory-body { display: flex; flex-direction: column; padding: 6px 8px; gap: 4px; overflow: hidden; }
@@ -363,8 +381,9 @@ a.mm-ref:hover { border-color: var(--accent); }
   .stage-cue, .stage-pulse, .stage-popover.teacher,
   .stage-popover.teacher.is-typing .stage-teacher-art,
   .stage-popover.teacher .stage-popover-body.is-typing::after,
-  .cm-remote-edit, .cm-remote-cursor::before {
+  .cm-remote-edit, .cm-remote-cursor::before, .cm-peer-label {
     animation: none !important;
+    transition: none !important;
   }
 }
 

@@ -70,6 +70,31 @@ test.describe("collab (tabs transport, hermetic)", () => {
     await joinRoom(b, "?transports=tabs", url, "tabs");
     // Joiner adopted the creator's code.
     await expect.poll(() => b.evaluate(() => window.plp.editor.getValue())).toContain("seeded = 1");
+    await expect.poll(() => page.evaluate(() => document.getElementById("collab-peers").textContent)).toBe("2");
+    await expect.poll(() => b.evaluate(() => document.getElementById("collab-peers").textContent)).toBe("2");
+
+    // Cursor and selection presence is ephemeral and attributed. The name
+    // gets out of the way, while the caret/selection remains until movement
+    // or departure updates it.
+    const aId = await page.evaluate(() => window.plp.collab.selfId);
+    const bId = await b.evaluate(() => window.plp.collab.selfId);
+    await page.evaluate(() => window.plp.editor.setSelection(0, 6));
+    const aCursorOnB = b.locator(`.cm-peer-cursor[data-peer-id="${aId}"]`);
+    const aSelectionOnB = b.locator(`.cm-peer-selection[data-peer-id="${aId}"]`);
+    const aLabelOnB = aCursorOnB.locator(".cm-peer-label");
+    await expect(aCursorOnB).toHaveCount(1);
+    await expect.poll(() => aSelectionOnB.count()).toBeGreaterThan(0);
+    await expect(aLabelOnB).toHaveCount(1);
+    await expect(aLabelOnB).toHaveText(/^[A-Z][a-z]+ [A-Z][a-z]+$/);
+    await expect(page.locator(`.cm-peer-cursor[data-peer-id="${aId}"]`)).toHaveCount(0);
+    await expect(aLabelOnB).toHaveCount(0, { timeout: 5000 });
+    await expect(aCursorOnB).toHaveCount(1);
+    await expect.poll(() => aSelectionOnB.count()).toBeGreaterThan(0);
+
+    // Moving to a caret collapses the selection and briefly re-shows the name.
+    await page.evaluate(() => window.plp.editor.setSelection(4));
+    await expect(aLabelOnB).toHaveCount(1);
+    await expect(aSelectionOnB).toHaveCount(0);
 
     // Two-way live sync (programmatic setValue counts as a local edit).
     await page.evaluate(() => window.plp.editor.setValue("a_to_b = 2\nseeded = 1\n"));
@@ -98,10 +123,6 @@ test.describe("collab (tabs transport, hermetic)", () => {
     await expect(b.locator(".cm-remote-edit")).toHaveCount(0);
     await expect(b.locator(".cm-remote-cursor")).toHaveCount(1);
 
-    // Roster: both sides show 2 peers.
-    await expect.poll(() => page.evaluate(() => document.getElementById("collab-peers").textContent)).toBe("2");
-    await expect.poll(() => b.evaluate(() => document.getElementById("collab-peers").textContent)).toBe("2");
-
     // Transport gating: a tabs room must never touch the public sync server.
     expect(wsHits).toEqual([]);
 
@@ -109,6 +130,7 @@ test.describe("collab (tabs transport, hermetic)", () => {
     // room state and reloads, but must not reset the learner's code.
     await b.getByRole("button", { name: "Leave" }).click();
     await b.waitForFunction(() => !location.hash && window.plp && !window.plp.collab.isActive());
+    await expect(page.locator(`.cm-peer-cursor[data-peer-id="${bId}"]`)).toHaveCount(0);
     expect(await b.evaluate(() => window.plp.editor.getValue()))
       .toBe("a_to_b = 2\nseeded = 1\n");
     expect((await b.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");

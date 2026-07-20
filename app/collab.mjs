@@ -41,7 +41,14 @@ function parseHash() {
 
 const NAME_ADJ = ["Plucky", "Zesty", "Nimble", "Cheery", "Snazzy", "Bouncy", "Dapper", "Breezy", "Sunny", "Funky"];
 const NAME_ANIMAL = ["Otter", "Panda", "Fox", "Heron", "Lynx", "Gecko", "Wombat", "Axolotl", "Puffin", "Quokka"];
+const PEER_COLORS = ["#56b6c2", "#c678dd", "#e5c07b", "#98c379", "#61afef", "#e06c75", "#d19a66", "#7fbbb3"];
+const CURSOR_BROADCAST_MS = 40;
 const pickFrom = (a) => a[Math.floor(Math.random() * a.length)];
+const colorForPeer = (peerId) => {
+  let hash = 0;
+  for (const ch of String(peerId)) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0;
+  return PEER_COLORS[Math.abs(hash) % PEER_COLORS.length];
+};
 
 let _lib = null;
 async function loadCollabLib() {
@@ -64,6 +71,9 @@ export function createCollab({ editor, memory, consoleUI, onUiState }) {
     view: { runId: null, records: 0, echoes: 0, ended: false, shared: [] },
     // scrub sharing
     scrubSeq: 0, peerScrubSeen: new Map(), applyingScrub: false, detached: false,
+    // editor cursor/selection presence (ephemeral)
+    cursorSeq: 0, cursorTimer: null, pendingCursor: null,
+    peerCursorSeen: new Map(), peerCursorStates: new Map(),
   };
 
   const guarded = (fn) => { c.applyingRemote = true; try { fn(); } finally { c.applyingRemote = false; } };
@@ -88,6 +98,19 @@ export function createCollab({ editor, memory, consoleUI, onUiState }) {
 
   // ---- editor binding (invariants: echo guard + equality backstop; splice
   // remote changes so local cursor/scroll/undo survive) --------------------
+  function queueCursorBroadcast(nextSelection = editor.selection()) {
+    if (c.applyingRemote || !c.active || !c.presence) return;
+    c.pendingCursor = nextSelection;
+    if (c.cursorTimer !== null) return;
+    c.cursorTimer = setTimeout(() => {
+      c.cursorTimer = null;
+      const cursor = c.pendingCursor;
+      c.pendingCursor = null;
+      if (!cursor || !c.active || !c.presence) return;
+      c.presence.broadcast("cursor", { ...cursor, n: ++c.cursorSeq });
+    }, CURSOR_BROADCAST_MS);
+  }
+
   function bindEditor() {
     editor.onLocalChange(() => {
       if (c.applyingRemote || !c.active || !c.handle) return;
@@ -95,12 +118,20 @@ export function createCollab({ editor, memory, consoleUI, onUiState }) {
       if (doc()?.code === value) return; // echo backstop
       c.handle.change((d) => c.lib.updateText(d, ["code"], value));
     });
+    editor.onCursorActivity((selection) => queueCursorBroadcast(selection));
   }
 
   function applyRemoteCode() {
     const code = doc()?.code;
     if (typeof code === "string" && code !== editor.getValue()) {
       guarded(() => editor.applyRemote(code));
+      // Presence may arrive before the corresponding CRDT splice. Re-anchor
+      // saved peer indices against the new buffer without restarting labels.
+      for (const cursor of c.peerCursorStates.values()) {
+        editor.showPeerPresence({ ...cursor, showLabel: false });
+      }
+      // The splice may have shifted this learner's own caret/selection.
+      queueCursorBroadcast(editor.selection());
     }
   }
 
@@ -222,15 +253,43 @@ export function createCollab({ editor, memory, consoleUI, onUiState }) {
     c.presence ? Object.values(c.presence.getPeerStates().value).filter(isFresh) : [];
 
   function startPresence() {
-    const me = { name: pickFrom(NAME_ADJ) + " " + pickFrom(NAME_ANIMAL) };
+    const me = {
+      name: pickFrom(NAME_ADJ) + " " + pickFrom(NAME_ANIMAL),
+      color: colorForPeer(selfId),
+    };
     c.presence = new c.lib.Presence({ handle: c.handle });
     // Heartbeat 5s, prune after 3 missed (15s) — the fallback for ungraceful
     // exits; a graceful leave broadcasts a goodbye that drops us instantly.
-    c.presence.start({ initialState: { user: me }, heartbeatMs: 5000, peerTtlMs: 15000 });
+    c.presence.start({
+      initialState: { user: me, cursor: { ...editor.selection(), n: ++c.cursorSeq } },
+      heartbeatMs: 5000,
+      peerTtlMs: 15000,
+    });
     const renderPeers = () => {
-      const peers = Object.values(c.presence.getPeerStates().value);
-      onUiState?.({ type: "peers", count: freshPeers().length + 1 });
+      const peers = Object.values(c.presence.getPeerStates().value).filter(isFresh);
+      onUiState?.({ type: "peers", count: peers.length + 1 });
+      const cursorPeerIds = new Set();
       for (const p of peers) {
+        const cursor = p.value?.cursor;
+        if (cursor && Number.isInteger(cursor.anchor) && Number.isInteger(cursor.head)
+          && typeof cursor.n === "number") {
+          cursorPeerIds.add(p.peerId);
+          const lastCursor = c.peerCursorSeen.get(p.peerId) ?? -1;
+          if (cursor.n > lastCursor) {
+            c.peerCursorSeen.set(p.peerId, cursor.n);
+            const advertisedColor = p.value?.user?.color;
+            const peerCursor = {
+              peerId: p.peerId,
+              name: typeof p.value?.user?.name === "string" ? p.value.user.name : "Collaborator",
+              color: PEER_COLORS.includes(advertisedColor) ? advertisedColor : colorForPeer(p.peerId),
+              anchor: cursor.anchor,
+              head: cursor.head,
+            };
+            c.peerCursorStates.set(p.peerId, peerCursor);
+            editor.showPeerPresence({ ...peerCursor, showLabel: true });
+          }
+        }
+
         const s = p.value?.scrub;
         if (!s || typeof s.n !== "number") continue;
         if ((c.peerScrubSeen.get(p.peerId) ?? -1) >= s.n) continue;
@@ -242,6 +301,13 @@ export function createCollab({ editor, memory, consoleUI, onUiState }) {
         if (typeof s.index === "number") {
           c.applyingScrub = true;
           try { memory.goTo(s.index); } finally { c.applyingScrub = false; }
+        }
+      }
+      editor.retainPeerPresence(cursorPeerIds);
+      for (const peerId of c.peerCursorStates.keys()) {
+        if (!cursorPeerIds.has(peerId)) {
+          c.peerCursorStates.delete(peerId);
+          c.peerCursorSeen.delete(peerId);
         }
       }
     };

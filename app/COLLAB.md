@@ -176,13 +176,14 @@ winner like any follower. This is a cosmetic-only race: no data is
 corrupted, and it requires near-simultaneous clicks. Not automated
 (VALIDATION CO-series notes it); the deterministic lockout path is CO8.
 
-## 5. Scrub sharing and presence
+## 5. Scrub and editor presence
 
 Presence rides automerge-repo **ephemeral messages** (never persisted —
 the doc must not accumulate a history entry per slider drag).
 
 - **Roster**: `Presence` (from the bundle) heartbeats every 5 s with
-  `{ user: { name } }` (a generated "Adjective Animal"); peers missing 3
+  `{ user: { name, color } }` (a generated "Adjective Animal" and a stable
+  palette color); peers missing 3
   beats (15 s TTL) are pruned — the crash/network-drop fallback. A
   graceful Leave broadcasts a goodbye first and waits ~200 ms so the
   message flushes *before* the transport it rides on is torn down, making
@@ -199,6 +200,13 @@ the doc must not accumulate a history entry per slider drag).
   Receivers call `memory.goTo(index)` (which also reconstructs the console
   via the existing `onUserScrub` path) under an `applyingScrub` flag so
   the application doesn't rebroadcast (no echo storms).
+- **Editor cursor and selection**: CodeMirror cursor activity broadcasts
+  `{ anchor, head, n }` at most once per 40 ms. Indices are ephemeral and
+  re-anchored after incoming code splices. Each receiver renders a colored
+  caret plus the selected range. The peer's anonymous name appears beside
+  the caret after movement, then its DOM label is removed after 1.4 s while
+  the caret or selection remains. Goodbye, pruning, and the 20 s freshness
+  check remove the peer's editor marks. None of this enters Automerge history.
 
 **Staleness is checked at read time, not prune time.** The Presence
 library prunes dead peers on a `setInterval`, which background tabs
@@ -206,8 +214,9 @@ throttle to ≥1/min — so an ungracefully closed peer (no goodbye: crash,
 kill, some mobile closes) could sit on the badge, and a dead *driver*
 could hold the run lock, for minutes. The roster is therefore filtered
 through a freshness check (`lastSeenAt` within 20 s = TTL + one heartbeat
-of grace) everywhere it is *read* — the ● count and `canRun()` — and the
-badge additionally repaints on a 5 s timer, on every heartbeat event, and
+of grace) everywhere it is *read* — the ● count, editor presence, and
+`canRun()` — and the badge additionally repaints on a 5 s timer, on every
+heartbeat event, and
 on `visibilitychange`, so TTL expiry surfaces without any inbound event.
 
 **Detachment** (mirrors the live-follow pause semantics): scrubbing away
@@ -285,7 +294,7 @@ mode (which only affects live input/interrupt, not sync).
   leftover room state. The current editor buffer has already been saved to
   browser-local storage, so the solo page restores the same code.
 
-## 8. Editor binding (the six glue invariants)
+## 8. Editor binding (the seven glue invariants)
 
 1. **Echo guard**: remote applications run under `applyingRemote`;
    `editor.onLocalChange` additionally filters the `"collab"` CodeMirror
@@ -302,8 +311,12 @@ mode (which only affects live input/interrupt, not sync).
    inserted/replaced text and shows a caret at the resulting position. A
    deletion shows the caret at its deletion point. The marks fade after 1.8
    seconds, never change the local selection or scroll, and are derived UI
-   only: no cursor or selection data enters the shared document or presence.
-6. **Local durability**: `main.mjs` saves every editor change, including
+   only: they do not enter the shared document.
+6. **Live peer presence**: actual caret and selection indices travel through
+   ephemeral Presence messages with a monotonic sequence. Per-peer colors and
+   transient name labels are view state; stale or departed peers are removed.
+   No cursor, selection, color, or name enters the shared document.
+7. **Local durability**: `main.mjs` saves every editor change, including
    remote splices, under the versioned browser-local key
    `plp.editor.code.v1`. Startup restores the saved string exactly; only an
    absent or inaccessible value falls back to the sample program.
@@ -379,9 +392,6 @@ sync relay and Nostr relays, and only once a room starts.
 - **No follower input**: only the driver can answer `input()` (a
   "raise-hand" relay over ephemeral messages is a natural v2).
 - **No remote Stop**: followers can't interrupt the driver's run.
-- **No continuously shared cursor or selection presence**: remote edits show
-  a short-lived inferred caret and changed-text cue, but an idle peer's caret
-  and selection are not transmitted.
 - **Scrub positions assume the default step mode** on all peers.
 - **Start-race cosmetics**: the usurped driver's partial output may
   briefly interleave before the winner's replay resets the panes.

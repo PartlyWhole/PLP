@@ -141,8 +141,9 @@ no Lesson control appears in the learner-facing application. See
 Click **Share session** to get an invite link (`#room=…`). Peers who open
 it share:
 
-- the **code editor** (character-level merging — concurrent edits both
-  survive),
+- the **code editor** (character-level merging, plus colored peer selections
+  and carets). A peer's anonymous name appears briefly when they move, then
+  disappears while their caret or selection remains,
 - every **run**: whoever presses Run becomes the driver; everyone else's
   memory model and console replay the identical run live, including
   `input()` prompts and answers. Late joiners replay finished runs in

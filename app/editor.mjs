@@ -4,6 +4,7 @@
 import { events } from "./events.mjs";
 
 const REMOTE_ACTIVITY_MS = 1800;
+const PEER_LABEL_MS = 1400;
 
 export function createEditor({ hostEl }) {
   const cm = window.CodeMirror(hostEl, {
@@ -16,6 +17,7 @@ export function createEditor({ hostEl }) {
   let remoteTextMark = null;
   let remoteCursorMark = null;
   let remoteActivityTimer = null;
+  const peerPresenceMarks = new Map();
 
   function clearRemoteActivity() {
     if (remoteActivityTimer !== null) clearTimeout(remoteActivityTimer);
@@ -48,6 +50,86 @@ export function createEditor({ hostEl }) {
       insertLeft: true,
     });
     remoteActivityTimer = setTimeout(clearRemoteActivity, REMOTE_ACTIVITY_MS);
+  }
+
+  function clampIndex(index) {
+    return Math.max(0, Math.min(Number.isInteger(index) ? index : 0, cm.getValue().length));
+  }
+
+  function selection() {
+    const primary = cm.listSelections()[0];
+    return {
+      anchor: cm.indexFromPos(primary.anchor),
+      head: cm.indexFromPos(primary.head),
+    };
+  }
+
+  function clearPeerPresence(peerId) {
+    const marks = peerPresenceMarks.get(peerId);
+    if (!marks) return;
+    if (marks.labelTimer !== null) clearTimeout(marks.labelTimer);
+    marks.selectionMark?.clear();
+    marks.cursorMark?.clear();
+    peerPresenceMarks.delete(peerId);
+  }
+
+  function showPeerPresence({ peerId, name, color, anchor, head, showLabel = true }) {
+    const previous = peerPresenceMarks.get(peerId);
+    const labelUntil = showLabel
+      ? Date.now() + PEER_LABEL_MS
+      : previous?.labelUntil ?? 0;
+    clearPeerPresence(peerId);
+    const safeColor = /^#[0-9a-f]{6}$/i.test(color) ? color : "#56b6c2";
+    const anchorIndex = clampIndex(anchor);
+    const headIndex = clampIndex(head);
+    const fromIndex = Math.min(anchorIndex, headIndex);
+    const toIndex = Math.max(anchorIndex, headIndex);
+    let selectionMark = null;
+    if (fromIndex !== toIndex) {
+      selectionMark = cm.markText(
+        cm.posFromIndex(fromIndex),
+        cm.posFromIndex(toIndex),
+        {
+          className: "cm-peer-selection",
+          css: `background-color: ${safeColor}38; box-shadow: inset 0 -1px 0 ${safeColor};`,
+          attributes: { "data-peer-id": peerId },
+        },
+      );
+    }
+
+    const cursor = document.createElement("span");
+    cursor.className = "cm-peer-cursor";
+    cursor.dataset.peerId = peerId;
+    cursor.style.setProperty("--peer-color", safeColor);
+    cursor.setAttribute("aria-hidden", "true");
+    let label = null;
+    if (labelUntil > Date.now()) {
+      label = document.createElement("span");
+      label.className = "cm-peer-label";
+      label.textContent = String(name || "Collaborator").slice(0, 40);
+      cursor.append(label);
+    }
+    const cursorMark = cm.setBookmark(cm.posFromIndex(headIndex), {
+      widget: cursor,
+      insertLeft: true,
+    });
+    const marks = { selectionMark, cursorMark, labelTimer: null, labelUntil };
+    if (label) {
+      const remaining = Math.max(0, labelUntil - Date.now());
+      marks.labelTimer = setTimeout(() => {
+        label.remove();
+        marks.labelTimer = null;
+        marks.labelUntil = 0;
+      }, remaining);
+    }
+    peerPresenceMarks.set(peerId, marks);
+  }
+
+  function retainPeerPresence(peerIds) {
+    const active = new Set(peerIds);
+    for (const peerId of peerPresenceMarks.keys()) {
+      if (!active.has(peerId)) clearPeerPresence(peerId);
+    }
   }
 
   cm.on("change", (_cm, ch) => {
@@ -131,6 +213,14 @@ export function createEditor({ hostEl }) {
     // Fires for every buffer change, including collaboration splices. Used
     // by browser-local persistence, which must save the code a follower sees.
     onChange: (fn) => cm.on("change", fn),
+    selection,
+    setSelection: (anchor, head = anchor) => cm.setSelection(
+      cm.posFromIndex(clampIndex(anchor)),
+      cm.posFromIndex(clampIndex(head)),
+    ),
+    onCursorActivity: (fn) => cm.on("cursorActivity", () => fn(selection())),
+    showPeerPresence,
+    retainPeerPresence,
     highlightLine,
     clearHighlight,
     highlightName,
