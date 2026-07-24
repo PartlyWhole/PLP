@@ -89,13 +89,21 @@ source of the vendored assets and test machinery).
    per record. Presence/scrub is ephemeral, never in the doc. Transports
    run concurrently (idempotent sync); no fallback state machine
    (app/COLLAB.md).
-8. **Director**: the stage arranges, the LEARNER performs (no action runs
+8. **Trust boundary**: records from the local engine are schema-validated by
+   its facade; records arriving over collab are NOT — any peer holding a
+   room link can write arbitrary JSON into the doc. Everything crossing
+   that boundary passes `isRenderableRecord` (app/record-guard.mjs) before
+   reaching `renderRecordToUI`, and renderers never interpolate a uid into
+   markup or a selector unescaped. General rule: a component whose
+   invariants assume trusted input must not be handed an untrusted source
+   without a gate (this is exactly how the collab XSS arose).
+9. **Director**: the stage arranges, the LEARNER performs (no action runs
    code or presses buttons; `until` is learner-driven only). Effects are
    per-beat; gates persist across beats; every exit path (incl. errors)
    runs `stage.reset()` — gates fail open. Lessons are data, linted at
    start; pedagogy lives in `lessons/`, never in the runtime
    (app/DIRECTOR.md).
-9. **Tests** assert via `window.plp` state, not pixels; every run ends by
+10. **Tests** assert via `window.plp` state, not pixels; every run ends by
    checking `plp.checkErrors()` is empty. Suite runs under the `/PLP/`
    prefix with NO headers (service-worker posture = real GitHub Pages).
    First-visit COI shim reload: `waitForFunction(() => crossOriginIsolated)`.

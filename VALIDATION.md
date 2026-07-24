@@ -132,6 +132,19 @@ the reference fixture directly.
 | DR12 | Solo-only guard (collab × director) | manual/GAP (needs a room fixture) | GAP |
 | DR13 | Tutor speech is a first-class `{say}` action and hint: project-local art, progressive rich-text typing, click-to-reveal, glass/blur surface, target-aware placement with author `avoid` regions, viewport containment, why/dismiss behavior, reduced-motion fallback, and teardown | lint + geometry/API assertions; reference lesson keeps editor and memory fully visible | D-2, D-4c, D-7a |
 
+## Security (SEC-series)
+
+| # | Feature | Best evidence | Coverage |
+|---|---|---|---|
+| SEC1 | Remote (collab) records are validated before rendering; malformed ones are dropped with a visible notice | hostile peer writes records with a string `uid` + wrong-typed/unknown kinds → follower shows "ignored malformed record", no script runs, no injected element, page still functional | CO hostile-peer 1 |
+| SEC2 | The record guard has no false positives on genuine engine output | ordinary shared run → follower matches driver exactly, no drop notice | CO hostile-peer 2 |
+| SEC3 | uid/target values are injection-safe in both HTML attributes and CSS selectors | unit: `renderValue({kind:"ref",uid:'"><img …'})` escapes the attribute (verified against pre-fix output, which did break out) | manual unit check + SEC1 |
+| SEC4 | Relay reachable only via Caddy; the raw sync port is not exposed | external probe of :3030 filtered; systemd `IPAddressDeny=any`/`IPAddressAllow=localhost` on the unit | live server check |
+| SEC5 | SSH is key-only | `sshd -T` reports `passwordauthentication no`, `kbdinteractiveauthentication no`, root prohibit-password | live server check |
+| SEC6 | Foreign browser origins cannot use the relay | curl with allowed origins → 200; `evil.example.com`, `notpartlywhole.org` → 403 | live server check |
+| SEC7 | Room store cannot fill the disk | hourly disk guard prunes least-recently-used rooms above the cap; weekly prune at 90 days | installed + syntax-checked (behavioural test GAP) |
+| SEC8 | No secrets or operator data in the repo | `git grep` for credential patterns and the server IP over tracked non-vendor files → none; `.claude/`, `.env`, keys gitignored | audit before publish |
+
 ## Layout / shell
 
 | # | Feature | Best evidence | Coverage |

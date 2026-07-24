@@ -416,3 +416,75 @@ test.describe("collab (p2p transport, network-dependent)", () => {
     }
   });
 });
+
+
+// CO-security: a room peer is UNTRUSTED. Records reaching a follower come
+// from the shared document, not from the engine facade, so they carry no
+// schema validation. app/record-guard.mjs is the gate; these tests drive a
+// hostile peer through it. Same-context pages (BroadcastChannel transport).
+test.describe("collab (hostile peer: record guard)", () => {
+  test("crafted records cannot inject markup or break the follower", async ({ page, context }) => {
+    const driver = page;
+    await gotoApp(driver, "?transports=tabs");
+    const url = await startRoom(driver);
+    const follower = await context.newPage();
+    await joinRoom(follower, "?transports=tabs", url, "tabs");
+
+    // Any script that manages to execute sets this flag.
+    await follower.evaluate(() => { window.__xss = false; });
+
+    // The attack: a peer writes records whose `uid` breaks out of the HTML
+    // attribute it is interpolated into, plus other malformed shapes.
+    const payload = '"><img src=x onerror="window.__xss=true">';
+    await driver.evaluate((uid) => {
+      window.plp.collab._state.handle.change((d) => {
+        d.run = {
+          runId: "hostile-1",
+          status: "done",
+          summary: { terminal_reason: "completed" },
+          echoes: [],
+          records: [
+            { kind: "header", seq: 0, run_id: "hostile-1" },
+            // structurally wrong record kinds / types
+            { kind: "step", seq: 1, step: "not-a-number", event: "line" },
+            { kind: "nonsense", seq: 2 },
+            // uid as attacker-controlled string (the XSS vector). LAST, so
+            // it is the step the memory model actually renders — otherwise
+            // a later step replaces it and the test proves nothing.
+            { kind: "step", seq: 3, step: 0, event: "line",
+              location: { module: "__main__", function: "<module>", line: 1 },
+              globals: [{ module: "__main__", bindings: [{ name: "x", value: { kind: "ref", uid } }] }],
+              stack: [], heap: [{ uid, kind: "list", type_name: "list", items: [] }],
+              output: { stdout_delta: "", stderr_delta: "", stdout_bytes: 0, stderr_bytes: 0 } },
+            { kind: "terminal", seq: 4, reason: "completed", summary: {} },
+          ],
+        };
+      });
+    }, payload);
+
+    // The follower must survive: no script execution, no injected element,
+    // and the guard's notice in the transcript.
+    // (the notice is a system line: excluded from text(), shown on screen)
+    // (the notice is a system line: excluded from text(), shown on screen)
+    await expect.poll(() => follower.evaluate(() => window.plp.console.buffer()), { timeout: 20_000 })
+      .toContain("ignored malformed record");
+    expect(await follower.evaluate(() => window.__xss)).toBe(false);
+    expect(await follower.evaluate(() => document.querySelectorAll("img[src='x']").length)).toBe(0);
+    expect(await follower.evaluate(() => document.body.innerHTML.includes("onerror="))).toBe(false);
+    expect(await follower.evaluate(() => Boolean(window.plp.memory))).toBe(true);
+  });
+
+  test("the guard accepts genuine engine records (no false positives)", async ({ page, context }) => {
+    const driver = page;
+    await gotoApp(driver, "?transports=tabs");
+    const url = await startRoom(driver);
+    const follower = await context.newPage();
+    await joinRoom(follower, "?transports=tabs", url, "tabs");
+
+    const summary = await runOn(driver, 'a = [1, 2]\nb = a\nprint("ok", len(b))\n');
+    expect(summary.terminal_reason).toBe("completed");
+    await expectFollowerMatchesDriver(follower, driver);
+    expect(await follower.evaluate(() => window.plp.console.buffer()))
+      .not.toContain("ignored malformed record");
+  });
+});

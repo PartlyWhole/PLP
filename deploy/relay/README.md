@@ -57,6 +57,34 @@ redundancy, not necessity.
 **Do not flip `SYNC_SERVER` before the relay is live** — a dead primary
 transport degrades rooms to the flakier P2P/tabs legs.
 
+## Security posture
+
+What the script hardens, and what it deliberately does not:
+
+| control | effect |
+|---|---|
+| SSH keys only | `PasswordAuthentication no` + `KbdInteractiveAuthentication no` + `PermitRootLogin prohibit-password`, in both `sshd_config` and a `sshd_config.d` drop-in (Ubuntu 24.04 drop-ins would otherwise win). `ufw limit` throttles repeated attempts |
+| relay confined to loopback | the sync server calls `app.listen(PORT)` with no host, so it binds `0.0.0.0`; the unit adds `IPAddressDeny=any` + `IPAddressAllow=localhost`, so only Caddy can reach it **even if ufw were disabled**. Plus `ProtectSystem=strict`, `ProtectHome`, `PrivateDevices`, `NoNewPrivileges`, `MemoryMax=1G`, `TasksMax=256` |
+| browser-origin allowlist | Caddy 403s WebSocket/HTTP requests carrying an `Origin` outside `*.partlywhole.org`, `partlywhole.github.io`, or localhost |
+| disk guard | hourly: if the room store exceeds `DATA_CAP_MB` (2 GB), the least-recently-touched rooms are deleted until it fits (logged via `logger -t plp-sync-diskguard`). Weekly: rooms untouched for `PRUNE_DAYS` are removed |
+| request size cap | `request_body max_size 32MB` |
+
+**Not solved — know these:**
+
+- **The relay is unauthenticated.** Anyone who knows the hostname can sync
+  arbitrary documents; the Origin check only stops *browsers* on other
+  sites, since any non-browser client forges `Origin` freely. The disk
+  guard bounds the damage rather than preventing the abuse.
+- **Room links are unrevocable capabilities.** Anyone holding a link has
+  permanent read+write on that room. There is no kick, no expiry (an
+  actively-used room never ages out), and no way to make a room private
+  after sharing.
+- **Room contents are plaintext on disk.** You — and anyone who compromises
+  the box — can read every shared session's code. Tell students that.
+- Peers can rewrite each other's editor buffer, and the engines are
+  liveness boundaries, not security sandboxes: treat code arriving from a
+  room as untrusted before you press Run.
+
 ## Operations
 
 - Health: `systemctl status plp-sync caddy`, logs via

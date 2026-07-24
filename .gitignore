@@ -1,3 +1,15 @@
 node_modules/
 test-results/
 playwright-report/
+
+# Local tooling / editor state — never publish
+.claude/
+.DS_Store
+
+# Anything operator-specific must stay out of the public repo: server IPs,
+# SSH config, backup credentials. deploy/ holds only parameterised scripts.
+deploy/**/*.local
+*.pem
+*.key
+.env
+.env.*

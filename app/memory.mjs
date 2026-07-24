@@ -13,6 +13,15 @@ import { events } from "./events.mjs";
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const dataIdLabel = (uid) => `data<sub>${esc(uid)}</sub>`;
 
+// Heap uids are integers in every engine-produced record, but this renderer
+// also draws records that arrived over collab (another peer's document), so
+// nothing here may assume a uid is a number. `uidAttr` makes an attribute
+// value injection-proof; `sel` escapes any value spliced into a selector.
+// The collab boundary rejects malformed records outright (app/collab.mjs) —
+// these are the second layer, so a single missed check is not an XSS.
+const uidAttr = (uid) => esc(uid);
+const sel = (value) => (window.CSS?.escape ? CSS.escape(String(value)) : String(value).replace(/["\\\]]/g, "\\$&"));
+
 // ---------------------------------------------------------------------------
 // Display filters: the object-list policy as individually toggleable
 // constituents (documented in app/MEMORY.md). Flip a flag to false to see
@@ -101,7 +110,7 @@ export function renderValue(v, heapByUid) {
     case "ref": {
       const inline = inlineRendering(heapByUid?.get(v.uid));
       if (inline) return inline;
-      return `<button class="mm-inner-ref mm-object-id" type="button" data-target="object-${v.uid}" data-uid="${v.uid}" aria-label="data ${v.uid}">${dataIdLabel(v.uid)}</button>`;
+      return `<button class="mm-inner-ref mm-object-id" type="button" data-target="object-${uidAttr(v.uid)}" data-uid="${uidAttr(v.uid)}" aria-label="data ${uidAttr(v.uid)}">${dataIdLabel(v.uid)}</button>`;
     }
     case "elided": return `<span class="mm-elided">⟨elided: ${esc(v.reason)}${v.omitted_count ? `, ${v.omitted_count} omitted` : ""}⟩</span>`;
     default: return `<code>${esc(JSON.stringify(v))}</code>`;
@@ -320,7 +329,7 @@ function innerValue(v, heapByUid) {
     const node = heapByUid?.get(v.uid);
     const inline = inlineRendering(node);
     if (inline) return `<span class="mm-mini-pill">${inline}</span>`;
-    return `<button class="mm-inner-ref mm-object-id" type="button" data-target="object-${v.uid}" data-uid="${v.uid}" title="Move data ${v.uid} to the top" aria-label="data ${v.uid}, ${esc(objectSummary(node, heapByUid))}">↗ ${dataIdLabel(v.uid)} ${esc(objectSummary(node, heapByUid))}</button>`;
+    return `<button class="mm-inner-ref mm-object-id" type="button" data-target="object-${uidAttr(v.uid)}" data-uid="${uidAttr(v.uid)}" title="Move data ${uidAttr(v.uid)} to the top" aria-label="data ${uidAttr(v.uid)}, ${esc(objectSummary(node, heapByUid))}">↗ ${dataIdLabel(v.uid)} ${esc(objectSummary(node, heapByUid))}</button>`;
   }
   return `<span class="mm-mini-pill">${renderTypedValue(v, heapByUid)}</span>`;
 }
@@ -560,7 +569,7 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
         if (inline) return { html: `<span class="mm-value-pill mm-bound-value">${inline}</span>` };
         const target = registerTarget(`object-${value.uid}`, { kind: "object", node, uid: value.uid });
         return {
-          html: `<button class="mm-value-pill mm-data-pill mm-binding-data-pill mm-binding-ref" type="button" data-target="${target}" data-uid="${value.uid}" title="Find data ${value.uid} in Data In Memory" aria-label="data ${value.uid}"><span class="mm-object-data-id">${dataIdLabel(value.uid)}</span></button>`,
+          html: `<button class="mm-value-pill mm-data-pill mm-binding-data-pill mm-binding-ref" type="button" data-target="${esc(target)}" data-uid="${uidAttr(value.uid)}" title="Find data ${uidAttr(value.uid)} in Data In Memory" aria-label="data ${uidAttr(value.uid)}"><span class="mm-object-data-id">${dataIdLabel(value.uid)}</span></button>`,
         };
       }
       return { html: `<span class="mm-value-pill mm-bound-value">${renderTypedValue(value, heapByUid)}</span>` };
@@ -621,10 +630,10 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
       const dim = displayFilters.dimOpaque && node?.kind === "opaque" ? " dim" : "";
       const childTargets = [...new Set(node ? [...nodeContentRefs(node)] : [])]
         .filter((uid) => visible.has(uid) && !inlineRendering(heapByUid.get(uid)))
-        .map((uid) => `object-${uid}`).join(" ");
-      return `<div class="mm-value-node mm-object-node${dim}" data-value-id="${id}" data-uid="${target.uid}"${childTargets ? ` data-child-targets="${childTargets}"` : ""}>
+        .map((uid) => `object-${uidAttr(uid)}`).join(" ");
+      return `<div class="mm-value-node mm-object-node${dim}" data-value-id="${esc(id)}" data-uid="${uidAttr(target.uid)}"${childTargets ? ` data-child-targets="${childTargets}"` : ""}>
         <div class="mm-object-line">
-          <button class="mm-value-pill mm-data-pill mm-object-pill" type="button" data-target="${id}" data-uid="${target.uid}" aria-expanded="${expanded}" title="${expanded ? "Collapse" : "Expand"} ${esc(summary)}" aria-label="data ${target.uid}: ${esc(summary)}">${renderDataPillContent(target.uid, presentation, expanded ? "▾" : "▸")}</button>
+          <button class="mm-value-pill mm-data-pill mm-object-pill" type="button" data-target="${esc(id)}" data-uid="${uidAttr(target.uid)}" aria-expanded="${expanded}" title="${expanded ? "Collapse" : "Expand"} ${esc(summary)}" aria-label="data ${uidAttr(target.uid)}: ${esc(summary)}">${renderDataPillContent(target.uid, presentation, expanded ? "▾" : "▸")}</button>
         </div>
         <div class="mm-object-detail"${expanded ? "" : " hidden"}>${objectDetails(node, heapByUid)}</div>
       </div>`;
@@ -764,9 +773,9 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     if (!target || hoveredObjectTarget === target) return;
     endObjectHover();
     hoveredObjectTarget = target;
-    const object = els.objects.querySelector(`.mm-object-node[data-value-id="${target}"]`);
+    const object = els.objects.querySelector(`.mm-object-node[data-value-id="${sel(target)}"]`);
     object?.classList.add("reference-active");
-    for (const reference of root.querySelectorAll(`.mm-binding-ref[data-target="${target}"], .mm-inner-ref[data-target="${target}"]`)) {
+    for (const reference of root.querySelectorAll(`.mm-binding-ref[data-target="${sel(target)}"], .mm-inner-ref[data-target="${sel(target)}"]`)) {
       reference.classList.add("reference-active");
       reference.closest(".mm-binding")?.classList.add("reference-source");
     }
@@ -798,7 +807,7 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
 
   function focusDataForBinding(reference) {
     const target = reference.dataset.target;
-    const object = target ? els.objects.querySelector(`.mm-object-node[data-value-id="${target}"]`) : null;
+    const object = target ? els.objects.querySelector(`.mm-object-node[data-value-id="${sel(target)}"]`) : null;
     if (!object) return;
     const targetPill = object.querySelector(".mm-object-pill");
     const scroller = object.closest(".mm-object-scroll");
@@ -855,7 +864,7 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     const ref = ev.target.closest(".mm-inner-ref, a.mm-ref");
     if (!ref) return;
     ev.preventDefault();
-    const node = els.objects.querySelector(`.mm-object-node[data-uid="${ref.dataset.uid}"]`);
+    const node = els.objects.querySelector(`.mm-object-node[data-uid="${sel(ref.dataset.uid)}"]`);
     if (!node) return;
     node.scrollIntoView({ block: "nearest" });
     node.classList.add("flash");

@@ -21,10 +21,13 @@
 // `?transports=` (test/debug seam) > link's `&via=` (joiner) > all three.
 
 import { renderRecordToUI, renderRunEnd } from "./runner.mjs";
+import { isRenderableRecord } from "./record-guard.mjs";
 import { traceStreamCheck } from "./stream-checks.mjs";
 
 const ALL_TRANSPORTS = ["ws", "p2p", "tabs"];
-const SYNC_SERVER = "wss://sync.automerge.org";
+// Self-hosted relay (deploy/relay/): the same sync-server package the
+// CO-series fault-injection tests exercise, pinned 0.2.8.
+const SYNC_SERVER = "wss://sync.partlywhole.org";
 
 function parseTransports(raw) {
   if (!raw) return null;
@@ -206,7 +209,7 @@ export function createCollab({ editor, memory, consoleUI, onUiState }) {
     if (run.runId !== v.runId) {
       // New (or first-seen) run: reset both panes, replay from record 0 —
       // exactly the late-joiner path; X0b determinism makes it identical.
-      v.runId = run.runId; v.records = 0; v.echoes = 0; v.ended = false; v.shared = [];
+      v.runId = run.runId; v.records = 0; v.echoes = 0; v.ended = false; v.shared = []; v.warned = false;
       c.detached = false;
       memory.reset();
       consoleUI.reset();
@@ -216,13 +219,28 @@ export function createCollab({ editor, memory, consoleUI, onUiState }) {
     const records = run.records ?? [], echoes = run.echoes ?? [];
     while (v.records < records.length || v.echoes < echoes.length) {
       if (v.echoes < echoes.length && echoes[v.echoes].at <= v.records) {
-        consoleUI.append("echo", echoes[v.echoes].text);
+        // Remote-authored text: keep it a bounded string (the terminal
+        // renders text, never markup, so this is a size guard only).
+        const text = echoes[v.echoes].text;
+        if (typeof text === "string") consoleUI.append("echo", text.slice(0, 4096));
         v.echoes += 1;
       } else if (v.records < records.length) {
         const r = records[v.records];
+        v.records += 1;
+        // Trust boundary: this record came from another peer's document,
+        // not from our engine facade, so it has had no schema validation.
+        // Drop anything not shaped like engine output rather than render it
+        // (app/record-guard.mjs).
+        if (!isRenderableRecord(r)) {
+          if (!v.warned) {
+            v.warned = true;
+            consoleUI.system("⚠ ignored malformed record(s) from the shared session");
+            console.warn("collab: dropped malformed remote record", r);
+          }
+          continue;
+        }
         v.shared.push(r);
         renderRecordToUI(r, { memory, consoleUI, interactive: false });
-        v.records += 1;
       } else break;
     }
     if (run.status === "done" && !v.ended && v.records === records.length) {
