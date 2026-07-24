@@ -6,6 +6,7 @@
 import { createTraceWorker, defaultTraceOptions } from "../vendor/pytrace/browser/host.mjs";
 import { traceStreamCheck } from "./stream-checks.mjs";
 import { events } from "./events.mjs";
+import { createFastRunner } from "./fastrun.mjs";
 
 const WHEEL_URL = new URL(
   "../vendor/pytrace/dist/pytrace_engine-0.1.0-py3-none-any.whl",
@@ -60,6 +61,11 @@ export function renderRunEnd(records, terminalReason, consoleUI) {
 
 // Optional collab hooks: onRunStart(runId), onRecord(record), onInput(line),
 // onRunEnd(summary|null). All fire AFTER the local UI has been updated.
+// Terminals that mean "this program is too big to trace" rather than
+// "this program went wrong" — the engine stopped because a budget ran out,
+// so the untraced path is the only way to see it finish.
+const TOO_LARGE_TO_TRACE = new Set(["step_limit", "trace_limit"]);
+
 export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
   let session = null;
   let records = [];
@@ -67,8 +73,11 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
   let booted = false;
   let runCounter = 0;
   let lastSummary = null;
+  let autoFallback = true;
 
   const ensureSession = () => session ??= createTraceWorker({ wheelUrl: WHEEL_URL });
+  // Untraced path: plain Pyodide, no step limits, no records (app/fastrun.mjs).
+  const fast = createFastRunner({ consoleUI });
 
   function onRecord(record) {
     records.push(record);
@@ -93,6 +102,7 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
     const runId = `plp-${Date.now()}-${++runCounter}`;
     hooks?.onRunStart?.(runId);
     events.emit("run-started", { runId });
+    let tracedSummary = null;
     try {
       const summary = await session.run({
         runId,
@@ -110,7 +120,7 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
       onStatus?.({ type: "done", summary });
       hooks?.onRunEnd?.(summary);
       events.emit("run-ended", { reason: summary.terminal_reason, trace_complete: summary.trace_complete });
-      return summary;
+      tracedSummary = summary;
     } catch (err) {
       // Pre-stream rejections only (options/state errors) — no records exist.
       consoleUI.system(`run failed: ${err.message ?? err}`);
@@ -126,20 +136,67 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
         if (errors.length) console.error("PLP stream-check violations:", errors);
       }
     }
+
+    // The engine stopped on a budget, not on a program error: this program
+    // is simply too big to trace. Run it again untraced so the learner sees
+    // it actually finish. The truncated trace stays on screen — the memory
+    // model still shows the first max_steps of execution.
+    if (autoFallback && TOO_LARGE_TO_TRACE.has(tracedSummary?.terminal_reason)) {
+      consoleUI.system("── too large to trace — running it again without the memory model ──");
+      return runUntraced({ keepPanes: true });
+    }
+    return tracedSummary;
+  }
+
+  // Untraced: plain Pyodide, no step limits, no records. Same console and
+  // input contract; the memory model stays empty (nothing was traced).
+  async function runUntraced({ keepPanes = false } = {}) {
+    if (running || fast.isRunning()) throw new Error("a run is already active");
+    running = true;
+    if (!keepPanes) {
+      records = [];
+      memory.reset();
+      consoleUI.reset();
+      editor.clearHighlight();
+      consoleUI.system("── run (untraced: no memory model) ──");
+    }
+    lastSummary = null;
+    onStatus?.({ type: "state", state: "running" });
+    try {
+      const summary = await fast.run(editor.getValue());
+      lastSummary = summary;
+      consoleUI.system(END_NOTES[summary.terminal_reason] ?? `── ended: ${summary.terminal_reason} ──`);
+      onStatus?.({ type: "done", summary });
+      return summary;
+    } finally {
+      running = false;
+      consoleUI.hideInput();
+    }
   }
 
   return {
     run,
-    interrupt: () => { session?.interrupt(); events.emit("interrupt-requested"); },
+    runUntraced,
+    // Auto-fallback: when a traced run trips a budget, re-run untraced.
+    setAutoFallback: (v) => { autoFallback = Boolean(v); },
+    autoFallback: () => autoFallback,
+    interrupt: () => {
+      if (fast.isRunning()) fast.interrupt();
+      else session?.interrupt();
+      events.emit("interrupt-requested");
+    },
     provideInput: (line) => {
-      ensureSession().provideInput(line); // throws on no outstanding request
+      // Route to whichever engine is waiting; both throw when nothing is
+      // outstanding, so the console's single echo path stays identical.
+      if (fast.isRunning()) fast.provideInput(line);
+      else ensureSession().provideInput(line); // throws on no outstanding request
       // Accepted: echo the line into the transcript (live mode disables the
       // engine's echo; degraded mode never reaches here — provideInput throws).
       consoleUI.append("echo", line + "\n");
       hooks?.onInput?.(line);
       events.emit("input-answered", { line });
     },
-    isRunning: () => running,
+    isRunning: () => running || fast.isRunning(),
     records: () => records,
     summary: () => lastSummary,
     checkErrors: () => traceStreamCheck(records).errors,

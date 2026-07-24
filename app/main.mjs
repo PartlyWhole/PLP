@@ -151,7 +151,21 @@ async function run() {
   }
 }
 
+// Untraced run: full speed, no step limits, no memory model. Large programs
+// also reach this automatically when tracing trips a budget (runner.mjs).
+async function runFast() {
+  if (runner.isRunning()) return null;
+  if (!collab.canRun()) { setStatus("a peer is running — watch along", ""); return null; }
+  runBtn.disabled = true;
+  try {
+    return await runner.runUntraced();
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+
 runBtn.addEventListener("click", run);
+document.getElementById("btn-fast").addEventListener("click", runFast);
 stopBtn.addEventListener("click", () => { runner.interrupt(); setStatus("stopping…"); });
 
 // Dormant generative-question pilot (see app/QUESTIONS.md). The learner-facing
@@ -182,6 +196,7 @@ window.plp = {
   console: consoleUI,
   runner,
   run,
+  runFast,
   interrupt: () => runner.interrupt(),
   provideInput: (line) => runner.provideInput(line),
   records: () => runner.records(),

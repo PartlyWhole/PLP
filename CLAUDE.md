@@ -21,7 +21,8 @@ No build step exists anywhere — plain ES modules, vendored dependencies.
 |---|---|
 | `index.html` | shell: COI-shim bootstrap, pane markup, classic-script CodeMirror, `app/main.mjs` module entry |
 | `app/main.mjs` | wiring + `window.plp` debug API (tests assert through it; keep it stable) |
-| `app/runner.mjs` | PyTrace session: run guard, record fan-out, terminal-reason notes, single input-echo path |
+| `app/runner.mjs` | PyTrace session: run guard, record fan-out, terminal-reason notes, single input-echo path; routes to the untraced path and owns the auto-fallback |
+| `app/fastrun.mjs` + `app/fastrun-worker.mjs` | untraced execution: plain Pyodide, no trace hooks, no step limits — the only way large programs finish (see invariant 3) |
 | `app/console.mjs` | terminal emulator — see **app/CONSOLE.md** (as-built doc) |
 | `app/memory.mjs` | Names/Objects tables, toggleable display filters, line-step scrubbing — see **app/MEMORY.md** (as-built doc) |
 | `app/editor.mjs` | CodeMirror 5 wrapper (single file, line highlight, collab splice/change hooks) |
@@ -38,7 +39,7 @@ No build step exists anywhere — plain ES modules, vendored dependencies.
 | `app/stream-checks.mjs` | consumer-side trace-stream invariants (`traceStreamCheck`) |
 | `vendor/` | pinned third-party: Pyodide 314.0.2, PyTrace 0.1.0 (worker **patched** for sub-path — the ONLY upstream divergence, see `vendor/PATCHES.md`), CodeMirror 5.65.21, xterm.js 6.0.0 (+fit). Hashes in `vendor/PROVENANCE.md`; record any addition there |
 | `tools/dev-server.mjs` | zero-dep static server simulating the `/PLP/` prefix; `--coi` for header posture |
-| `tests/` | Playwright: `smoke.spec.mjs` (core flows), `emulator.spec.mjs` (X-series console), `collab.spec.mjs` (CO-series collaboration), `questions.spec.mjs` (Q-series question engine) |
+| `tests/` | Playwright: `smoke.spec.mjs` (core flows), `emulator.spec.mjs` (X-series console), `collab.spec.mjs` (CO-series collaboration), `questions.spec.mjs` (Q-series question engine), `fastrun.spec.mjs` (F-series untraced execution) |
 | `VALIDATION.md` | feature → best-evidence → coverage matrix; add a row when adding a feature |
 | `README.md` | user-facing doc incl. **Stepping model** and **Memory model display rules** |
 | `ONBOARDING.md` | engineer onboarding: architecture tour, invariants-with-incidents, design case studies, growth ladder |
@@ -56,34 +57,45 @@ source of the vendored assets and test machinery).
 2. **Runner**: reject a concurrent `run()` BEFORE resetting any per-run
    state. After the first record, failures are terminal records, not
    rejections — the UI has exactly two failure paths.
-3. **Console**: the chunk store is the source of truth; the xterm screen is
+3. **Two execution paths**: PyTrace ALWAYS traces (its 14 options have no
+   off switch) and stops at `max_steps`, so anything past a few thousand
+   executed lines can only finish untraced. Traced is the default; a
+   budget terminal (`step_limit`/`trace_limit`) auto-falls back to the
+   untraced path, keeping the truncated trace on screen.
+   `runner.setAutoFallback(false)` disables it. Untraced runs produce NO
+   records — nothing for the memory model, nothing for collab to
+   replicate. In the untraced worker, output flushes are driven by the
+   writes themselves, NEVER by a timer: running Python blocks that
+   worker's event loop, so timer-based flushing shows nothing until the
+   program ends.
+4. **Console**: the chunk store is the source of truth; the xterm screen is
    a deterministic replay view. Input echo happens exactly once, only in
    `runner.provideInput` (live mode runs with `echo_stdin: false`;
    degraded keeps engine echo). `term.write` is async — poll `buffer()` in
    tests.
-4. **Memory model**: render at most once per animation frame while records
+5. **Memory model**: render at most once per animation frame while records
    stream (traces arrive at thousands/sec; per-record rendering freezes the
    tab). The Objects-table policy is the `displayFilters` flag set
    (chip-reachable only, inline class bases, inline plain functions,
    dimmed-never-hidden opaque); elided markers always render; every chip
    must resolve to a row regardless of flag state (app/MEMORY.md).
-5. **Stepping**: line-step mode (default) = synthetic position 0 + one
+6. **Stepping**: line-step mode (default) = synthetic position 0 + one
    position per executed line, each showing the state that line *produced*.
    Engine-step mode keeps raw before-the-line semantics. `memory.goTo()`/
    `stepCount()` are position-space; `memory.steps()` is always raw.
-6. **Collab**: rooms replicate the RECORD STREAM, not the panes (both are
+7. **Collab**: rooms replicate the RECORD STREAM, not the panes (both are
    deterministic projections — `renderRecordToUI` is the single fan-out).
    Driver mirrors records one `handle.change` per animation frame, never
    per record. Presence/scrub is ephemeral, never in the doc. Transports
    run concurrently (idempotent sync); no fallback state machine
    (app/COLLAB.md).
-7. **Director**: the stage arranges, the LEARNER performs (no action runs
+8. **Director**: the stage arranges, the LEARNER performs (no action runs
    code or presses buttons; `until` is learner-driven only). Effects are
    per-beat; gates persist across beats; every exit path (incl. errors)
    runs `stage.reset()` — gates fail open. Lessons are data, linted at
    start; pedagogy lives in `lessons/`, never in the runtime
    (app/DIRECTOR.md).
-8. **Tests** assert via `window.plp` state, not pixels; every run ends by
+9. **Tests** assert via `window.plp` state, not pixels; every run ends by
    checking `plp.checkErrors()` is empty. Suite runs under the `/PLP/`
    prefix with NO headers (service-worker posture = real GitHub Pages).
    First-visit COI shim reload: `waitForFunction(() => crossOriginIsolated)`.

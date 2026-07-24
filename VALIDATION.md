@@ -32,6 +32,20 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | R9 | Session survives worker recycle | 21 quick runs all `completed` (recycle after 20) | GAP (engine-verified; cheap to add) |
 | R10 | Run rejection (pre-stream) rendered, no records | Invalid option via a direct `session.run` → console "run failed", `records()` empty | GAP |
 
+## Untraced execution (F-series = `tests/fastrun.spec.mjs`)
+
+| # | Feature | Best evidence | Coverage |
+|---|---|---|---|
+| U1 | A program far past `max_steps` completes untraced with correct output | 200k-iteration loop → `completed`, exact sum in transcript, `memory.steps()` empty (untraced means no records) | F-1 |
+| U2 | Auto-fallback: a budget terminal re-runs untraced, keeping the truncated trace | same program via ordinary Run → final summary `completed`/`traced:false`; console shows both "step limit reached" and "too large to trace"; `steps()` still 1000 | F-2 |
+| U3 | `input()` parity: blocks on the SAB rendezvous, echoes exactly once | isolated run → `isWaiting()` true, `provideInput`, transcript `Your name? Ada` + output, exactly 2 occurrences | F-3 |
+| U4 | Stop interrupts an untraced infinite loop (SIGINT via interrupt buffer) | `while True: pass` → `isRunning()` true, interrupt → `interrupted`, not running | F-4 |
+| U5 | Tracebacks show learner frames only, never engine internals | nested call raising ZeroDivisionError → `line 2, in half` present; `_pyodide`/`eval_code_async`/`python314.zip` absent | F-5 |
+| U6 | No regression: ordinary programs still trace; fallback is switchable | small program → traced, steps > 0, `checkErrors()` empty; `setAutoFallback(false)` → big program reports `step_limit` | F-6 |
+| U7 | Output is live during a tight loop (flush driven by writes, not timers) | implicit in F-4: output must appear while Python blocks the worker event loop, else the test times out | F-4 (regression guard) |
+| U8 | Degraded (non-isolated) untraced mode: no SAB, `input()` reports EOF | `?nonisolated` untraced run of an input program → EOF notice, no hang | GAP |
+| U9 | Untraced runs are local-only (no records for collab to share) | room + untraced run → peers see no shared run | GAP |
+
 ## Console
 
 | # | Feature | Best evidence | Coverage |
