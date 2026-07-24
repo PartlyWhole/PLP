@@ -241,7 +241,8 @@ equality bundle = records deep-equal, transcript equal, step count equal,
 | CO14 | Room link pasted into a live tab joins via hashchange, no reload | Solo page + `location.hash = #room=…` → active + code adopted, reload-marker still set | CO-lifecycle-1 |
 | CO15 | Ungraceful close (crash, no goodbye): badge drops and a dead driver's run lock releases via read-time freshness (20 s) | B drives a run, goodbye suppressed, tab closed mid-stream → A's badge → 1 and `canRun()` → true within the staleness window; A then runs successfully | CO-lifecycle-2 |
 | CO16 | Transient remote editor activity | A remote insert or replacement briefly highlights changed text and shows its inferred caret only on the receiver; both DOM marks remove themselves after 1.8 s | CO-1 |
-| CO17 | Live peer cursor and selection presence with unobtrusive attribution | Move/select on A → B shows A-colored caret/range and anonymous name; A has no self marker; after 1.4 s only the name DOM disappears; movement re-shows it; Leave removes B's marks from A | CO-1 |
+| CO17 | Live peer cursor and selection presence with unobtrusive attribution | Move/select on A → B shows A-colored caret/range and anonymous name; A has no self marker; the name fades to `opacity: 0` (staying in the DOM for hover) and re-announces only after a pause; Leave removes B's marks from A | CO-1 |
+| CO18 | Remotely inserted or deleted text is never decorated, and a peer is exactly one caret | after remote insert and remote delete: zero `.cm-remote-edit`/`.cm-remote-cursor`, exactly one `.cm-peer-cursor` per peer (design/collab-presence.md) | CO-1 |
 
 ## Standing rules
 

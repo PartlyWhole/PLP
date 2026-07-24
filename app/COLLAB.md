@@ -92,8 +92,9 @@ runner.mjs  — exports renderRecordToUI / renderRunEnd / END_NOTES;
               (all fire AFTER the local UI updated; runner invariant #2 —
               guard before state reset — is untouched)
 editor.mjs  — applyRemote(text): common-prefix/suffix splice via
-              cm.replaceRange(..., "collab") — preserves cursor/scroll/undo
-              and briefly marks changed text + the inferred remote caret
+              cm.replaceRange(..., "collab") — preserves cursor/scroll/undo.
+              Inserted text is NOT decorated: presence is one calm caret per
+              peer (design/collab-presence.md)
               onLocalChange(fn): change events EXCEPT origin "collab"
 collab.mjs  — everything else (room, doc, presence, transports)
 ```

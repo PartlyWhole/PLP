@@ -3,8 +3,14 @@
 
 import { events } from "./events.mjs";
 
-const REMOTE_ACTIVITY_MS = 1800;
-const PEER_LABEL_MS = 1400;
+// Presence display follows the convention every mature collaborative editor
+// converged on (y-codemirror, Tiptap's collaboration caret, Docs, Figma):
+// a peer is ONE thin coloured caret plus an optional name, and remotely
+// inserted text is never tinted. Highlighting changed characters is a
+// review/track-changes affordance; applied per keystroke it turns ordinary
+// typing into flashing. See design/collab-presence.md.
+const PEER_LABEL_MS = 1600;      // how long a name stays up once shown
+const PEER_LABEL_IDLE_MS = 2500; // a peer must pause this long to re-announce
 
 export function createEditor({ hostEl }) {
   const cm = window.CodeMirror(hostEl, {
@@ -14,43 +20,7 @@ export function createEditor({ hostEl }) {
     viewportMargin: Infinity,
   });
   let marked = null; // line index of the current step highlight
-  let remoteTextMark = null;
-  let remoteCursorMark = null;
-  let remoteActivityTimer = null;
   const peerPresenceMarks = new Map();
-
-  function clearRemoteActivity() {
-    if (remoteActivityTimer !== null) clearTimeout(remoteActivityTimer);
-    remoteActivityTimer = null;
-    remoteTextMark?.clear();
-    remoteTextMark = null;
-    remoteCursorMark?.clear();
-    remoteCursorMark = null;
-  }
-
-  function showRemoteActivity(fromIndex, insertedLength) {
-    clearRemoteActivity();
-    const toIndex = fromIndex + insertedLength;
-    if (insertedLength > 0) {
-      remoteTextMark = cm.markText(
-        cm.posFromIndex(fromIndex),
-        cm.posFromIndex(toIndex),
-        { className: "cm-remote-edit" },
-      );
-    }
-
-    // This is the caret implied by the remote splice, not persisted cursor
-    // presence. It also gives a deletion (whose inserted span is empty) a
-    // visible landing point without changing this learner's selection.
-    const cursor = document.createElement("span");
-    cursor.className = "cm-remote-cursor";
-    cursor.setAttribute("aria-hidden", "true");
-    remoteCursorMark = cm.setBookmark(cm.posFromIndex(toIndex), {
-      widget: cursor,
-      insertLeft: true,
-    });
-    remoteActivityTimer = setTimeout(clearRemoteActivity, REMOTE_ACTIVITY_MS);
-  }
 
   function clampIndex(index) {
     return Math.max(0, Math.min(Number.isInteger(index) ? index : 0, cm.getValue().length));
@@ -75,8 +45,13 @@ export function createEditor({ hostEl }) {
 
   function showPeerPresence({ peerId, name, color, anchor, head, showLabel = true }) {
     const previous = peerPresenceMarks.get(peerId);
-    const labelUntil = showLabel
-      ? Date.now() + PEER_LABEL_MS
+    const now = Date.now();
+    // A name announces arrival or a return from a pause — never continuous
+    // typing, which would flicker the badge on every keystroke. It stays
+    // reachable at any time by hovering the caret (CSS).
+    const resumed = !previous || now - (previous.lastMoveAt ?? 0) >= PEER_LABEL_IDLE_MS;
+    const labelUntil = showLabel && resumed
+      ? now + PEER_LABEL_MS
       : previous?.labelUntil ?? 0;
     clearPeerPresence(peerId);
     const safeColor = /^#[0-9a-f]{6}$/i.test(color) ? color : "#56b6c2";
@@ -102,25 +77,25 @@ export function createEditor({ hostEl }) {
     cursor.dataset.peerId = peerId;
     cursor.style.setProperty("--peer-color", safeColor);
     cursor.setAttribute("aria-hidden", "true");
-    let label = null;
-    if (labelUntil > Date.now()) {
-      label = document.createElement("span");
-      label.className = "cm-peer-label";
-      label.textContent = String(name || "Collaborator").slice(0, 40);
-      cursor.append(label);
-    }
+    // The name element always exists so hover can reveal it at any time;
+    // `.visible` controls the timed announcement.
+    const label = document.createElement("span");
+    label.className = "cm-peer-label";
+    label.textContent = String(name || "Collaborator").slice(0, 40);
+    if (labelUntil > now) label.classList.add("visible");
+    cursor.append(label);
+
     const cursorMark = cm.setBookmark(cm.posFromIndex(headIndex), {
       widget: cursor,
       insertLeft: true,
     });
-    const marks = { selectionMark, cursorMark, labelTimer: null, labelUntil };
-    if (label) {
-      const remaining = Math.max(0, labelUntil - Date.now());
+    const marks = { selectionMark, cursorMark, labelTimer: null, labelUntil, lastMoveAt: now };
+    if (labelUntil > now) {
       marks.labelTimer = setTimeout(() => {
-        label.remove();
+        label.classList.remove("visible");
         marks.labelTimer = null;
         marks.labelUntil = 0;
-      }, remaining);
+      }, labelUntil - now);
     }
     peerPresenceMarks.set(peerId, marks);
   }
@@ -133,7 +108,6 @@ export function createEditor({ hostEl }) {
   }
 
   cm.on("change", (_cm, ch) => {
-    if (ch.origin !== "collab") clearRemoteActivity();
     if (ch.origin !== "setValue" && ch.origin !== "collab") events.emit("edited");
   });
 
@@ -197,7 +171,8 @@ export function createEditor({ hostEl }) {
       cm.posFromIndex(cur.length - s),
       "collab",
     );
-    showRemoteActivity(p, inserted.length);
+    // No per-splice tint or implied caret: the peer's own caret already
+    // shows where they are working (see the note at the top of this file).
   }
 
   return {

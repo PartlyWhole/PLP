@@ -84,29 +84,9 @@ button:disabled { opacity: 0.5; cursor: default; }
 .CodeMirror .cm-error { color: #e06c75; background: none; }
 .CodeMirror-matchingbracket { color: #fff !important; outline: 1px solid var(--dim); }
 .cm-active-step { background: rgba(79, 143, 247, 0.25) !important; }
-.cm-remote-edit {
-  background: rgba(86, 182, 194, 0.32);
-  border-radius: 2px;
-  animation: collab-remote-highlight-kf 1800ms ease-out forwards;
-}
-.cm-remote-cursor {
-  position: relative; display: inline-block; width: 0; height: 1.3em;
-  vertical-align: text-bottom; pointer-events: none;
-}
-.cm-remote-cursor::before {
-  content: ""; position: absolute; z-index: 2; left: -1px; top: 0.08em;
-  width: 2px; height: 1.18em; border-radius: 2px;
-  background: #56b6c2; box-shadow: 0 0 7px rgba(86, 182, 194, 0.8);
-  animation: collab-remote-cursor-kf 1800ms ease-out forwards;
-}
-@keyframes collab-remote-highlight-kf {
-  0%, 60% { background: rgba(86, 182, 194, 0.32); }
-  100% { background: rgba(86, 182, 194, 0); }
-}
-@keyframes collab-remote-cursor-kf {
-  0%, 60% { opacity: 1; }
-  100% { opacity: 0; }
-}
+/* Collaborator presence. One calm caret per peer; remotely inserted text is
+   never tinted (that is a review affordance, not a presence one, and per
+   keystroke it reads as flashing). See design/collab-presence.md. */
 .cm-peer-selection {
   border-radius: 2px;
 }
@@ -114,8 +94,12 @@ button:disabled { opacity: 0.5; cursor: default; }
   --peer-color: #56b6c2;
   position: relative; z-index: 4; display: inline-block;
   width: 0; height: 1.3em; vertical-align: text-bottom;
-  border-left: 2px solid var(--peer-color); pointer-events: none;
+  border-left: 2px solid var(--peer-color);
 }
+/* The name is always in the DOM so hovering the caret can reveal it at any
+   time; `.visible` is the timed announcement on arrival / return from a
+   pause. Fading rather than appearing-and-vanishing keeps peripheral vision
+   quiet while a peer types. */
 .cm-peer-label {
   position: absolute; left: 2px; top: calc(100% + 2px);
   max-width: 150px; overflow: hidden; text-overflow: ellipsis;
@@ -124,6 +108,14 @@ button:disabled { opacity: 0.5; cursor: default; }
   font: 600 10px/1.35 system-ui, sans-serif;
   box-shadow: 0 2px 7px rgba(0, 0, 0, .4);
   pointer-events: none;
+  opacity: 0; transition: opacity 180ms ease;
+}
+.cm-peer-label.visible { opacity: 1; }
+/* Hover needs the caret itself to be hit-testable. */
+.cm-peer-cursor { pointer-events: auto; }
+.cm-peer-cursor:hover .cm-peer-label { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .cm-peer-label { transition: none; }
 }
 
 /* memory model */
@@ -381,7 +373,7 @@ a.mm-ref:hover { border-color: var(--accent); }
   .stage-cue, .stage-pulse, .stage-popover.teacher,
   .stage-popover.teacher.is-typing .stage-teacher-art,
   .stage-popover.teacher .stage-popover-body.is-typing::after,
-  .cm-remote-edit, .cm-remote-cursor::before, .cm-peer-label {
+  .cm-peer-label {
     animation: none !important;
     transition: none !important;
   }

@@ -84,44 +84,45 @@ test.describe("collab (tabs transport, hermetic)", () => {
     const aLabelOnB = aCursorOnB.locator(".cm-peer-label");
     await expect(aCursorOnB).toHaveCount(1);
     await expect.poll(() => aSelectionOnB.count()).toBeGreaterThan(0);
-    await expect(aLabelOnB).toHaveCount(1);
+    // The name announces arrival, then fades out of the way. It stays in the
+    // DOM (hover reveals it at any time) so visibility, not presence, is the
+    // assertion.
+    await expect(aLabelOnB).toBeVisible();
     await expect(aLabelOnB).toHaveText(/^[A-Z][a-z]+ [A-Z][a-z]+$/);
     await expect(page.locator(`.cm-peer-cursor[data-peer-id="${aId}"]`)).toHaveCount(0);
-    await expect(aLabelOnB).toHaveCount(0, { timeout: 5000 });
+    await expect(aLabelOnB).toHaveCSS("opacity", "0", { timeout: 5000 });
     await expect(aCursorOnB).toHaveCount(1);
     await expect.poll(() => aSelectionOnB.count()).toBeGreaterThan(0);
 
-    // Moving to a caret collapses the selection and briefly re-shows the name.
+    // Returning after a pause re-announces; the selection collapses to a caret.
     await page.evaluate(() => window.plp.editor.setSelection(4));
-    await expect(aLabelOnB).toHaveCount(1);
+    await expect(aLabelOnB).toBeVisible();
     await expect(aSelectionOnB).toHaveCount(0);
 
     // Two-way live sync (programmatic setValue counts as a local edit).
     await page.evaluate(() => window.plp.editor.setValue("a_to_b = 2\nseeded = 1\n"));
     await expect.poll(() => b.evaluate(() => window.plp.editor.getValue())).toContain("a_to_b");
-    // The receiver briefly sees the changed text and inferred remote caret;
-    // the author does not get a remote cue for their own local edit.
-    await expect.poll(() => b.locator(".cm-remote-edit").count()).toBeGreaterThan(0);
-    await expect(b.locator(".cm-remote-cursor")).toHaveCount(1);
-    await expect(page.locator(".cm-remote-edit, .cm-remote-cursor")).toHaveCount(0);
-    // Decorations fade and remove themselves instead of becoming document
-    // or presence state.
-    await expect(b.locator(".cm-remote-edit, .cm-remote-cursor"))
-      .toHaveCount(0, { timeout: 5000 });
+    // Remotely inserted text is NEVER decorated: no tint, no second caret.
+    // Per keystroke that reads as flashing, and the peer's own caret already
+    // shows where they are working (design/collab-presence.md).
+    expect(await b.evaluate(() => document.querySelectorAll(
+      ".cm-remote-edit, .cm-remote-cursor").length)).toBe(0);
+    // Exactly one caret per peer, never a duplicate from the splice path.
+    await expect(b.locator(".cm-peer-cursor")).toHaveCount(1);
 
     await b.evaluate(() => window.plp.editor.setValue("b_to_a = 3\na_to_b = 2\nseeded = 1\n"));
     await expect.poll(() => page.evaluate(() => window.plp.editor.getValue())).toContain("b_to_a");
-    await expect.poll(() => page.locator(".cm-remote-edit").count()).toBeGreaterThan(0);
-    await expect(page.locator(".cm-remote-cursor")).toHaveCount(1);
-    await expect(b.locator(".cm-remote-edit, .cm-remote-cursor")).toHaveCount(0);
+    expect(await page.evaluate(() => document.querySelectorAll(
+      ".cm-remote-edit, .cm-remote-cursor").length)).toBe(0);
+    await expect(page.locator(".cm-peer-cursor")).toHaveCount(1);
 
-    // A deletion has no inserted span to tint, but its inferred caret still
-    // lands at the deletion point on the receiver.
+    // A deletion is likewise undecorated; the peer caret still tracks them.
     await page.evaluate(() => window.plp.editor.setValue("a_to_b = 2\nseeded = 1\n"));
     await expect.poll(() => b.evaluate(() => window.plp.editor.getValue()))
       .toBe("a_to_b = 2\nseeded = 1\n");
-    await expect(b.locator(".cm-remote-edit")).toHaveCount(0);
-    await expect(b.locator(".cm-remote-cursor")).toHaveCount(1);
+    expect(await b.evaluate(() => document.querySelectorAll(
+      ".cm-remote-edit, .cm-remote-cursor").length)).toBe(0);
+    await expect(b.locator(".cm-peer-cursor")).toHaveCount(1);
 
     // Transport gating: a tabs room must never touch the public sync server.
     expect(wsHits).toEqual([]);
