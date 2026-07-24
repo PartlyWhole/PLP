@@ -79,6 +79,32 @@ test.describe("F-series: untraced execution", () => {
     expect(await page.evaluate(() => window.plp.runner.isRunning())).toBe(false);
   });
 
+  test("F4b: Stop while waiting at input() always ends the run", async ({ page }) => {
+    // Regression: interrupting at the stdin rendezvous wakes the worker and
+    // Pyodide consumes the SIGINT, but runPythonAsync never settles — the
+    // run hung forever (and in a room, wedged every peer). The host now
+    // forces an ending if the worker misses the interrupt deadline.
+    await boot(page);
+    await page.evaluate(() => window.plp.editor.setValue('name = input("Who? ")\nprint("hi", name)\n'));
+    await page.evaluate(() => { window.__run = window.plp.run(); });
+    await page.waitForFunction(() => window.plp.console.isWaiting(), null, { timeout: 120_000 });
+
+    await page.evaluate(() => window.plp.interrupt());
+    const summary = await page.evaluate(() => window.__run);   // must not hang
+    expect(["interrupted", "killed", "uncaught_exception"]).toContain(summary.terminal_reason);
+    expect(await page.evaluate(() => window.plp.runner.isRunning())).toBe(false);
+    // The terminal must stop showing a live prompt.
+    expect(await page.evaluate(() => window.plp.console.isWaiting())).toBe(false);
+
+    // The runner is reusable afterwards (the worker may have been replaced).
+    const next = await page.evaluate(() => {
+      window.plp.editor.setValue("print('still works')\n");
+      return window.plp.run();
+    });
+    expect(next.terminal_reason).toBe("completed");
+    expect(await page.evaluate(() => window.plp.console.text())).toContain("still works");
+  });
+
   test("F5: tracebacks show only the learner's frames, never engine internals", async ({ page }) => {
     await boot(page);
     await page.evaluate(() => window.plp.editor.setValue(

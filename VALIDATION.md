@@ -45,8 +45,27 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | U5 | Tracebacks show learner frames only, never engine internals | nested call raising ZeroDivisionError → `line 2, in half` present; `_pyodide`/`eval_code_async`/`python314.zip` absent | F-5 |
 | U6 | No regression: tracing still works normally | small program → traced, steps > 0, `checkErrors()` empty | F-6 |
 | U7 | Output is live during a tight loop (flush driven by writes, not timers) | implicit in F-4: output must appear while Python blocks the worker event loop, else the test times out | F-4 (regression guard) |
+| U12 | Stop while waiting at `input()` always ends the run | untraced run parked at the stdin rendezvous → interrupt → terminal reason within the deadline, `isRunning()` false, prompt cleared, runner reusable | F-4b |
 | U8 | Degraded (non-isolated) untraced mode: no SAB, `input()` reports EOF | `?nonisolated` untraced run of an input program → EOF notice, no hang | GAP |
 | U9 | Untraced runs are local-only (no records for collab to share) | room + untraced run → peers see no shared run | GAP |
+
+## Shared-run lifecycle (L-series = `tests/collab-runlock.spec.mjs`)
+
+A room holds one shared run; every other peer's Run is gated while
+`run.status === "running"`, and `canRun()` is false for one's *own* live
+run too. So any path that fails to reach `done` wedges the entire room,
+driver included. Each row asserts a way a run can end still releases it.
+
+| # | Feature | Best evidence | Coverage |
+|---|---|---|---|
+| L1 | Stop during an untraced shared run releases the lock | peer locked while streaming → interrupt → `interrupted`; both peers' `canRun()` true; peer drives the next run | L-1 |
+| L2 | Stop during a traced shared run releases the lock | ms-scale C work per iteration → interrupt → terminal; peer can drive next | L-2 |
+| L3 | A run parked at `input()` is stoppable and releases the lock | driver stops instead of answering → terminal reason, lock lifts, prompt cleared | L-3 (untraced), L-3b (traced) |
+| L4 | A crashing run releases the lock | `1 // 0` → `uncaught_exception`, shared status `done` | L-4 |
+| L5 | Alternating drivers never wedge | 3 runs alternating peers, each releases | L-5 |
+| L6 | Simultaneous Run on both peers leaves the room usable | both press Run → neither wedges; both `canRun()` return true | L-6 |
+| L6b | **KNOWN DEFECT**: after a simultaneous-Run race, a later unrelated run is sometimes killed (`interrupted`, ~25%). A stale last-writer-wins `run` write makes the new driver think it was usurped, and the usurped handler interrupts its own run | L-6b (`test.fixme`, reproduction kept in-tree) | OPEN |
+| L7 | A vanished driver's lock is released by presence | crashed tab → roster drops → lock lifts | CO (ungraceful close) |
 
 ## Console
 

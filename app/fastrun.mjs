@@ -26,6 +26,7 @@ export function createFastRunner({ consoleUI, onOutput }) {
   let stdinHeader = null;
   let stdinBytes = null;
   let awaitingInput = false;
+  let watchdog = null;   // guarantees an interrupt produces an ending
 
   const encoder = new TextEncoder();
 
@@ -60,6 +61,7 @@ export function createFastRunner({ consoleUI, onOutput }) {
           return;
         }
         if (m.type === "done") {
+          if (watchdog !== null) { clearTimeout(watchdog); watchdog = null; }
           awaitingInput = false;
           running = false;
           consoleUI.hideInput();
@@ -105,6 +107,37 @@ export function createFastRunner({ consoleUI, onOutput }) {
     awaitingInput = false;
   }
 
+  // Tear the worker down and end the run with a definite outcome. Used by
+  // the degraded path (no SAB to interrupt through) and by the watchdog.
+  function hardReset(reason) {
+    if (watchdog !== null) { clearTimeout(watchdog); watchdog = null; }
+    worker?.terminate();
+    worker = null;
+    ready = null;
+    running = false;
+    awaitingInput = false;
+    consoleUI.hideInput();
+    settle?.({ terminal_reason: reason, traced: false });
+    settle = null;
+  }
+
+  // A cooperative interrupt is a REQUEST; it is not guaranteed to produce a
+  // terminal message. Measured failure: interrupting while the worker is
+  // parked in the stdin rendezvous wakes it and Pyodide consumes the SIGINT,
+  // but `runPythonAsync` never settles — so no "done" ever arrives and the
+  // run hangs forever. Solo that wedges the buttons; in a room it wedges
+  // every peer, because the shared run never reaches `status: "done"` and
+  // canRun() stays false for everyone (including the driver).
+  // So: always arm a deadline, and force an ending if the worker misses it.
+  const INTERRUPT_GRACE_MS = 2000;
+  function armWatchdog() {
+    if (watchdog !== null) return;
+    watchdog = setTimeout(() => {
+      watchdog = null;
+      if (running) hardReset("interrupted");
+    }, INTERRUPT_GRACE_MS);
+  }
+
   function interrupt() {
     if (!running) return;
     if (awaitingInput && stdinHeader) {
@@ -113,16 +146,13 @@ export function createFastRunner({ consoleUI, onOutput }) {
       Atomics.store(stdinHeader, 0, CANCELLED);
       Atomics.notify(stdinHeader, 0);
       awaitingInput = false;
+      consoleUI.hideInput(); // the prompt is no longer live
     }
-    if (interruptView) Atomics.store(interruptView, 0, 2); // SIGINT
-    else { // degraded: no cooperative path, kill the worker
-      worker?.terminate();
-      worker = null;
-      ready = null;
-      running = false;
-      consoleUI.hideInput();
-      settle?.({ terminal_reason: "killed", traced: false });
-      settle = null;
+    if (interruptView) {
+      Atomics.store(interruptView, 0, 2); // SIGINT
+      armWatchdog();
+    } else {
+      hardReset("killed"); // degraded: no cooperative path
     }
   }
 
@@ -132,6 +162,13 @@ export function createFastRunner({ consoleUI, onOutput }) {
     interrupt,
     isRunning: () => running,
     isWaitingForInput: () => awaitingInput,
+    // Diagnostic view of the rendezvous (debugging input/interrupt hangs).
+    debugState: () => ({
+      running, awaitingInput, hasWorker: Boolean(worker),
+      stdinState: stdinHeader ? Atomics.load(stdinHeader, 0) : null,
+      stdinLen: stdinHeader ? Atomics.load(stdinHeader, 1) : null,
+      interruptFlag: interruptView ? Atomics.load(interruptView, 0) : null,
+    }),
     dispose: () => { worker?.terminate(); worker = null; ready = null; running = false; },
   };
 }

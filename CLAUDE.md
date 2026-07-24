@@ -56,7 +56,14 @@ source of the vendored assets and test machinery).
    → PyTrace degraded mode). `.nojekyll` must exist.
 2. **Runner**: reject a concurrent `run()` BEFORE resetting any per-run
    state. After the first record, failures are terminal records, not
-   rejections — the UI has exactly two failure paths.
+   rejections — the UI has exactly two failure paths. **Every run must
+   reach a terminal state on every path** (success, throw, interrupt):
+   a run that never ends wedges the buttons solo and wedges the whole
+   room in collab, because `canRun()` is false for a live run — including
+   the driver's own. A cooperative interrupt is a request, not a
+   guarantee: interrupting at the stdin rendezvous leaves Pyodide's
+   `runPythonAsync` unsettled, so the host arms a deadline and forces an
+   ending (app/fastrun.mjs; regression F-4b, L-series).
 3. **Two execution paths**: PyTrace ALWAYS traces (its 14 options have no
    off switch) and stops at `max_steps`, so anything past a few thousand
    executed lines can only finish untraced. **Run = untraced** (the

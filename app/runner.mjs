@@ -182,6 +182,15 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
       onStatus?.({ type: "done", summary });
       hooks?.onRunEnd?.(summary);
       return summary;
+    } catch (err) {
+      // The shared run must reach a terminal state on EVERY path: while it
+      // reads "running", canRun() is false for every peer INCLUDING this
+      // one, so a swallowed failure wedges the whole room.
+      consoleUI.system(`run failed: ${err.message ?? err}`);
+      onStatus?.({ type: "error", error: err });
+      hooks?.onRunEnd?.(null);
+      events.emit("run-rejected", { message: String(err.message ?? err) });
+      return null;
     } finally {
       running = false;
       consoleUI.hideInput();
@@ -212,6 +221,7 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
       events.emit("input-answered", { line });
     },
     isRunning: () => running || fast.isRunning(),
+    fastState: () => fast.debugState(),
     records: () => records,
     summary: () => lastSummary,
     checkErrors: () => traceStreamCheck(records).errors,
