@@ -37,11 +37,13 @@ measurements, (5) manual human judgment (feel, visuals). "S-n" = covered by
 | # | Feature | Best evidence | Coverage |
 |---|---|---|---|
 | U1 | A program far past `max_steps` completes untraced with correct output | 200k-iteration loop → `completed`, exact sum in transcript, `memory.steps()` empty (untraced means no records) | F-1 |
-| U2 | Auto-fallback: a budget terminal re-runs untraced, keeping the truncated trace | same program via ordinary Run → final summary `completed`/`traced:false`; console shows both "step limit reached" and "too large to trace"; `steps()` still 1000 | F-2 |
+| U2 | Trace on a too-large program reports the budget honestly (no silent re-run) and points at Run; opt-in auto-fallback still works | `trace()` → `step_limit`, console shows "step limit reached" + "press Run"; `steps()` 1000; then `setAutoFallback(true)` → `completed`/`traced:false` with full output | F-2 |
+| U10 | Run and Trace are distinct actions | `trace()` fills the memory model; `run()` on the same program produces output with `steps()` 0 | F-6 |
+| U11 | Untraced runs replicate to peers as an output stream | room + `run()` → follower console gets the output, is told "untraced: no memory model", keeps `steps()` 0; late joiner replays it; a following traced run restores the memory model | CO (untraced run) |
 | U3 | `input()` parity: blocks on the SAB rendezvous, echoes exactly once | isolated run → `isWaiting()` true, `provideInput`, transcript `Your name? Ada` + output, exactly 2 occurrences | F-3 |
 | U4 | Stop interrupts an untraced infinite loop (SIGINT via interrupt buffer) | `while True: pass` → `isRunning()` true, interrupt → `interrupted`, not running | F-4 |
 | U5 | Tracebacks show learner frames only, never engine internals | nested call raising ZeroDivisionError → `line 2, in half` present; `_pyodide`/`eval_code_async`/`python314.zip` absent | F-5 |
-| U6 | No regression: ordinary programs still trace; fallback is switchable | small program → traced, steps > 0, `checkErrors()` empty; `setAutoFallback(false)` → big program reports `step_limit` | F-6 |
+| U6 | No regression: tracing still works normally | small program → traced, steps > 0, `checkErrors()` empty | F-6 |
 | U7 | Output is live during a tight loop (flush driven by writes, not timers) | implicit in F-4: output must appear while Python blocks the worker event loop, else the test times out | F-4 (regression guard) |
 | U8 | Degraded (non-isolated) untraced mode: no SAB, `input()` reports EOF | `?nonisolated` untraced run of an input program → EOF notice, no hang | GAP |
 | U9 | Untraced runs are local-only (no records for collab to share) | room + untraced run → peers see no shared run | GAP |

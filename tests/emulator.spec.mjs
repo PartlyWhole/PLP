@@ -14,7 +14,7 @@ async function gotoIsolated(page) {
 
 async function runProgram(page, source) {
   await page.evaluate((src) => window.plp.editor.setValue(src), source);
-  return page.evaluate(() => window.plp.run());
+  return page.evaluate(() => window.plp.trace());
 }
 
 test.describe("PLP emulator (X-series)", () => {
@@ -78,7 +78,7 @@ test.describe("PLP emulator (X-series)", () => {
   test("X6/X7: inline typing with editing + echo exactly once (engine echo off)", async ({ page }) => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue('name = input("Name? ")\nprint("hi", name)\n'));
-    await page.evaluate(() => { window.__run = window.plp.run(); });
+    await page.evaluate(() => { window.__run = window.plp.trace(); });
     await page.waitForFunction(() => window.plp.console.isWaiting(), null, { timeout: 180_000 });
 
     // X6 precondition: live-mode run disables the engine's echo.
@@ -110,7 +110,7 @@ test.describe("PLP emulator (X-series)", () => {
     await page.evaluate(() => window.plp.editor.setValue(
       // ms-scale C work per iteration so the interrupt lands in bytecode
       "while True:\n    s = sum(range(100_000))\n"));
-    await page.evaluate(() => { window.__run = window.plp.run(); });
+    await page.evaluate(() => { window.__run = window.plp.trace(); });
     await page.waitForFunction(() => window.plp.memory.steps().length > 5, null, { timeout: 180_000 });
     await page.click("[data-role=console-term]");
     await page.keyboard.press("Control+C");

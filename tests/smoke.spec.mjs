@@ -18,7 +18,7 @@ test.describe("PLP smoke", () => {
     await gotoIsolated(page);
 
     // Start the run without awaiting: it blocks at input().
-    await page.evaluate(() => { window.__run = window.plp.run(); });
+    await page.evaluate(() => { window.__run = window.plp.trace(); });
 
     // Program prints, then waits at input() — the terminal enters line mode.
     await page.waitForFunction(() => window.plp.console.isWaiting(), null, { timeout: 180_000 });
@@ -68,7 +68,7 @@ test.describe("PLP smoke", () => {
   test("isolated: uncaught exception surfaces on stderr styling and terminal note", async ({ page }) => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue("x = 1\nprint(x)\ny = x // 0\n"));
-    const summary = await page.evaluate(() => window.plp.run());
+    const summary = await page.evaluate(() => window.plp.trace());
     expect(summary.terminal_reason).toBe("uncaught_exception");
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
     await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toContain("ZeroDivisionError");
@@ -85,7 +85,7 @@ test.describe("PLP smoke", () => {
       + "rex.name = 'Rex'\n"
       + "print(rex.name)\n",
     ));
-    const summary = await page.evaluate(() => window.plp.run());
+    const summary = await page.evaluate(() => window.plp.trace());
     expect(summary.terminal_reason).toBe("completed");
 
     const objects = page.locator("[data-role=objects-table]");
@@ -140,7 +140,7 @@ test.describe("PLP smoke", () => {
       + "        self.age = age\n\n"
       + "dog1 = Dog('Buddy', 3)\n",
     ));
-    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
 
     const exposed = await page.evaluate(() => {
       const results = [];
@@ -175,7 +175,7 @@ test.describe("PLP smoke", () => {
   test("isolated: visual grammar uses boxes, pills, arrows, and shared identity", async ({ page }) => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue("a = [1, 2]\nb = a\ncount = 3\nb.append(3)\n"));
-    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
     await expect.poll(() => page.locator(".mm-name-box").count()).toBe(3);
 
     const graph = await page.evaluate(() => {
@@ -249,7 +249,7 @@ test.describe("PLP smoke", () => {
   test("isolated: indirect references appear on hover; clicking a data pill surfaces it", async ({ page }) => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue("outer = [[1]]\n"));
-    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
     await expect.poll(() => page.locator(".mm-object-node").count()).toBe(2);
 
     const childUid = await page.evaluate(() => {
@@ -272,7 +272,7 @@ test.describe("PLP smoke", () => {
     await page.evaluate(() => window.plp.editor.setValue(
       "x = 1\ny = x\nx = x+y\ny = x+x\ndef add(x,y):\n    return x+y\nz = add(x,y)\nprint(z)\n",
     ));
-    const summary = await page.evaluate(() => window.plp.run());
+    const summary = await page.evaluate(() => window.plp.trace());
     expect(summary.terminal_reason).toBe("completed");
 
     // Names: the `add` binding is hidden entirely (hideFunctionBindings).
@@ -312,7 +312,7 @@ test.describe("PLP smoke", () => {
 
     // Modules: `import math` adds no name binding or object pill by default.
     await page.evaluate(() => window.plp.editor.setValue("import math\nx = 1\n"));
-    const summary2 = await page.evaluate(() => window.plp.run());
+    const summary2 = await page.evaluate(() => window.plp.trace());
     expect(summary2.terminal_reason).toBe("completed");
     // Rendering is rAF-scheduled — poll.
     await expect.poll(() => page.evaluate(() => document.querySelector("[data-role=names-table]").textContent))
@@ -336,7 +336,7 @@ test.describe("PLP smoke", () => {
   test("isolated: hovering a name highlights its occurrences in the editor", async ({ page }) => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue('count = 1\ncount = count + 1\nprint("count", count)\n'));
-    const summary = await page.evaluate(() => window.plp.run());
+    const summary = await page.evaluate(() => window.plp.trace());
     expect(summary.terminal_reason).toBe("completed");
     await expect.poll(() => page.evaluate(() => document.querySelector("[data-role=names-table]").textContent))
       .toContain("count");
@@ -372,7 +372,7 @@ test.describe("PLP smoke", () => {
       + "t = total(prices)\n"     // line 8: global occurrence
       + "print(t)\n",
     ));
-    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
     const scoped = await page.evaluate(() => {
       // Scrub to a position where the total() frame is on screen.
       const m = window.plp.memory;
@@ -406,7 +406,7 @@ test.describe("PLP smoke", () => {
       + "grid_bad[0][0] = 9\n"
       + "print(grid_bad)\n",
     ));
-    const summary = await page.evaluate(() => window.plp.run());
+    const summary = await page.evaluate(() => window.plp.trace());
     expect(summary.terminal_reason).toBe("completed");
 
     // 4 source lines executed -> 5 positions (synthetic start + one per
@@ -437,7 +437,7 @@ test.describe("PLP smoke", () => {
     await page.goto(SITE + "?nonisolated");
     await page.waitForFunction(() => Boolean(window.plp));
     expect(await page.evaluate(() => crossOriginIsolated)).toBe(false);
-    const summary = await page.evaluate(() => window.plp.run());
+    const summary = await page.evaluate(() => window.plp.trace());
     expect(summary.terminal_reason).toBe("needs_input");
     await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toContain("live input is unavailable");
   });
@@ -449,7 +449,7 @@ test.describe("PLP smoke", () => {
       ...Array.from({ length: 12 }, (_, i) => `d${i} = [${i}]`),
     ].join("\n");
     await page.evaluate((code) => window.plp.editor.setValue(code), source);
-    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
 
     const scroller = page.locator(".mm-object-scroll");
     await expect(scroller).toHaveAttribute("data-scrollable", "true");
@@ -489,7 +489,7 @@ test.describe("PLP smoke", () => {
       + "dog1 = Dog(\"Buddy\", 3)\n"
       + "print(dog1.bark())\n",
     ));
-    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
 
     const names = page.locator("[data-role=names-table]");
     const objects = page.locator("[data-role=objects-table]");

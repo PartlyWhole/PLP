@@ -17,7 +17,7 @@ async function boot(page) {
 
 async function run(page, source) {
   await page.evaluate((src) => window.plp.editor.setValue(src), source);
-  return page.evaluate(() => window.plp.run());
+  return page.evaluate(() => window.plp.trace());
 }
 
 test.describe("D0 — dormant learner surface", () => {
@@ -151,7 +151,7 @@ test.describe("D3 — stage gates", () => {
     await boot(page);
     await page.evaluate(() => window.plp.stage.gate({ deny: ["console-input"] }));
     await page.evaluate(() => window.plp.editor.setValue('x = input("Q? ")\n'));
-    await page.evaluate(() => { window.__run = window.plp.run(); });
+    await page.evaluate(() => { window.__run = window.plp.trace(); });
     // Prompt reaches the transcript but the console never enters line mode.
     await expect.poll(() => page.evaluate(() => window.plp.console.text())).toContain("Q? ");
     expect(await page.evaluate(() => window.plp.console.isWaiting())).toBe(false);
@@ -575,7 +575,9 @@ test.describe("D7 — reference lesson end-to-end", () => {
     await expect(page.locator("[data-role=objects-table]")).toBeHidden();
     expect(await page.evaluate(() => window.plp.editor.isReadOnly())).toBe(true);
     await expect(page.locator("#btn-quiz")).toBeDisabled();
-    await page.click("#btn-run");
+    // Beat 1 teaches Trace: Run alone would not fill the memory model.
+    await expect(page.locator("#btn-run")).toBeDisabled();
+    await page.click("#btn-trace");
     await expect.poll(beat, { timeout: 180_000 }).toBe("read-names");
     await expect(page.locator(".mm-name-box.name", { hasText: /^y$/ })).toHaveCount(1);
 
@@ -601,8 +603,8 @@ test.describe("D7 — reference lesson end-to-end", () => {
     await page.keyboard.press("Enter");
     await expect.poll(beat).toBe("rerun");
 
-    // Beat 5: run the arithmetic program again
-    await page.click("#btn-run");
+    // Beat 5: trace the arithmetic program again (the quiz needs records)
+    await page.click("#btn-trace");
     await expect.poll(beat).toBe("mastery");
 
     // Beat 6: quiz — wrong answer stays, correct advances to done
@@ -632,8 +634,8 @@ test.describe("D7 — reference lesson end-to-end", () => {
       await page.evaluate(() => window.plp.director.skip());
       expect(await page.evaluate(() => window.plp.director.state().beat)).toBe(target);
     }
-    // mastery needs a matching trace: run the arithmetic program
-    await page.click("#btn-run");
+    // mastery needs a matching trace: trace the arithmetic program
+    await page.click("#btn-trace");
     await expect.poll(() => page.evaluate(() => window.plp.director.state().beat), { timeout: 180_000 })
       .toBe("mastery");
     for (let i = 0; i < 3; i++) {

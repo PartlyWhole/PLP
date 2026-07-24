@@ -104,6 +104,27 @@ statically, but the ~3 MB CRDT bundle is dynamically imported only inside
 
 ## 4. Runs
 
+### 4.0 Two run modes
+
+`run.mode` says what a shared run *is*:
+
+- **`traced`** (the Trace button) — a RECORD stream. Followers replay it
+  through `renderRecordToUI`, reproducing both panes exactly. This is the
+  mode everything below describes.
+- **`untraced`** (the default Run) — plain Pyodide emits no records at
+  all, so there is nothing to replay. The driver instead shares one
+  ordered console OUTPUT stream in `run.output`: `{stream, text}` chunks
+  where `stream` is `stdout`/`stderr`/`echo` (typed input joins the same
+  array, because with no records there is no `at` index to position an
+  echo against). Followers append them to the console and leave the memory
+  model empty, with a system line saying why. Capped at
+  `SHARED_OUTPUT_CAP` (256 KB) — an untraced program can print without
+  bound, and every byte is replicated to peers *and* persisted on the
+  relay; the cap emits a truncation notice rather than growing the doc.
+
+The invariant is unchanged in spirit: a room replicates **what the
+driver's engine emitted**, never the panes. Only the emission differs.
+
 ### 4.1 Roles
 
 Whoever presses Run is the **driver** for that run; there is no permanent

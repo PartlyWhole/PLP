@@ -59,15 +59,16 @@ source of the vendored assets and test machinery).
    rejections — the UI has exactly two failure paths.
 3. **Two execution paths**: PyTrace ALWAYS traces (its 14 options have no
    off switch) and stops at `max_steps`, so anything past a few thousand
-   executed lines can only finish untraced. Traced is the default; a
-   budget terminal (`step_limit`/`trace_limit`) auto-falls back to the
-   untraced path, keeping the truncated trace on screen.
-   `runner.setAutoFallback(false)` disables it. Untraced runs produce NO
-   records — nothing for the memory model, nothing for collab to
-   replicate. In the untraced worker, output flushes are driven by the
-   writes themselves, NEVER by a timer: running Python blocks that
-   worker's event loop, so timer-based flushing shows nothing until the
-   program ends.
+   executed lines can only finish untraced. **Run = untraced** (the
+   default; `runner.run()`), **Trace = traced** (`runner.trace()`). A
+   budget terminal (`step_limit`/`trace_limit`) keeps the truncated trace
+   and points at Run; `runner.setAutoFallback(true)` opts into re-running
+   untraced instead. Untraced runs produce NO records, so collab shares
+   them as an output stream rather than a record stream (invariant 7). In
+   the untraced worker, output flushes are driven by the writes
+   themselves, NEVER by a timer: running Python blocks that worker's
+   event loop, so timer-based flushing shows nothing until the program
+   ends.
 4. **Console**: the chunk store is the source of truth; the xterm screen is
    a deterministic replay view. Input echo happens exactly once, only in
    `runner.provideInput` (live mode runs with `echo_stdin: false`;
@@ -83,8 +84,11 @@ source of the vendored assets and test machinery).
    position per executed line, each showing the state that line *produced*.
    Engine-step mode keeps raw before-the-line semantics. `memory.goTo()`/
    `stepCount()` are position-space; `memory.steps()` is always raw.
-7. **Collab**: rooms replicate the RECORD STREAM, not the panes (both are
-   deterministic projections — `renderRecordToUI` is the single fan-out).
+7. **Collab**: rooms replicate what the driver's ENGINE emitted, not the
+   panes. A traced run shares its RECORD STREAM (`renderRecordToUI` is
+   the single fan-out); an untraced run has no records, so it shares one
+   ordered console OUTPUT stream (stdout/stderr/echo) instead, capped at
+   `SHARED_OUTPUT_CAP`. `run.mode` says which.
    Driver mirrors records one `handle.change` per animation frame, never
    per record. Presence/scrub is ephemeral, never in the doc. Transports
    run concurrently (idempotent sync); no fallback state machine

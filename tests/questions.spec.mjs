@@ -23,7 +23,7 @@ async function setupRun(page) {
   await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
   await page.waitForFunction(() => Boolean(window.plp));
   await page.evaluate((src) => window.plp.editor.setValue(src), PROGRAM);
-  const summary = await page.evaluate(() => window.plp.run());
+  const summary = await page.evaluate(() => window.plp.trace());
   expect(summary.terminal_reason).toBe("completed");
 }
 
@@ -200,7 +200,7 @@ test.describe("PLP questions (Q-series)", () => {
     await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
     await page.waitForFunction(() => Boolean(window.plp));
     await page.evaluate(() => window.plp.editor.setValue("x = 3\n"));
-    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
     await expect(page.locator("#btn-quiz")).toBeHidden();
     await page.evaluate(() => window.plp.quiz.open());
     await expect(page.locator(".quiz-panel")).toBeVisible();

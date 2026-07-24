@@ -73,11 +73,17 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
   let booted = false;
   let runCounter = 0;
   let lastSummary = null;
-  let autoFallback = true;
+  let autoFallback = false;
 
   const ensureSession = () => session ??= createTraceWorker({ wheelUrl: WHEEL_URL });
-  // Untraced path: plain Pyodide, no step limits, no records (app/fastrun.mjs).
-  const fast = createFastRunner({ consoleUI });
+  // Untraced path — the DEFAULT Run: plain Pyodide, no step limits, no
+  // records (app/fastrun.mjs). Output is forwarded to collab too: an
+  // untraced run has no record stream to replicate, so its console output
+  // is shared directly (app/COLLAB.md, "untraced runs").
+  const fast = createFastRunner({
+    consoleUI,
+    onOutput: (stream, text) => hooks?.onOutput?.({ stream, text }),
+  });
 
   function onRecord(record) {
     records.push(record);
@@ -86,10 +92,11 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
     hooks?.onRecord?.(record);
   }
 
-  async function run() {
+  // Traced run ("Trace"): the memory model, bounded by the engine's budgets.
+  async function trace() {
     // Guard BEFORE touching any state: a concurrent call must not clobber
     // the active run's records.
-    if (running) throw new Error("a run is already active");
+    if (running || fast.isRunning()) throw new Error("a run is already active");
     records = [];
     lastSummary = null;
     memory.reset();
@@ -138,19 +145,23 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
     }
 
     // The engine stopped on a budget, not on a program error: this program
-    // is simply too big to trace. Run it again untraced so the learner sees
-    // it actually finish. The truncated trace stays on screen — the memory
-    // model still shows the first max_steps of execution.
-    if (autoFallback && TOO_LARGE_TO_TRACE.has(tracedSummary?.terminal_reason)) {
-      consoleUI.system("── too large to trace — running it again without the memory model ──");
-      return runUntraced({ keepPanes: true });
+    // is too big to trace in full. Say so and point at Run, which always
+    // finishes — re-running automatically would defeat the point of having
+    // explicitly asked to trace (and would execute side effects twice).
+    if (TOO_LARGE_TO_TRACE.has(tracedSummary?.terminal_reason)) {
+      if (autoFallback) {
+        consoleUI.system("── too large to trace — running it again without the memory model ──");
+        return run({ keepPanes: true });
+      }
+      consoleUI.system("── traced the first part only — press Run to execute the whole program ──");
     }
     return tracedSummary;
   }
 
-  // Untraced: plain Pyodide, no step limits, no records. Same console and
-  // input contract; the memory model stays empty (nothing was traced).
-  async function runUntraced({ keepPanes = false } = {}) {
+  // The DEFAULT Run: untraced, so it always finishes. Same console and
+  // input contract as tracing; the memory model stays empty (nothing was
+  // traced) and collab receives the output stream instead of records.
+  async function run({ keepPanes = false } = {}) {
     if (running || fast.isRunning()) throw new Error("a run is already active");
     running = true;
     if (!keepPanes) {
@@ -158,15 +169,18 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
       memory.reset();
       consoleUI.reset();
       editor.clearHighlight();
-      consoleUI.system("── run (untraced: no memory model) ──");
+      consoleUI.system("── run (no memory model — press Trace for that) ──");
     }
     lastSummary = null;
     onStatus?.({ type: "state", state: "running" });
+    const runId = `plp-run-${Date.now()}-${++runCounter}`;
+    hooks?.onRunStart?.(runId, { mode: "untraced" });
     try {
       const summary = await fast.run(editor.getValue());
       lastSummary = summary;
       consoleUI.system(END_NOTES[summary.terminal_reason] ?? `── ended: ${summary.terminal_reason} ──`);
       onStatus?.({ type: "done", summary });
+      hooks?.onRunEnd?.(summary);
       return summary;
     } finally {
       running = false;
@@ -175,9 +189,10 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
   }
 
   return {
-    run,
-    runUntraced,
-    // Auto-fallback: when a traced run trips a budget, re-run untraced.
+    run,     // untraced (the Run button)
+    trace,   // traced (the Trace button)
+    // Opt-in: when a traced run trips a budget, re-run it untraced instead
+    // of just reporting. Off by default — Run already covers that need.
     setAutoFallback: (v) => { autoFallback = Boolean(v); },
     autoFallback: () => autoFallback,
     interrupt: () => {

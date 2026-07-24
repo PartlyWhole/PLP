@@ -36,19 +36,23 @@ npx playwright test        # add PW_ALL_BROWSERS=1 for firefox+webkit
 
 Tests drive the app through the `window.plp` debug API.
 
-## Large programs (untraced runs)
+## Run vs Trace
 
-Tracing costs a step record per executed line, and the engine stops at
-`max_steps` (1000 by default) — so a program that runs hundreds of
-thousands of lines can never finish while traced. **Run fast** executes it
-at full speed with no tracing: real output, working `input()`, working
-Stop — but no memory model, because nothing was traced.
+Two ways to execute, and the difference is whether the memory model is
+being filled:
 
-You usually don't need to press it: an ordinary **Run** that hits the step
-or trace budget says so and re-runs itself untraced automatically, keeping
-the truncated trace on screen (the first 1000 steps stay scrubbable while
-the console shows the program's full output). Disable that with
-`plp.runner.setAutoFallback(false)`.
+- **Run** — full speed, no tracing. Always finishes, however large the
+  program. Real output, working `input()`, working Stop; the memory model
+  stays empty because nothing was recorded.
+- **Trace** — records every executed line to drive the memory model, so
+  you can scrub through execution. Tracing costs a step record per line
+  and the engine stops at `max_steps` (1000 by default), so on a large
+  program Trace keeps the first 1000 steps, says so, and points you at
+  Run for the whole thing. (`plp.runner.setAutoFallback(true)` makes it
+  re-run untraced automatically instead.)
+
+In a shared session both are replicated: a traced run replays as records
+(memory model included), an untraced run replays as its console output.
 
 ## Stepping model
 

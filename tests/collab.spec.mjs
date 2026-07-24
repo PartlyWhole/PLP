@@ -34,7 +34,7 @@ async function joinRoom(page, query, url, via) {
 // Driver-side run that returns the summary (kick + poll — first run boots Pyodide).
 async function runOn(page, source) {
   if (source !== undefined) await page.evaluate((s) => window.plp.editor.setValue(s), source);
-  await page.evaluate(() => { window.__run = window.plp.run(); });
+  await page.evaluate(() => { window.__run = window.plp.trace(); });
   return page.evaluate(() => window.__run); // resolves when the run ends
 
 }
@@ -133,7 +133,7 @@ test.describe("collab (tabs transport, hermetic)", () => {
     await expect(page.locator(`.cm-peer-cursor[data-peer-id="${bId}"]`)).toHaveCount(0);
     expect(await b.evaluate(() => window.plp.editor.getValue()))
       .toBe("a_to_b = 2\nseeded = 1\n");
-    expect((await b.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    expect((await b.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
     expect(await b.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
@@ -167,6 +167,40 @@ test.describe("collab (tabs transport, hermetic)", () => {
     expect(await b.evaluate(() => window.plp.console.text())).toBe("again\n");
   });
 
+  test("untraced run: the follower gets the output stream (no records to replay)", async ({ page, context }) => {
+    await gotoApp(page, "?transports=tabs");
+    const url = await startRoom(page);
+    const b = await context.newPage();
+    await joinRoom(b, "?transports=tabs", url, "tabs");
+
+    // The default Run produces NO records, so the record stream cannot carry
+    // it — the shared output stream must.
+    await page.evaluate(() => window.plp.editor.setValue(
+      "total = 0\nfor i in range(50000):\n    total += i\nprint('sum:', total)\n"));
+    const summary = await page.evaluate(() => window.plp.run());
+    expect(summary.terminal_reason).toBe("completed");
+    expect(summary.traced).toBe(false);
+
+    await expect.poll(() => b.evaluate(() => window.plp.console.text())).toContain("sum: 1249975000");
+    const screen = await b.evaluate(() => window.plp.console.buffer());
+    expect(screen).toContain("untraced: no memory model");   // the follower is told why
+    expect(screen).toContain("── program finished ──");
+    // Honest panes: nothing was traced, so the follower's memory stays empty.
+    expect(await b.evaluate(() => window.plp.memory.steps().length)).toBe(0);
+
+    // A late joiner replays the untraced run too.
+    const c = await context.newPage();
+    await joinRoom(c, "?transports=tabs", url, "tabs");
+    await expect.poll(() => c.evaluate(() => window.plp.console.text())).toContain("sum: 1249975000");
+    await c.close();
+
+    // Switching back to a traced run on the same room restores the memory model.
+    const traced = await runOn(page, "x = [1, 2]\nprint(len(x))\n");
+    expect(traced.terminal_reason).toBe("completed");
+    await expectFollowerMatchesDriver(b, page);
+    expect(await b.evaluate(() => window.plp.memory.steps().length)).toBeGreaterThan(0);
+  });
+
   test("input() run: prompt + echo reach the follower; run lockout while streaming", async ({ page, context }) => {
     await gotoApp(page, "?transports=tabs");
     const url = await startRoom(page);
@@ -174,13 +208,13 @@ test.describe("collab (tabs transport, hermetic)", () => {
     await joinRoom(b, "?transports=tabs", url, "tabs");
 
     await page.evaluate(() => window.plp.editor.setValue('name = input("Who? ")\nprint("hi", name)\n'));
-    await page.evaluate(() => { window.__run = window.plp.run(); });
+    await page.evaluate(() => { window.__run = window.plp.trace(); });
     await page.waitForFunction(() => window.plp.console.isWaiting(), null, { timeout: 180_000 });
 
     // Lockout: while the driver's run is live, a follower Run is refused —
     // and the follower terminal never enters line mode for the remote input().
     await expect.poll(() => b.evaluate(() => window.plp.collab.canRun())).toBe(false);
-    expect(await b.evaluate(() => window.plp.run())).toBeNull();
+    expect(await b.evaluate(() => window.plp.trace())).toBeNull();
     expect(await b.evaluate(() => window.plp.console.isWaiting())).toBe(false);
 
     await page.evaluate(() => window.plp.provideInput("Ada"));
@@ -269,7 +303,7 @@ test.describe("collab (tabs transport, lifecycle edges)", () => {
     // (page.close() = ungraceful: no Leave, goodbye not guaranteed).
     await b.evaluate(() => window.plp.editor.setValue(
       "t = 0\nfor i in range(400):\n    t += sum(range(100_000))\nprint('t', t)\n"));
-    await b.evaluate(() => { window.__run = window.plp.run(); });
+    await b.evaluate(() => { window.__run = window.plp.trace(); });
     await expect.poll(() => page.evaluate(() => window.plp.collab.records()?.length ?? 0), { timeout: 180_000 })
       .toBeGreaterThan(3); // the shared run is streaming to A
     expect(await page.evaluate(() => window.plp.collab.canRun())).toBe(false); // locked while B drives
@@ -351,7 +385,7 @@ test.describe("collab (fault injection: local sync server)", () => {
       // a while (interruptible-workload guidance from the engine facts).
       await a.evaluate(() => window.plp.editor.setValue(
         "t = 0\nfor i in range(120):\n    t += sum(range(100_000))\nprint('t', t)\n"));
-      await a.evaluate(() => { window.__run = window.plp.run(); });
+      await a.evaluate(() => { window.__run = window.plp.trace(); });
 
       // Wait until the follower has some records, then kill the relay mid-stream.
       await expect.poll(() => b.evaluate(() => window.plp.collab.records()?.length ?? 0), { timeout: 180_000 })

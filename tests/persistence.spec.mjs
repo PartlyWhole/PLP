@@ -40,7 +40,7 @@ test("editor code survives reload and a browser restart", async () => {
     context = opened.context;
     page = opened.page;
     expect(await page.evaluate(() => window.plp.editor.getValue())).toBe(source);
-    expect((await page.evaluate(() => window.plp.run())).terminal_reason).toBe("completed");
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   } finally {
     await context?.close();

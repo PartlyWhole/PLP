@@ -18,6 +18,7 @@ const CUE_DURATIONS = { pulse: 1600, bounce: 850, wiggle: 750 };
 
 const CAPS = {
   "run": () => [document.getElementById("btn-run")],
+  "trace": () => [document.getElementById("btn-trace")],
   "stop": () => [document.getElementById("btn-stop")],
   "quiz": () => [document.getElementById("btn-quiz")],
   "share": () => [document.getElementById("btn-share")],
@@ -34,6 +35,7 @@ export const CAPABILITIES = Object.keys(CAPS);
 
 const TARGETS = {
   "run": () => document.getElementById("btn-run"),
+  "trace": () => document.getElementById("btn-trace"),
   "stop": () => document.getElementById("btn-stop"),
   "share": () => document.getElementById("btn-share"),
   "editor": () => document.getElementById("editor-pane"),

@@ -140,32 +140,28 @@ const runner = createRunner({
   },
 });
 
-async function run() {
+// Two ways to execute, both learner-facing:
+//   Run   — untraced, full speed, always finishes; no memory model.
+//   Trace — records every step to drive the memory model, so the engine's
+//           step budget stops it early on large programs.
+const traceBtn = document.getElementById("btn-trace");
+
+async function start(fn) {
   if (runner.isRunning()) return null;
   if (!collab.canRun()) { setStatus("a peer is running — watch along", ""); return null; }
-  runBtn.disabled = true;
+  runBtn.disabled = traceBtn.disabled = true;
   try {
-    return await runner.run();
+    return await fn();
   } finally {
-    runBtn.disabled = false;
+    runBtn.disabled = traceBtn.disabled = false;
   }
 }
 
-// Untraced run: full speed, no step limits, no memory model. Large programs
-// also reach this automatically when tracing trips a budget (runner.mjs).
-async function runFast() {
-  if (runner.isRunning()) return null;
-  if (!collab.canRun()) { setStatus("a peer is running — watch along", ""); return null; }
-  runBtn.disabled = true;
-  try {
-    return await runner.runUntraced();
-  } finally {
-    runBtn.disabled = false;
-  }
-}
+const run = () => start(() => runner.run());
+const trace = () => start(() => runner.trace());
 
 runBtn.addEventListener("click", run);
-document.getElementById("btn-fast").addEventListener("click", runFast);
+traceBtn.addEventListener("click", trace);
 stopBtn.addEventListener("click", () => { runner.interrupt(); setStatus("stopping…"); });
 
 // Dormant generative-question pilot (see app/QUESTIONS.md). The learner-facing
@@ -196,7 +192,7 @@ window.plp = {
   console: consoleUI,
   runner,
   run,
-  runFast,
+  trace,
   interrupt: () => runner.interrupt(),
   provideInput: (line) => runner.provideInput(line),
   records: () => runner.records(),

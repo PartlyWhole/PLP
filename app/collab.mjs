@@ -25,6 +25,8 @@ import { isRenderableRecord } from "./record-guard.mjs";
 import { traceStreamCheck } from "./stream-checks.mjs";
 
 const ALL_TRANSPORTS = ["ws", "p2p", "tabs"];
+// Untraced runs can print without bound; cap what gets replicated+persisted.
+const SHARED_OUTPUT_CAP = 256 * 1024;
 // Self-hosted relay (deploy/relay/): the same sync-server package the
 // CO-series fault-injection tests exercise, pinned 0.2.8.
 const SYNC_SERVER = "wss://sync.partlywhole.org";
@@ -71,7 +73,7 @@ export function createCollab({ editor, memory, consoleUI, onUiState }) {
     // driver state
     myRunId: null, pending: [], flushScheduled: false, usurped: false,
     // follower state
-    view: { runId: null, records: 0, echoes: 0, ended: false, shared: [] },
+    view: { runId: null, records: 0, echoes: 0, output: 0, ended: false, shared: [] },
     // scrub sharing
     scrubSeq: 0, peerScrubSeen: new Map(), applyingScrub: false, detached: false,
     // editor cursor/selection presence (ephemeral)
@@ -163,20 +165,28 @@ export function createCollab({ editor, memory, consoleUI, onUiState }) {
     c.pending = [];
     c.handle.change((d) => {
       for (const item of batch) {
-        if (item.echo !== undefined) d.run.echoes.push({ at: d.run.records.length, text: item.echo });
+        if (item.out !== undefined) d.run.output.push(item.out);
+        else if (item.echo !== undefined) d.run.echoes.push({ at: d.run.records.length, text: item.echo });
         else d.run.records.push(item.record);
       }
     });
   }
 
   const hooks = {
-    onRunStart(runId) {
+    // mode "traced"   -> the run is a RECORD stream (memory model + console)
+    // mode "untraced" -> there are no records; share the console OUTPUT
+    //    stream instead, stdout/stderr/echo interleaved in one ordered
+    //    array. Both are still deterministic projections of what the
+    //    driver's engine emitted — just different engines (app/COLLAB.md).
+    onRunStart(runId, { mode = "traced" } = {}) {
       if (!c.active || !c.handle) return;
       c.myRunId = runId;
+      c.mode = mode;
+      c.sharedOutBytes = 0;
       c.pending = [];
       c.usurped = false;
       c.handle.change((d) => {
-        d.run = { runId, driverId: selfId, status: "running", records: [], echoes: [], summary: null };
+        d.run = { runId, driverId: selfId, status: "running", mode, records: [], echoes: [], output: [], summary: null };
       });
     },
     onRecord(record) {
@@ -184,9 +194,26 @@ export function createCollab({ editor, memory, consoleUI, onUiState }) {
       c.pending.push({ record });
       scheduleFlush();
     },
+    // Untraced output. Capped: an untraced program can print without bound,
+    // and every byte here is replicated to peers AND persisted on the relay.
+    onOutput({ stream, text }) {
+      if (!c.active || c.myRunId === null || c.usurped) return;
+      if (c.sharedOutBytes >= SHARED_OUTPUT_CAP) return;
+      const room = SHARED_OUTPUT_CAP - c.sharedOutBytes;
+      const clipped = text.length > room ? text.slice(0, room) : text;
+      c.sharedOutBytes += clipped.length;
+      c.pending.push({ out: { stream, text: clipped } });
+      if (c.sharedOutBytes >= SHARED_OUTPUT_CAP) {
+        c.pending.push({ out: { stream: "sys", text: "\n⚠ shared output truncated — run it yourself to see the rest\n" } });
+      }
+      scheduleFlush();
+    },
     onInput(line) {
       if (!c.active || c.myRunId === null || c.usurped) return;
-      c.pending.push({ echo: line + "\n" });
+      // Untraced runs have no records to position an echo against, so the
+      // echo joins the single ordered output stream instead.
+      if (c.mode === "untraced") c.pending.push({ out: { stream: "echo", text: line + "\n" } });
+      else c.pending.push({ echo: line + "\n" });
       scheduleFlush();
     },
     onRunEnd(summary) {
@@ -209,13 +236,36 @@ export function createCollab({ editor, memory, consoleUI, onUiState }) {
     if (run.runId !== v.runId) {
       // New (or first-seen) run: reset both panes, replay from record 0 —
       // exactly the late-joiner path; X0b determinism makes it identical.
-      v.runId = run.runId; v.records = 0; v.echoes = 0; v.ended = false; v.shared = []; v.warned = false;
+      v.runId = run.runId; v.records = 0; v.echoes = 0; v.output = 0;
+      v.ended = false; v.shared = []; v.warned = false;
       c.detached = false;
       memory.reset();
       consoleUI.reset();
-      consoleUI.system("── shared run ──");
+      consoleUI.system(run.mode === "untraced"
+        ? "── shared run (untraced: no memory model) ──"
+        : "── shared run ──");
       onUiState?.({ type: "remote-run", phase: "running" });
     }
+
+    // Untraced driver: no records exist, so replay the shared output stream.
+    if (run.mode === "untraced") {
+      const out = run.output ?? [];
+      while (v.output < out.length) {
+        const chunk = out[v.output];
+        v.output += 1;
+        const stream = chunk?.stream;
+        const text = chunk?.text;
+        // Remote-authored, unvalidated: accept only known streams, and keep
+        // it a bounded string (the terminal renders text, never markup).
+        if (typeof text !== "string") continue;
+        if (stream === "stdout" || stream === "stderr" || stream === "echo") {
+          consoleUI.append(stream, text.slice(0, 4096));
+        } else if (stream === "sys") {
+          consoleUI.system(text.trim());
+        }
+      }
+    } else {
+
     const records = run.records ?? [], echoes = run.echoes ?? [];
     while (v.records < records.length || v.echoes < echoes.length) {
       if (v.echoes < echoes.length && echoes[v.echoes].at <= v.records) {
@@ -243,7 +293,12 @@ export function createCollab({ editor, memory, consoleUI, onUiState }) {
         renderRecordToUI(r, { memory, consoleUI, interactive: false });
       } else break;
     }
-    if (run.status === "done" && !v.ended && v.records === records.length) {
+    }
+
+    const stillReplaying = run.mode === "untraced"
+      ? v.output < (run.output ?? []).length
+      : v.records < (run.records ?? []).length;
+    if (run.status === "done" && !v.ended && !stillReplaying) {
       v.ended = true;
       const reason = run.summary?.terminal_reason ?? "completed";
       renderRunEnd(v.shared, reason, consoleUI);

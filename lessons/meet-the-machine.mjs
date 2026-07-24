@@ -15,21 +15,21 @@ export default {
     {
       id: "press-run",
       do: [
-        { gate: { deny: ["edit", "scrub", "step-mode", "quiz", "share", "maximize"] } },
+        { gate: { deny: ["run", "edit", "scrub", "step-mode", "quiz", "share", "maximize"] } },
         { veil: "memory-objects" },
-        { spotlight: "run", dim: true },
-        { cue: { at: "run", motion: "pulse" } },
+        { spotlight: "trace", dim: true },
+        { cue: { at: "trace", motion: "pulse" } },
         { say: {
-          at: "run",
+          at: "trace",
           avoid: ["editor", "memory"],
-          md: "This is a Python program. **Run it** and watch the right panel.",
+          md: "This is a Python program. Press **Trace** and watch the right panel.",
         } },
       ],
       until: { event: "run-ended", reason: "completed" },
       hints: [
-        { when: { idleMs: 25000 }, say: { at: "run", md: "Press the **Run ▶** button." } },
+        { when: { idleMs: 25000 }, say: { at: "trace", md: "Press the **Trace** button." } },
         { when: { event: "run-ended", reason: "uncaught_exception" },
-          say: { at: "console", md: "The program crashed — read the red line, then Run again." } },
+          say: { at: "console", md: "The program crashed — read the red line, then Trace again." } },
       ],
       why: "Programs execute top to bottom. The memory panel on the right shows every name your program creates.",
     },
@@ -64,7 +64,7 @@ export default {
       do: [
         { set: "code", value: 'name = input("Who are you? ")\nprint("hi", name)\n' },
         { clear: "effects" },
-        { gate: { allow: ["run"] } },
+        { gate: { allow: ["run", "trace"] } },
         { spotlight: "console", dim: true },
         { say: { at: "console", md: "New program: it will **ask you a question**. Run it, then type your answer in the terminal and press Enter." } },
       ],
@@ -85,13 +85,13 @@ export default {
       do: [
         { set: "code", value: "x = 1\ny = x + 2\nprint(\"y is\", y)\n" },
         { clear: "effects" },
-        { spotlight: "run", dim: true },
-        { cue: { at: "run", motion: "wiggle" } },
-        { say: { at: "run", md: "Back to the first program. **Run it once more** — then you'll predict its memory." } },
+        { spotlight: "trace", dim: true },
+        { cue: { at: "trace", motion: "wiggle" } },
+        { say: { at: "trace", md: "Back to the first program. **Trace it once more** — then you'll predict its memory." } },
       ],
       until: { event: "run-ended", reason: "completed" },
       hints: [
-        { when: { idleMs: 25000 }, say: { at: "run", md: "Press **Run ▶**." } },
+        { when: { idleMs: 25000 }, say: { at: "trace", md: "Press **Trace**." } },
       ],
     },
     {

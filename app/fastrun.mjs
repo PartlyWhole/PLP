@@ -15,7 +15,9 @@ const IDLE = 0, WAITING = 1, READY = 2, CANCELLED = 3;
 const HEADER_INTS = 2;
 const STDIN_BYTES = 64 * 1024;
 
-export function createFastRunner({ consoleUI }) {
+// onOutput(stream, text): fires for every output chunk after it reaches the
+// console — collab uses it to share untraced runs, which have no records.
+export function createFastRunner({ consoleUI, onOutput }) {
   let worker = null;
   let ready = null;          // promise resolved once Pyodide has booted
   let running = false;
@@ -47,7 +49,7 @@ export function createFastRunner({ consoleUI }) {
       worker.onmessage = (event) => {
         const m = event.data;
         if (m.type === "ready") { resolve(); return; }
-        if (m.type === "out") { consoleUI.append(m.stream, m.text); return; }
+        if (m.type === "out") { consoleUI.append(m.stream, m.text); onOutput?.(m.stream, m.text); return; }
         if (m.type === "input-request") {
           awaitingInput = true;
           consoleUI.showInput(m.prompt ?? "");
