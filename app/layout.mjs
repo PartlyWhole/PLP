@@ -98,5 +98,8 @@ export function initLayout({ onResize }) {
     toggleMax,
     setTutorVisible,
     isTutorVisible: () => !layout.classList.contains("tutor-hidden"),
+    // For grid children that appear/disappear outside this module's own
+    // controls (the exercise beat panel): let them trigger pane refits.
+    notifyResize: () => onResize?.(),
   };
 }

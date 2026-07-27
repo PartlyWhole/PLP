@@ -116,7 +116,11 @@ export function createTutorUI({ root, layout }) {
   exitBtn.addEventListener("click", () => onExit?.());
   collapseBtn.addEventListener("click", () => { closePopup(); layout.setTutorVisible(false); });
 
-  // ---- popup chrome ------------------------------------------------------
+  // ---- beat panel chrome -------------------------------------------------
+  // Docked in the layout grid under the CODE pane, above the console, in
+  // the code column (style.css `#layout > .tutor-popup`) — the question
+  // sits in the same eye-line as the program it asks about, and can never
+  // occlude a pane. ✕ collapses it; clicking any feed bubble reopens it.
   const popup = document.createElement("div");
   popup.className = "tutor-popup";
   popup.hidden = true;
@@ -124,11 +128,11 @@ export function createTutorUI({ root, layout }) {
     <div class="tutor-popup-head" data-role="popup-head">
       <span class="tutor-popup-title" data-role="popup-title">Exercises</span>
       <span class="spacer"></span>
-      <button data-role="popup-close" type="button" title="Close (the lesson continues in the side pane)">✕</button>
+      <button data-role="popup-close" type="button" title="Hide (click any card in Exercises to bring it back)">✕</button>
     </div>
     <div class="tutor-popup-body" data-role="popup-body"></div>
     <div class="tutor-popup-foot" data-role="popup-foot"></div>`;
-  document.body.appendChild(popup);
+  document.getElementById("layout").appendChild(popup);
   const popupBody = popup.querySelector("[data-role=popup-body]");
   const popupFoot = popup.querySelector("[data-role=popup-foot]");
   popup.querySelector("[data-role=popup-close]").addEventListener("click", () => closePopup());
@@ -136,41 +140,7 @@ export function createTutorUI({ root, layout }) {
     if (e.key === "Escape" && !popup.hidden) closePopup();
   });
 
-  // Drag by the header (the popup must never be an immovable occluder).
-  {
-    const head = popup.querySelector("[data-role=popup-head]");
-    head.addEventListener("pointerdown", (down) => {
-      if (down.target.closest("button")) return;
-      down.preventDefault();
-      head.setPointerCapture(down.pointerId);
-      const rect = popup.getBoundingClientRect();
-      const dx = down.clientX - rect.left;
-      const dy = down.clientY - rect.top;
-      const move = (ev) => {
-        popup.style.left = `${Math.max(0, Math.min(ev.clientX - dx, innerWidth - 80))}px`;
-        popup.style.top = `${Math.max(0, Math.min(ev.clientY - dy, innerHeight - 48))}px`;
-        popup.style.bottom = "auto";
-      };
-      const up = () => {
-        head.removeEventListener("pointermove", move);
-        head.removeEventListener("pointerup", up);
-      };
-      head.addEventListener("pointermove", move);
-      head.addEventListener("pointerup", up);
-    });
-  }
-
   let livePopped = null; // interactive/live handle currently reparented
-
-  function placePopup() {
-    if (popup.style.top) return; // user has dragged it; respect that
-    const paneRect = root.getBoundingClientRect();
-    const width = popup.getBoundingClientRect().width || 560;
-    let left = layout.isTutorVisible() ? paneRect.right + 12 : 16;
-    left = Math.max(8, Math.min(left, innerWidth - width - 8)); // stay on-screen
-    popup.style.left = `${left}px`;
-    popup.style.bottom = "16px";
-  }
 
   // Return a reparented live card to its feed bubble.
   function returnLive() {
@@ -185,6 +155,7 @@ export function createTutorUI({ root, layout }) {
     returnLive();
     popupBody.textContent = "";
     popup.hidden = true;
+    layout.notifyResize?.(); // the editor gets its row back
   }
 
   // Show a beat: rebuilt static descriptors + at most one live card.
@@ -212,9 +183,10 @@ export function createTutorUI({ root, layout }) {
       livePopped = liveHandle;
     }
     if (!popupBody.childElementCount) { closePopup(); return; }
-    popup.hidden = false; // unhide first so placePopup can measure width
-    placePopup();
+    const wasHidden = popup.hidden;
+    popup.hidden = false;
     popupBody.scrollTop = 0;
+    if (wasHidden) layout.notifyResize?.(); // the editor row shrank
   }
 
   // Append a late arrival (e.g. a hint during an ask) to the open popup.

@@ -75,6 +75,23 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator(".tutor-popup")).toBeVisible();
     await expect(page.locator(".tutor-popup .tutor-action")).toHaveCount(1);
     await expect(page.locator(".tutor-bubble-stub")).toHaveCount(1);
+    // Docked, not floating: under the code pane, above the console, bounded
+    // by the code column's divider. Let the entrance animation settle first —
+    // its translate briefly shifts the measured rect.
+    await page.locator(".tutor-popup").evaluate((el) =>
+      Promise.all(el.getAnimations().map((a) => a.finished)));
+    const geom = await page.evaluate(() => {
+      const pr = document.querySelector(".tutor-popup").getBoundingClientRect();
+      const er = document.getElementById("editor-pane").getBoundingClientRect();
+      const cr = document.getElementById("console-pane").getBoundingClientRect();
+      return {
+        sameLeft: Math.abs(pr.left - er.left) < 2,
+        sameRight: Math.abs(pr.right - er.right) < 2,
+        belowEditor: pr.top >= er.bottom,
+        aboveConsole: pr.bottom <= cr.top,
+      };
+    });
+    expect(geom).toEqual({ sameLeft: true, sameRight: true, belowEditor: true, aboveConsole: true });
     // Non-modal: closing changes nothing about the lesson; the card returns.
     await page.locator("[data-role=popup-close]").click();
     await expect(page.locator(".tutor-popup")).toBeHidden();

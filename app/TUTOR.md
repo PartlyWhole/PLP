@@ -50,11 +50,12 @@ the session notes / commit message):
 
 The narrow pane holds the complete transcript as clickable bubbles; the
 current **beat** (the lead-in prose since the last blocking step, plus the
-blocking question/action) also opens in a floating **popup** — the roomy
-reading surface. The popup is deliberately NON-MODAL: no backdrop, the
-whole app stays usable (you read the editor while predicting), closing it
-changes nothing about the lesson, and its header is a drag handle so it
-can never permanently occlude a pane a task points at. Esc or ✕ closes.
+blocking question/action) also opens in the **beat panel** — a roomy
+reading surface DOCKED in the layout grid under the CODE pane, above the
+console, sharing the code column (bounded by the same vertical divider).
+The question sits in the same eye-line as the program it asks about, and
+can never occlude a pane. Esc or ✕ collapses it (the grid row returns to
+the editor); closing changes nothing about the lesson.
 
 Clicking any feed bubble (re)opens it in the popup: static cards are
 rebuilt from their descriptors; the LIVE card (question inputs,
