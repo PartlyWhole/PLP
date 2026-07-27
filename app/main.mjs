@@ -189,7 +189,7 @@ const tutor = createTutor({
   isCollabActive: () => collab.isActive(),
 });
 document.getElementById("btn-tutor").addEventListener("click", () => {
-  if (collab.isActive()) { setStatus("tutor is unavailable in a shared room", ""); return; }
+  if (collab.isActive()) { setStatus("exercises are unavailable in a shared room", ""); return; }
   layoutApi.setTutorVisible(!layoutApi.isTutorVisible());
   if (layoutApi.isTutorVisible()) { editor.refresh(); consoleUI.fit(); }
 });

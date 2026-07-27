@@ -18,9 +18,11 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#tutor-pane")).not.toBeVisible();
     await page.locator("#btn-tutor").click();
     await expect(page.locator("#tutor-pane")).toBeVisible();
-    // Idle state: welcome card + one control per unit.
+    // Idle state: welcome card + exercises-only menu (drill topics; guided
+    // units are debug-only via plp.tutor.start).
     await expect(page.locator(".tutor-feed .tutor-card")).toHaveCount(1);
-    await expect(page.locator(".tutor-controls button").first()).toContainText("State and I/O");
+    await expect(page.locator(".tutor-controls button").first()).toContainText("Everything");
+    await expect(page.locator(".tutor-controls button")).toHaveCount(8); // all + 7 topics
     await page.reload();
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
     await expect(page.locator("#tutor-pane")).toBeVisible(); // persisted

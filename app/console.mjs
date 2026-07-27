@@ -30,7 +30,7 @@ export function createConsole({ root, onInput, onInterrupt, maxInputLineBytes = 
   const term = new Terminal({
     convertEol: true, // engine deltas use \n; lone \r (overwrites) passes through
     scrollback: 5000,
-    fontSize: 13,
+    fontSize: 14,
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
     cursorBlink: true,
     theme: {

@@ -1,9 +1,13 @@
 # Tutor — as-built documentation (phase 1)
 
-The guided-training feature: a transcript-feed side pane plus a lesson
-runtime that walks a student through curriculum units using the live app as
-the laboratory. Design and trajectory: [design/tutor-plan.md](../design/tutor-plan.md);
-pedagogy constraints: [design/game-tutorial-research.md](../design/game-tutorial-research.md).
+The training feature (learner-facing label: **Exercises**): a
+transcript-feed side pane plus a lesson runtime, using the live app as the
+laboratory. The learner-facing menu offers DRILLS ONLY (one question at a
+time); the guided curriculum units still run on the same machinery but are
+reachable only via `plp.tutor.start(unitId)` (tests/debug — product
+direction is exercises-first). Design and trajectory:
+[design/tutor-plan.md](../design/tutor-plan.md); pedagogy constraints:
+[design/game-tutorial-research.md](../design/game-tutorial-research.md).
 
 ## Modules
 
@@ -20,6 +24,27 @@ The pane is the leftmost, full-height column (`#tutor-pane`,
 `--col-tutor`), collapsible; visibility and width persist in `plp.layout`.
 The header 🎓 button toggles it. **Collab: v1 is solo-only** — the pane
 hides when a room goes live and `start()` refuses while active.
+
+## Audience: younger students (style contract)
+
+Learner-facing text and type follow a deliberate contract (rationale in
+the session notes / commit message):
+
+- **Type**: larger base sizes everywhere a learner reads (cards 15px,
+  popup 16px, answer box 15px mono, editor 14.5px, console 14px),
+  line-height ≥1.5, short text blocks. Reading effort must not compete
+  with thinking effort.
+- **Language**: short sentences, one idea each; concrete verbs; second
+  person; no idioms ("long tail", "lock it in"). Real technical terms are
+  KEPT and glossed in plain words — vocabulary is curriculum.
+- **Errors are information**: growth-framed feedback ("Not yet — take
+  another look", "…will come back so you can beat it"), brief genuine
+  praise on success, never shame. The reveal run stays the reward — no
+  points/gamification chrome.
+- **Buttons say what they do**: "Check my answer ▶", "Skip this one",
+  "Give me a hint" — never terse adult UI verbs. Big targets.
+- **No concept leak**: drill prompts never name the rule being tested;
+  the rule arrives in the explain card after the attempt.
 
 ## Two reading surfaces, one history
 

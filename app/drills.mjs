@@ -95,9 +95,9 @@ export const drillTemplates = {
   "state-rebind": {
     topic: "state", level: "core",
     title: "Values are captured at assignment time",
-    explain: "A line changes the state only when it runs, and a binding takes the "
-      + "values as they are **at that moment**. `b = a * 3` copied the result into "
-      + "`b`; changing `a` afterwards does NOT reach back and update `b`.\n\n"
+    explain: "`b = a * 3` copied the answer into `b` **right at that moment**. "
+      + "Changing `a` afterwards does not go back and change `b`. "
+      + "A name only changes when a line assigns to it.\n\n"
       + "```py\na = 2\nb = a * 3\na = a + 1\nprint(b)\n```",
     generate(rng) {
       const kind = pick(rng, ["capture", "read-then-change", "chain"]);
@@ -235,9 +235,9 @@ export const drillTemplates = {
   "int-div-mod": {
     topic: "numbers", level: "edge",
     title: "Floor division and modulo with negatives",
-    explain: "The invariant that never breaks: `(a // b) * b + (a % b) == a`. "
-      + "Python's `//` rounds toward **negative infinity** (floor), not toward "
-      + "zero, and `a % b` always has the **same sign as `b`**.\n\n"
+    explain: "`//` rounds **down**, not toward zero. So `-7 // 2` is `-4` "
+      + "(down past -3.5), not `-3`. And `a % b` always takes the **sign of "
+      + "`b`**. A check that never fails: `(a // b) * b + (a % b)` equals `a`.\n\n"
       + "```py\nprint(-7 / 2)   # -3.5\nprint(-7 // 2)  # floor(-3.5) is -4, NOT -3\nprint(-7 % 2)   # -7 - (-4)*2 = 1\n```",
     generate(rng) {
       const b = pick(rng, [2, 3, 4, 5, 7]);
@@ -250,9 +250,11 @@ export const drillTemplates = {
   "float-precision": {
     topic: "numbers", level: "edge",
     title: "Floats are not exact",
-    explain: "Many decimals have no finite **binary** expansion — `0.1` is already "
-      + "an approximation before any math happens, and errors compound. Some sums "
-      + "(halves, quarters, eighths) ARE exact. Never `==` computed floats:\n\n"
+    explain: "Computers store numbers in **binary**. Just like 1/3 never ends "
+      + "in decimal (0.3333…), 0.1 never ends in binary — so Python stores a "
+      + "number *very close to* 0.1, not exactly 0.1. Tiny errors add up. "
+      + "Halves and quarters store exactly. Never use `==` on floats you "
+      + "computed:\n\n"
       + "```py\nprint(0.1 + 0.2)\nimport math\nprint(math.isclose(0.1 + 0.2, 0.3))\n```",
     generate(rng) {
       const [a, b, c] = pick(rng, [
@@ -325,10 +327,11 @@ export const drillTemplates = {
   "str-compare": {
     topic: "strings", level: "edge",
     title: "String comparison is by code points",
-    explain: "Strings compare character-by-character using each character's numeric "
-      + "code (`ord`). ALL uppercase letters sort before all lowercase, and digits "
-      + "compare as characters — `\"10\" < \"9\"` is True because `'1' < '9'` at "
-      + "position 0; length never gets a say.\n\n"
+    explain: "Every character has a number (`ord` shows it), and strings "
+      + "compare one character at a time using those numbers. ALL capital "
+      + "letters come before all lowercase ones. Digits compare as characters "
+      + "too: `\"10\" < \"9\"` is True because `'1' < '9'` at the very first "
+      + "spot — the length never gets a vote.\n\n"
       + "```py\nprint(ord('Z'), ord('a'))\nprint(ord('1'), ord('9'))\n```",
     generate(rng) {
       const [x, y] = pick(rng, [
@@ -371,8 +374,8 @@ export const drillTemplates = {
     topic: "lists", level: "core",
     title: "Indexing, length, sum, max",
     explain: "`nums[1]` is the SECOND element (positions count from 0); "
-      + "`nums[-1]` the last. `len` counts elements; `sum`/`max`/`min` fold the "
-      + "whole list into one value.",
+      + "`nums[-1]` the last. `len` counts elements; `sum`/`max`/`min` turn "
+      + "the whole list into one value.",
     generate(rng) {
       const nums = Array.from({ length: int(rng, 3, 5) }, () => int(rng, 1, 9));
       const kind = pick(rng, ["index", "neg", "len", "sum", "max"]);
@@ -420,11 +423,10 @@ export const drillTemplates = {
   "alias-mutate": {
     topic: "lists", level: "edge",
     title: "Two names, one list",
-    explain: "Assignment copies the **reference**, not the list: after `b = a` "
-      + "there is ONE list with two names, so mutating through either name shows "
-      + "through both. A full slice `a[:]` builds a genuinely new list. "
-      + "`b = b + [x]` REBINDS `b` (a unchanged); `b += [x]` MUTATES the shared "
-      + "one.\n\n```py\na = [1, 2]\nb = a\nb.append(3)\nprint(a, b, a is b)\n```",
+    explain: "`b = a` does NOT copy the list — now ONE list has two names, so "
+      + "a change through either name shows through both. `a[:]` builds a real "
+      + "copy. `b = b + [x]` makes a new list just for `b` (so `a` keeps its "
+      + "old one); `b += [x]` changes the shared list.\n\n```py\na = [1, 2]\nb = a\nb.append(3)\nprint(a, b, a is b)\n```",
     generate(rng) {
       const base = `[${int(rng, 1, 5)}, ${int(rng, 6, 9)}]`;
       const x = int(rng, 10, 99);
@@ -590,10 +592,9 @@ export const drillTemplates = {
   "loop-accumulate": {
     topic: "loops", level: "core",
     title: "The accumulator pattern",
-    explain: "A running value updated once per element: start at the identity "
-      + "(`0` for sums, `1` for products), update each time around, read the "
-      + "answer after the loop. This one skeleton is sum, count, max, and "
-      + "\"join\" — learn it once.",
+    explain: "One running value, updated once per element: start it (`0` for "
+      + "sums), update it every time around, read it after the loop. This one "
+      + "pattern gives you sum, count, max, and more — learn it once.",
     generate(rng) {
       const kind = pick(rng, ["count", "sum-range", "sum-list"]);
       if (kind === "count") {
@@ -649,10 +650,10 @@ export const drillTemplates = {
   "range-edge": {
     topic: "loops", level: "edge",
     title: "Empty and descending ranges",
-    explain: "A range whose default `+1` step can never move start toward stop is "
-      + "silently EMPTY — `range(5, 1)` runs zero times, no error (a quiet bug "
-      + "generator). Counting down needs an explicit negative step, stop still "
-      + "excluded.",
+    explain: "If the step can never move start toward stop, the range is "
+      + "silently EMPTY — `range(5, 1)` gives nothing and the loop just runs "
+      + "zero times, with no error. Counting down needs a negative step, and "
+      + "the stop is still left out.",
     generate(rng) {
       if (rng() < 0.5) {
         const a = int(rng, 4, 8);
@@ -679,9 +680,9 @@ export const drillTemplates = {
   "for-else": {
     topic: "loops", level: "edge",
     title: "The loop else (nobreak)",
-    explain: "The `else` block runs iff the loop finished WITHOUT hitting `break` "
-      + "— read it as \"nobreak\". It's the built-in version of the manual "
-      + "`found = False` flag.",
+    explain: "The `else` block runs only if the loop finished WITHOUT hitting "
+      + "`break` — read it as \"no-break\". It replaces the `found = False` "
+      + "flag you would otherwise write by hand.",
     generate(rng) {
       const items = Array.from({ length: 3 }, () => int(rng, 1, 8) * 2);
       const present = rng() < 0.5;
@@ -777,9 +778,11 @@ export function buildDrillLesson(topic, { count = 8, seed = 1, stats = {} } = {}
   const rng = mulberry32(seed >>> 0);
   const topicTitle = topic === "all" ? "everything" : (drillTopics.find((t) => t.id === topic)?.title ?? topic);
   const steps = [{
-    say: `**Drill: ${topicTitle}.** ${count} quick programs, one question each. `
-      + "Predict the exact output before running — precision is the point. "
-      + "A miss gets you the underlying rule, and comes back more often.",
+    say: `**${topicTitle} — let's go!** ${count} tiny programs, one question `
+      + "each. Read the code, type exactly what it prints, and press Enter "
+      + "to see the real answer. Every character counts — spaces too. "
+      + "If one tricks you, you'll see why, and it will come back later "
+      + "so you can beat it.",
   }];
   let prev = null;
   for (let i = 0; i < count; i++) {
@@ -805,15 +808,19 @@ export function buildDrillLesson(topic, { count = 8, seed = 1, stats = {} } = {}
         kind: "predict-output",
         template: id,
         singleLine: !multiline,
-        prompt: `(${i + 1}/${count} · ${t.title}) What exactly does this program print?`
-          + (multiline ? "" : " One line."),
+        // No concept title here — naming the rule before the attempt both
+        // spoils the question and leads with jargon; the rule arrives in
+        // the explain card, after it answers a felt need.
+        prompt: `(${i + 1}/${count}) What will this program print?`
+          + (multiline ? "" : " Type the one line."),
       },
     });
     steps.push({ if: { lastAnswer: ["wrong", "skipped"] }, say: t.explain, pause: true });
   }
   steps.push({
-    done: `Round complete. Start another **${topicTitle}** round for fresh `
-      + "variations — templates you missed will come up more often.",
+    done: `Round complete — nice work! Start another **${topicTitle}** round `
+      + "for brand-new questions. The ones that tricked you will show up "
+      + "again, so you can beat them.",
   });
-  return { id: `drill-${topic}-${seed >>> 0}`, unit: 0, title: `Drill · ${topicTitle}`, steps };
+  return { id: `drill-${topic}-${seed >>> 0}`, unit: 0, title: `Practice · ${topicTitle}`, steps };
 }

@@ -117,15 +117,18 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     ui.setExitVisible(false);
     ui.addCard({
       type: "say",
-      md: "Welcome! Pick a **unit** for a guided lesson, or a **drill** for "
-        + "rapid-fire corner-case questions (fresh variations every round; "
-        + "the ones you miss come back more often). You can stop at any "
-        + "time — your own code is kept safe.",
+      md: "Pick a topic and try some questions. You'll read a tiny "
+        + "program and type **exactly** what it prints — then it really "
+        + "runs, so you see the true answer right away.\n\n"
+        + "Getting one wrong is part of the plan: you'll see **why**, and "
+        + "that idea will come back until it's easy. Every round has fresh "
+        + "questions. Your own code is kept safe.",
     });
+    // Exercises only: guided units stay available to tests/debug via
+    // plp.tutor.start(unitId), but the learner-facing menu is drills.
     ui.setControls([
-      ...curriculum.units.map((u) => ({ label: u.title, onClick: () => start(u.id) })),
-      { label: "⚡ Drill: everything", onClick: () => startDrill("all") },
-      ...drillTopics.map((t) => ({ label: `⚡ ${t.title}`, onClick: () => startDrill(t.id) })),
+      { label: "⚡ Everything", onClick: () => startDrill("all") },
+      ...drillTopics.map((t) => ({ label: t.title, onClick: () => startDrill(t.id) })),
     ]);
   }
 
@@ -280,7 +283,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
       if (result.correct) {
         view.applyResult(result);
         resolveAsk(card, {
-          prompt: q.prompt, ok: true, verdict: "✓ correct",
+          prompt: q.prompt, ok: true, verdict: "✓ Exactly right!",
           answerText: typeof answers?.text === "string" ? answers.text : undefined,
           lastAnswer: "correct", template: ask.template, kind: q.kind,
         });
@@ -292,12 +295,12 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
           ui.addCard(h);
           ui.appendToPopup(h);
         }
-        card.setNote(`not yet — look again (${maxAttempts - attempts} ${maxAttempts - attempts === 1 ? "try" : "tries"} left)`);
+        card.setNote(`Not yet — take another look (${maxAttempts - attempts} ${maxAttempts - attempts === 1 ? "try" : "tries"} left)`);
         ui.scrollToEnd();
       } else {
         view.applyResult(result);
         resolveAsk(card, {
-          prompt: q.prompt, ok: false, verdict: "✗ — the expected answer is marked above",
+          prompt: q.prompt, ok: false, verdict: "✗ Not this time — the right answer is marked above",
           answerText: typeof answers?.text === "string" ? answers.text : undefined,
           lastAnswer: "wrong", template: ask.template, kind: q.kind,
         });
@@ -309,8 +312,8 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     });
 
     card.setActions([
-      { label: "Check", primary: true, onClick: () => doCheck() },
-      { label: "Skip", onClick: doSkip },
+      { label: "Check my answer", primary: true, onClick: () => doCheck() },
+      { label: "Skip this one", onClick: doSkip },
     ]);
     setWaiting({ type: "ask", kind: q.kind, submit: doCheck, skip: doSkip });
     return true;
@@ -322,7 +325,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     let ta = null;
     const card = ui.addInteractiveCard({
       prompt: ask.prompt
-        ?? "Before running: what will this program print? Type the exact output, then lock it in.",
+        ?? "Before you run it: what will this program print? Type the exact output.",
       render: (body) => {
         // One-thing-at-a-time asks (drills, single-print programs) get a
         // single-line input; free prediction keeps the textarea.
@@ -347,14 +350,14 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
 
     const doLock = async () => {
       const text = ta.value;
-      if (!text.trim()) { card.setNote("type a prediction first"); return; }
+      if (!text.trim()) { card.setNote("Type what you think it prints first"); return; }
       ta.readOnly = true;
       card.setActions([]);
-      card.setNote("running your program…");
+      card.setNote("Running it for real…");
       const summary = await actions.trace();
       if (!summary) {
         ta.readOnly = false;
-        card.setNote("the run didn't start (is another run active?) — try again");
+        card.setNote("The run couldn't start (is another one going?) — try again");
         armLockActions();
         return;
       }
@@ -374,7 +377,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
         div.className = "tutor-expected";
         const label = document.createElement("span");
         label.className = "hint";
-        label.textContent = "what it actually printed:";
+        label.textContent = "What it really printed:";
         const pre = document.createElement("pre");
         pre.textContent = result.expected.text;
         div.append(label, pre);
@@ -382,16 +385,16 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
       }
       resolveAsk(card, {
         prompt: "Predict the output", ok: result.correct,
-        verdict: result.correct ? "✓ predicted exactly right" : "✗ — compare with the console",
+        verdict: result.correct ? "✓ Exactly right!" : "✗ Not quite — compare with what really happened",
         answerText: text,
         lastAnswer: result.correct ? "correct" : "wrong",
         template: ask.template, kind: "predict-output",
       });
     };
     const armLockActions = () => card.setActions([
-      { label: "Lock in & run ▶", primary: true, onClick: () => doLock() },
+      { label: "Check my answer ▶", primary: true, onClick: () => doLock() },
       ...(hints.length ? [{
-        label: "Hint",
+        label: "Give me a hint",
         onClick: () => {
           const h = { type: "hint", md: hints.shift() };
           record(h);
@@ -400,7 +403,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
           if (!hints.length) armLockActions();
         },
       }] : []),
-      { label: "Skip", onClick: () => resolveAsk(card, {
+      { label: "Skip this one", onClick: () => resolveAsk(card, {
         prompt: "Predict the output", ok: false, verdict: "skipped",
         lastAnswer: "skipped", template: ask.template, kind: "predict-output",
       }) },

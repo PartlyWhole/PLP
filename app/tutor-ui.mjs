@@ -122,7 +122,7 @@ export function createTutorUI({ root, layout }) {
   popup.hidden = true;
   popup.innerHTML = `
     <div class="tutor-popup-head" data-role="popup-head">
-      <span class="tutor-popup-title" data-role="popup-title">Tutor</span>
+      <span class="tutor-popup-title" data-role="popup-title">Exercises</span>
       <span class="spacer"></span>
       <button data-role="popup-close" type="button" title="Close (the lesson continues in the side pane)">✕</button>
     </div>
@@ -204,8 +204,8 @@ export function createTutorUI({ root, layout }) {
       const stub = document.createElement("button");
       stub.type = "button";
       stub.className = "tutor-bubble-stub";
-      stub.textContent = "⧉ current step — open";
-      stub.title = "Reopen this step's popup";
+      stub.textContent = "⧉ This question is open — click to bring it back";
+      stub.title = "Reopen this question";
       stub.addEventListener("click", () => popBatch([], liveHandle));
       liveHandle.bubble.appendChild(stub);
       popupBody.appendChild(liveHandle.el);
@@ -438,7 +438,7 @@ export function createTutorUI({ root, layout }) {
     },
     setProgress(text) {
       progressEl.textContent = text ?? "";
-      popup.querySelector("[data-role=popup-title]").textContent = text ? `Tutor — ${text}` : "Tutor";
+      popup.querySelector("[data-role=popup-title]").textContent = text ? `Exercises — ${text}` : "Exercises";
     },
     setExitVisible(v) { exitBtn.hidden = !v; },
     setOnExit(fn) { onExit = fn; },
