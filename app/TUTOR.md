@@ -47,14 +47,28 @@ that is no longer there.
 
 ## Drill mode (questions-only practice)
 
-`plp.tutor.startDrill(topic, {seed?, count?})` — rapid-fire corner-case
-practice with no lesson narrative. [drills.mjs](drills.mjs) holds 22
-parameterized **program generators** (topics: state & I/O, numbers,
-strings, lists, logic, loops, structures), each targeting one misconception from the
-exercise bank; a drill round compiles a seeded, stats-weighted sequence
-into an ordinary lesson script, so drills reuse the whole machinery
-(popup beats, predict-then-verify, persistence — the compiled script is
-stored verbatim, so reload restores the identical round).
+`plp.tutor.startDrill(topic, {seed?, count?})` — rapid-fire practice with
+no lesson narrative. [drills.mjs](drills.mjs) holds 44 parameterized
+**program generators** across 7 topics (state & I/O, numbers, strings,
+lists, logic, loops, structures), in two levels:
+
+- **core** — basic understanding (assign/read, output formatting,
+  indexing, branch selection, loop accumulation, dict/tuple/2D reading);
+  weighted 3:1, so rounds are mostly basics;
+- **edge** — the corner-case long tail (negative floor division,
+  aliasing, shallow copies, truthiness traps, …).
+
+**One question at a time**: every generated program produces exactly one
+line of output — a template with several aspects prints ONE of them per
+question, chosen by the RNG (full coverage across variations). The
+answer surface is a single-line input with Enter-to-submit; the one
+`multiline: true` exception (print returns `None`) keeps the textarea.
+The sweep test enforces the one-line invariant on every template.
+
+A drill round compiles a seeded, stats-weighted sequence into an
+ordinary lesson script, so drills reuse the whole machinery (popup
+beats, predict-then-verify, persistence — the compiled script is stored
+verbatim, so reload restores the identical round).
 
 Ground truth is always the engine: templates generate programs, never
 answers. A miss (wrong or skipped) shows the template's `explain`

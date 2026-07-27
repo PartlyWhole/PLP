@@ -455,6 +455,7 @@ a.mm-ref:hover { border-color: var(--accent); }
   background: #0d0f12; color: #d6dae3; border: 1px solid var(--line);
   border-radius: 6px; padding: 6px 8px; font: 12px/1.5 ui-monospace, monospace;
 }
+input.tutor-output-line { min-height: 30px; height: 30px; resize: none; }
 .tutor-output-input.ok { border-color: var(--good); background: #14241a; }
 .tutor-output-input.bad { border-color: var(--bad); background: #2a1615; }
 .tutor-card .tutor-expected { margin-top: 6px; }

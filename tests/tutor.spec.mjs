@@ -92,12 +92,14 @@ test.describe("PLP tutor (T-series)", () => {
     });
     await page.evaluate(() => window.plp.tutor.continue());
     await expect(page.locator(".tutor-popup .tutor-output-input")).toBeVisible();
-    await page.locator(".tutor-popup .tutor-output-input").fill("3\n6");
+    // One-thing-at-a-time: the single-print ask renders a single-line input.
+    await expect(page.locator(".tutor-popup input.tutor-output-line")).toBeVisible();
+    await page.locator(".tutor-popup .tutor-output-input").fill("6");
     await page.locator("[data-role=popup-close]").click();
-    await expect(page.locator(".tutor-feed .tutor-output-input")).toHaveValue("3\n6");
+    await expect(page.locator(".tutor-feed .tutor-output-input")).toHaveValue("6");
     // Click the card itself, not its inputs (input clicks never pop).
     await page.locator(".tutor-feed .tutor-question").click({ position: { x: 8, y: 8 } });
-    await expect(page.locator(".tutor-popup .tutor-output-input")).toHaveValue("3\n6");
+    await expect(page.locator(".tutor-popup .tutor-output-input")).toHaveValue("6");
     // A past static bubble also reopens (rebuilt read-only in the popup).
     await page.locator(".tutor-feed .tutor-say").first().click();
     await expect(page.locator(".tutor-popup .tutor-say")).toHaveCount(1);
@@ -166,7 +168,7 @@ test.describe("PLP tutor (T-series)", () => {
     s = await page.evaluate(() => window.plp.tutor.state());
     expect(s.waiting).toBe("ask");
     expect(await page.evaluate(() => window.plp.tutor.ask())).toEqual({ kind: "predict-output" });
-    await page.evaluate(() => window.plp.tutor.lockPrediction("3\n12"));
+    await page.evaluate(() => window.plp.tutor.lockPrediction("9"));
     s = await page.evaluate(() => window.plp.tutor.state());
     expect(s.lastAnswer).toBe("wrong");
     expect(s.waiting).toBe("pause"); // the wrong-branch explanation pauses
@@ -191,7 +193,7 @@ test.describe("PLP tutor (T-series)", () => {
     // Mastery prediction, correct → correct-branch → pocket → done.
     s = await page.evaluate(() => window.plp.tutor.state());
     expect(s.waiting).toBe("ask");
-    await page.evaluate(() => window.plp.tutor.lockPrediction("total: 15\ndone"));
+    await page.evaluate(() => window.plp.tutor.lockPrediction("total: 15"));
     s = await page.evaluate(() => window.plp.tutor.state());
     expect(s.lastAnswer).toBe("correct");
     expect(s.waiting).toBeNull(); // lesson finished
@@ -250,12 +252,35 @@ test.describe("PLP tutor (T-series)", () => {
         distinctAcrossSeeds: codes.size,
         templateCount: Object.keys(drillTemplates).length,
         allHaveExplain: Object.values(drillTemplates).every((t) => t.explain?.length > 40 && t.topic && t.title),
+        allLeveled: Object.values(drillTemplates).every((t) => t.level === "core" || t.level === "edge"),
+        coreCount: Object.values(drillTemplates).filter((t) => t.level === "core").length,
       };
     });
     expect(r.sameSeedIdentical).toBe(true);
     expect(r.distinctAcrossSeeds).toBeGreaterThan(3); // real variation, not one program
-    expect(r.templateCount).toBeGreaterThanOrEqual(18);
+    expect(r.templateCount).toBeGreaterThanOrEqual(40);
     expect(r.allHaveExplain).toBe(true);
+    expect(r.allLeveled).toBe(true);
+    expect(r.coreCount).toBeGreaterThanOrEqual(20); // basics dominate the bank
+  });
+
+  test("drills: rounds are mostly basics (core outweighs edge ~3:1)", async ({ page }) => {
+    await setup(page);
+    const r = await page.evaluate(() => {
+      const { buildDrillLesson, drillTemplates } = window.plp.drills;
+      let core = 0, total = 0;
+      for (const seed of [3, 11, 27]) {
+        const lesson = buildDrillLesson("all", { seed, count: 10 });
+        for (const step of lesson.steps) {
+          if (!step.ask) continue;
+          total += 1;
+          if (drillTemplates[step.ask.template].level === "core") core += 1;
+        }
+      }
+      return { core, total };
+    });
+    expect(r.total).toBe(30);
+    expect(r.core / r.total).toBeGreaterThanOrEqual(0.6); // "mostly basics"
   });
 
   test("drills: every template generates a clean, gradable program", async ({ page }) => {
@@ -266,7 +291,7 @@ test.describe("PLP tutor (T-series)", () => {
       const ok = await page.evaluate(async (templateId) => {
         const { drillTemplates } = window.plp.drills;
         const rng = window.plp.questions.mulberry32(7 + templateId.length);
-        const { code } = drillTemplates[templateId].generate(rng);
+        const { code, multiline } = drillTemplates[templateId].generate(rng);
         window.plp.editor.setValue(code);
         const summary = await window.plp.trace();
         const q = window.plp.questions.generateQuestion("predict-output", {
@@ -274,14 +299,17 @@ test.describe("PLP tutor (T-series)", () => {
           steps: window.plp.memory.steps(),
           positions: window.plp.memory.linePositions(),
         });
+        const expected = q ? q.grade({ text: "" }).expected.text.replace(/\n+$/, "") : null;
         return {
           reason: summary?.terminal_reason,
           gradable: Boolean(q),
+          oneLine: Boolean(multiline) || (expected !== null && !expected.includes("\n")),
           errors: window.plp.checkErrors(),
         };
       }, id);
       expect(ok.reason, `template ${id} must run clean`).toBe("completed");
       expect(ok.gradable, `template ${id} must print something gradable`).toBe(true);
+      expect(ok.oneLine, `template ${id} must ask one thing (one output line)`).toBe(true);
       expect(ok.errors).toEqual([]);
     }
   });

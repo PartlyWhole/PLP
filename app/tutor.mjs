@@ -324,9 +324,17 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
       prompt: ask.prompt
         ?? "Before running: what will this program print? Type the exact output, then lock it in.",
       render: (body) => {
-        ta = document.createElement("textarea");
-        ta.className = "tutor-output-input";
-        ta.placeholder = "type your predicted output…";
+        // One-thing-at-a-time asks (drills, single-print programs) get a
+        // single-line input; free prediction keeps the textarea.
+        if (ask.singleLine) {
+          ta = document.createElement("input");
+          ta.type = "text";
+          ta.className = "tutor-output-input tutor-output-line";
+        } else {
+          ta = document.createElement("textarea");
+          ta.className = "tutor-output-input";
+        }
+        ta.placeholder = ask.singleLine ? "the one line this prints…" : "type your predicted output…";
         ta.spellcheck = false;
         body.appendChild(ta);
         return null;
@@ -397,6 +405,12 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
         lastAnswer: "skipped", template: ask.template, kind: "predict-output",
       }) },
     ]);
+    // Enter submits on single-line asks — drill cadence.
+    if (ask.singleLine) {
+      ta.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !ta.readOnly) doLock();
+      });
+    }
     armLockActions();
     setWaiting({
       type: "ask",

@@ -52,11 +52,12 @@ export default {
         + "**without running it**.",
     },
     {
-      loadCode: "a = 2\nb = a * 3\na = a + 1\nprint(a)\nprint(b)\n",
+      loadCode: "a = 2\nb = a * 3\na = a + 1\nprint(b)\n",
     },
     {
       ask: {
         kind: "predict-output",
+        singleLine: true,
         hints: [
           "Step through the state in your head, line by line — exactly like "
             + "the slider did. What does the state hold after line 3?",
@@ -117,11 +118,12 @@ export default {
     },
     {
       loadCode: 'total = 0\ntotal = total + 5\ntotal = total + 10\n'
-        + 'print("total:", total)\nprint("done")\n',
+        + 'print("total:", total)\n',
     },
     {
       ask: {
         kind: "predict-output",
+        singleLine: true,
         hints: [
           "Follow `total` through the state: `0` → `5` → `15`.",
           "`print` with a comma puts exactly one space between the pieces: "
