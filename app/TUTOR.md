@@ -48,9 +48,9 @@ that is no longer there.
 ## Drill mode (questions-only practice)
 
 `plp.tutor.startDrill(topic, {seed?, count?})` — rapid-fire corner-case
-practice with no lesson narrative. [drills.mjs](drills.mjs) holds ~18
-parameterized **program generators** (topics: numbers, strings, lists,
-logic, loops, structures), each targeting one misconception from the
+practice with no lesson narrative. [drills.mjs](drills.mjs) holds 22
+parameterized **program generators** (topics: state & I/O, numbers,
+strings, lists, logic, loops, structures), each targeting one misconception from the
 exercise bank; a drill round compiles a seeded, stats-weighted sequence
 into an ordinary lesson script, so drills reuse the whole machinery
 (popup beats, predict-then-verify, persistence — the compiled script is

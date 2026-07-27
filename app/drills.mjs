@@ -35,6 +35,7 @@ const pick2 = (rng, arr) => { // two distinct entries
 };
 
 export const drillTopics = [
+  { id: "state", title: "State & I/O" },
   { id: "numbers", title: "Numbers & bools" },
   { id: "strings", title: "Strings" },
   { id: "lists", title: "Lists & aliasing" },
@@ -44,6 +45,96 @@ export const drillTopics = [
 ];
 
 export const drillTemplates = {
+  // ---- state & I/O -------------------------------------------------------
+  "state-rebind": {
+    topic: "state",
+    title: "Values are captured at assignment time",
+    explain: "A line changes the state only when it runs, and a binding takes the "
+      + "values as they are **at that moment**. `b = a * 3` copied the result into "
+      + "`b`; changing `a` afterwards does NOT reach back and update `b`. When "
+      + "unsure, ask: *what is the state right now, and what does this line do to "
+      + "it?* — Trace and step the slider to watch it.\n\n"
+      + "```py\na = 2\nb = a * 3\na = a + 1\nprint(a)\nprint(b)\n```",
+    generate(rng) {
+      const kind = pick(rng, ["capture", "read-then-change", "chain"]);
+      if (kind === "capture") {
+        const a = int(rng, 2, 5), k = int(rng, 2, 4), inc = int(rng, 1, 3);
+        return { code: `a = ${a}\nb = a * ${k}\na = a + ${inc}\nprint(a)\nprint(b)\n` };
+      }
+      if (kind === "read-then-change") {
+        const x = int(rng, 2, 5), add = int(rng, 2, 6), nx = int(rng, 8, 12);
+        return { code: `x = ${x}\ny = x + ${add}\nx = ${nx}\nprint(x + y)\n` };
+      }
+      const x = int(rng, 1, 4);
+      return { code: `x = ${x}\ny = x\nx = ${int(rng, 6, 9)}\nprint(x)\nprint(y)\n` };
+    },
+  },
+  "state-accumulate": {
+    topic: "state",
+    title: "Read-then-write updates",
+    explain: "`total = total + 5` READS the current value, computes, then WRITES the "
+      + "result back — the right side always runs first, using the old state. "
+      + "Trace it as a table, one row per line: the running value is the whole "
+      + "story of the program.",
+    generate(rng) {
+      const start = int(rng, 0, 3);
+      const nSteps = int(rng, 2, 4);
+      const lines = [`total = ${start}`];
+      for (let i = 0; i < nSteps; i++) {
+        const op = pick(rng, ["+", "*", "-"]);
+        const v = op === "*" ? int(rng, 2, 3) : int(rng, 2, 9);
+        lines.push(`total = total ${op} ${v}`);
+      }
+      lines.push("print(total)");
+      return { code: lines.join("\n") + "\n" };
+    },
+  },
+  "state-swap": {
+    topic: "state",
+    title: "Sequential assignment vs the tuple swap",
+    explain: "`a = b` then `b = a` does NOT swap: the first line already overwrote "
+      + "`a`, so the second copies the new value back — both names end up equal. "
+      + "A real swap needs a temp, or `a, b = b, a`, where the whole right side is "
+      + "evaluated FIRST with the old values and then unpacked.\n\n"
+      + "```py\na = 1\nb = 2\na, b = b, a\nprint(a, b)\n```",
+    generate(rng) {
+      const a = int(rng, 1, 4), b = int(rng, 5, 9);
+      const kind = pick(rng, ["sequential", "temp", "tuple"]);
+      const body = {
+        sequential: "a = b\nb = a",
+        temp: "t = a\na = b\nb = t",
+        tuple: "a, b = b, a",
+      }[kind];
+      return { code: `a = ${a}\nb = ${b}\n${body}\nprint(a)\nprint(b)\n` };
+    },
+  },
+  "print-output": {
+    topic: "state",
+    title: "What print actually emits",
+    explain: "`print` with commas puts exactly ONE space between pieces (any types). "
+      + "`+` concatenates strings exactly, with no space — and needs `str(...)` for "
+      + "numbers. Adjacent string literals merge at parse time (`\"py\" \"thon\"` "
+      + "is one string). And `print(...)` RETURNS `None` — output is not a value.\n\n"
+      + "```py\nx = 7\nprint(\"x is\", x)\nprint(\"x is \" + str(x))\nresult = print(\"hi\")\nprint(result)\n```",
+    generate(rng) {
+      const kind = pick(rng, ["comma-vs-concat", "multi", "adjacent", "returns-none"]);
+      const x = int(rng, 3, 9);
+      if (kind === "comma-vs-concat") {
+        const label = pick(rng, ["x is", "value:", "got"]);
+        return { code: `x = ${x}\nprint("${label}", x)\nprint("${label}" + str(x))\n` };
+      }
+      if (kind === "multi") {
+        return { code: `x = ${x}\nprint(x, x + 1, x * 2)\n` };
+      }
+      if (kind === "adjacent") {
+        const [w1, w2] = pick(rng, [["py", "thon"], ["note", "book"], ["net", "work"]]);
+        return { code: `print("${w1}" "${w2}")\nprint("${w1}", "${w2}")\n` };
+      }
+      const word = pick(rng, ["hi", "ok", "yes"]);
+      return { code: `result = print("${word}")\nprint(result)\n` };
+    },
+  },
+
   // ---- numbers -----------------------------------------------------------
   "int-div-mod": {
     topic: "numbers",
