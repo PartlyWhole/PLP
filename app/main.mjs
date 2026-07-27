@@ -11,7 +11,11 @@ import { initLayout } from "./layout.mjs";
 import { createCollab } from "./collab.mjs";
 import { createQuiz } from "./quiz.mjs";
 import * as questions from "./questions.mjs";
+import * as drills from "./drills.mjs";
 import { events } from "./events.mjs";
+import { createTutorUI } from "./tutor-ui.mjs";
+import { createTutor } from "./tutor.mjs";
+import { curriculum } from "../curriculum/index.mjs";
 
 const CODE_STORE_KEY = "plp.editor.code.v1";
 
@@ -61,6 +65,9 @@ const memory = createMemoryModel({
   },
 });
 
+// Layout first: collab (hide-tutor-in-rooms) and the tutor pane need it.
+const layoutApi = initLayout({ onResize: () => { editor.refresh(); consoleUI.fit(); } });
+
 const statusEl = document.getElementById("run-status");
 const coiEl = document.getElementById("coi-badge");
 const runBtn = document.getElementById("btn-run");
@@ -88,6 +95,9 @@ const collab = createCollab({
   onUiState(s) {
     if (s.type === "state") {
       const live = s.state === "live";
+      // v1 tutoring is solo-only: the transcript is local state, so hide
+      // the pane rather than leak a one-sided conversation into a room.
+      if (live) layoutApi.setTutorVisible(false);
       shareBtn.textContent = live ? "🔗 Copy link" : s.state === "connecting" ? "⏳ Connecting…" : "Share session";
       shareBtn.disabled = s.state === "connecting";
       leaveBtn.hidden = !live;
@@ -162,11 +172,28 @@ traceBtn.addEventListener("click", trace);
 stopBtn.addEventListener("click", () => { runner.interrupt(); setStatus("stopping…"); });
 
 // Dormant generative-question pilot (see app/QUESTIONS.md). The learner-facing
-// control is hidden, while the debug API and Director integration remain.
+// control is hidden, while the debug API remains.
 const quiz = createQuiz({ memory, editor });
 document.getElementById("btn-quiz").addEventListener("click", () => quiz.toggle());
 
-initLayout({ onResize: () => { editor.refresh(); consoleUI.fit(); } });
+// Guided tutor (app/TUTOR.md): transcript pane + lesson runtime.
+const tutorUI = createTutorUI({
+  root: document.getElementById("tutor-pane"),
+  layout: layoutApi,
+});
+const tutor = createTutor({
+  editor, memory, consoleUI,
+  ui: tutorUI,
+  actions: { run, trace },
+  curriculum,
+  isCollabActive: () => collab.isActive(),
+});
+document.getElementById("btn-tutor").addEventListener("click", () => {
+  if (collab.isActive()) { setStatus("tutor is unavailable in a shared room", ""); return; }
+  layoutApi.setTutorVisible(!layoutApi.isTutorVisible());
+  if (layoutApi.isTutorVisible()) { editor.refresh(); consoleUI.fit(); }
+});
+
 window.addEventListener("resize", () => consoleUI.fit());
 
 // Auto-join when the URL carries a room link (#room=…). The COI-shim reload
@@ -191,5 +218,8 @@ window.plp = {
   collab,
   quiz,
   questions, // pure engine module (generateQuestion, snapshotAt, …)
+  drills,    // drill template bank (drillTemplates, buildDrillLesson, …)
+  tutor,
+  layout: layoutApi,
   events,
 };

@@ -9,18 +9,25 @@ export function initLayout({ onResize }) {
   const layout = document.getElementById("layout");
   const gutterV = document.getElementById("gutter-v");
   const gutterH = document.getElementById("gutter-h");
+  const gutterT = document.getElementById("gutter-t");
 
   const saved = (() => {
     try { return JSON.parse(localStorage.getItem(STORE_KEY)) ?? {}; } catch { return {}; }
   })();
   if (saved.colLeft) layout.style.setProperty("--col-left", saved.colLeft);
   if (saved.rowConsole) layout.style.setProperty("--row-console", saved.rowConsole);
+  if (saved.colTutor) layout.style.setProperty("--col-tutor", saved.colTutor);
+  // The tutor column starts hidden (index.html ships class="tutor-hidden");
+  // an explicit saved visibility wins.
+  if (saved.tutorVisible) layout.classList.remove("tutor-hidden");
 
   function persist() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({
         colLeft: layout.style.getPropertyValue("--col-left") || undefined,
         rowConsole: layout.style.getPropertyValue("--row-console") || undefined,
+        colTutor: layout.style.getPropertyValue("--col-tutor") || undefined,
+        tutorVisible: !layout.classList.contains("tutor-hidden") || undefined,
       }));
     } catch { /* private mode etc. — sizes just don't persist */ }
   }
@@ -53,6 +60,18 @@ export function initLayout({ onResize }) {
     const px = Math.min(Math.max(rect.bottom - ev.clientY, 60), rect.height - 106);
     layout.style.setProperty("--row-console", `${px}px`);
   });
+  drag(gutterT, (ev) => {
+    const rect = layout.getBoundingClientRect();
+    const px = Math.min(Math.max(ev.clientX - rect.left, 240), rect.width - 380);
+    layout.style.setProperty("--col-tutor", `${px}px`);
+  });
+
+  // Tutor column visibility (the pane itself is owned by tutor-ui.mjs).
+  function setTutorVisible(visible) {
+    layout.classList.toggle("tutor-hidden", !visible);
+    persist();
+    onResize?.();
+  }
 
   // Maximize toggles.
   let maximized = null;
@@ -75,5 +94,9 @@ export function initLayout({ onResize }) {
     }
   });
 
-  return { toggleMax };
+  return {
+    toggleMax,
+    setTutorVisible,
+    isTutorVisible: () => !layout.classList.contains("tutor-hidden"),
+  };
 }

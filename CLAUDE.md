@@ -29,13 +29,17 @@ No build step exists anywhere — plain ES modules, vendored dependencies.
 | `app/collab.mjs` | live collaboration: shared editor + shared run/scrub over Automerge, multi-transport (ws + WebRTC/Nostr + BroadcastChannel) — see **app/COLLAB.md** |
 | `tools/collab-vendor-build/` | esbuild recipe that produces `vendor/automerge-collab.mjs` (never served; rebuild only to change pinned versions) |
 | `app/events.mjs` | semantic event bus (learner actions; modules emit, tests subscribe) |
-| `app/questions.mjs` | generative-question engine (pure; trace-grounded memory-prediction + code questions) — see **app/QUESTIONS.md** |
+| `app/questions.mjs` | generative-question engine (pure; trace-grounded memory-prediction, output-prediction + code questions) — see **app/QUESTIONS.md** |
+| `app/question-ui.mjs` | shared question renderers (payload-shape router used by quiz panel + tutor cards) |
 | `app/quiz.mjs` | thin pilot UI over the question engine (floating panel; disposable) |
+| `app/tutor.mjs` + `app/tutor-ui.mjs` | guided tutor: lesson runtime + transcript-feed pane with beat popup — see **app/TUTOR.md**; plan in `design/tutor-plan.md` |
+| `app/drills.mjs` | drill bank: seeded corner-case program generators + round compiler (drill mode; see app/TUTOR.md) |
+| `curriculum/` | authored lesson scripts (data only, linted at start); `index.mjs` registry |
 | `app/layout.mjs` | draggable gutters (CSS vars + localStorage), per-pane maximize (Esc restores) |
 | `app/stream-checks.mjs` | consumer-side trace-stream invariants (`traceStreamCheck`) |
 | `vendor/` | pinned third-party: Pyodide 314.0.2, PyTrace 0.1.0 (worker **patched** for sub-path — the ONLY upstream divergence, see `vendor/PATCHES.md`), CodeMirror 5.65.21, xterm.js 6.0.0 (+fit). Hashes in `vendor/PROVENANCE.md`; record any addition there |
 | `tools/dev-server.mjs` | zero-dep static server simulating the `/PLP/` prefix; `--coi` for header posture |
-| `tests/` | Playwright: `smoke.spec.mjs` (core flows), `emulator.spec.mjs` (X-series console), `collab.spec.mjs` (CO-series collaboration), `questions.spec.mjs` (Q-series question engine), `fastrun.spec.mjs` (F-series untraced execution) |
+| `tests/` | Playwright: `smoke.spec.mjs` (core flows), `emulator.spec.mjs` (X-series console), `collab.spec.mjs` (CO-series collaboration), `questions.spec.mjs` (Q-series question engine), `fastrun.spec.mjs` (F-series untraced execution), `tutor.spec.mjs` (T-series guided tutor) |
 | `VALIDATION.md` | feature → best-evidence → coverage matrix; add a row when adding a feature |
 | `README.md` | user-facing doc incl. **Stepping model** and **Memory model display rules** |
 | `ONBOARDING.md` | engineer onboarding: architecture tour, invariants-with-incidents, design case studies, growth ladder |

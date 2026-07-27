@@ -4,7 +4,7 @@ The learner-facing Quiz control is intentionally hidden while the UI is being
 redesigned. The engine, floating panel, and debug/test API remain available as
 experimental infrastructure.
 
-The question system uses four modules:
+The question system uses five modules:
 
 - **[questions.mjs](questions.mjs)** — the engine. Pure (no DOM): consumes a
   question context and produces serializable Question objects with a
@@ -13,7 +13,14 @@ The question system uses four modules:
   construction contracts and graders.
 - **[construction-ui.mjs](construction-ui.mjs)** - interactive graph and
   evaluation renderers.
-- **[quiz.mjs](quiz.mjs)** - the floating question shell and renderer router.
+- **[question-ui.mjs](question-ui.mjs)** - the shared payload-shape router:
+  renders any Question into a container, returns `{ collect, applyResult,
+  line, wide }`. Used by the quiz panel AND tutor transcript cards.
+- **[quiz.mjs](quiz.mjs)** - the floating question shell (thin chrome over
+  question-ui).
+
+The tutor (app/TUTOR.md) sequences questions into lessons; the engine
+stays policy-free.
 
 The construction model is documented in
 [CONSTRUCTION.md](CONSTRUCTION.md).
@@ -45,6 +52,7 @@ questions match what the student sees in the panes.
 | `code-order` | the program's lines, shuffled — put them in working order (indentation preserved as a cue) | `{seed}` |
 | `code-structure` | `mode: "structure"`: detail lines given, write the structural lines (def/for/if/return/…); `mode: "details"`: the reverse | `{mode}` |
 | `code-args` | one call expression with its arguments blanked | `{line}` 1-based, or `{seed}` |
+| `predict-output` | type the program's exact output — whole program, or "printed so far" at one executed line (`outputUpTo`, the pure twin of the console's `showUpTo`) | `{position}` linePositions index; default last. Grading forgives trailing whitespace/blank lines only |
 
 All generators are deterministic under explicit options (`seed` uses a
 mulberry32 PRNG). A generator returns `null` when it can't build a sensible

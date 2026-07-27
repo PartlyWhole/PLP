@@ -132,6 +132,24 @@ driver included. Each row asserts a way a run can end still releases it.
 | Q11 | Expression evaluation sequence for augmented assignment includes target read, RHS literal/list construction, overloaded operation, and store | `items += [4]` exact action list; correct order passes, reverse fails | Q-4, Q-8 |
 | Q12 | Construction type fields allow typing and filtering without showing advanced types initially | empty data-type field suggests five common types; typing `gen` narrows to `generator` and commits it | Q-8 |
 
+## Guided tutor (T-series = `tests/tutor.spec.mjs`)
+
+| # | Feature | Best evidence | Coverage |
+|---|---|---|---|
+| T1 | Tutor pane: hidden by default, header toggle, collapse, persisted visibility | DOM visibility across toggle + reload; idle menu shows one control per unit | T-1 |
+| T2 | `predict-output`: trace-grounded whole-program and after-line-N grading; forgiving only on trailing whitespace | generate at default and explicit `position`; right/trailing/internal-space/case answers graded as specified; `expected.text` matches engine output | T-2 |
+| T3 | Lesson lint: malformed steps rejected at start | five malformed step shapes → five errors via `plp.tutor.lintLesson` | T-3 |
+| T4 | Unit 1 end-to-end: loadCode resets panes; actions complete via real events (run-ended, scrubbed ×3, input-answered); predict-then-verify grades against the actual run; `if:` branches fire on lastAnswer; pocket + done cards | full drive through `plp.tutor` with real trace runs and console input rendezvous; `checkErrors()` empty after final run | T-4 |
+| T5 | Transcript persistence: reload restores every card and the resume point | card count equality (store vs DOM) across reload; finished state intact | T-4 |
+| T6 | Learner code stash: exit restores the pre-lesson program only when the editor holds unedited lesson code; learner edits survive | exit-after-lesson restores original; exit-after-manual-edit keeps the edit | T-4, T-5 |
+| T7 | Ask retry ladder: wrong answers re-grade until attempts exhausted | engine-level right/wrong grading of a generated ask (full ladder UI exercised manually) | T-6 (partial; ladder DOM = GAP) |
+| T8 | Solo-only in collab: pane hides when a room goes live; `start()` refuses | room live → `isTutorVisible()` false, `start()` returns null | GAP (manual; add to CO-series when tutor+collab interact) |
+| T9 | Beat popup: current beat pops (batched lead-in + blocking card); non-modal close returns the live card to the feed with lesson state unchanged; bubble click reopens; reparenting preserves typed answers; static bubbles rebuild read-only; popup stays on-screen at narrow widths | DOM drive: popup visible on lesson start, ✕ → card in feed + waiting unchanged, bubble click → reopened, textarea value survives close/reopen cycle | T-2 (popup test) |
+| T10 | Review context: reopening a bubble about an earlier program shows that program in a context card with a stash-safe load button; no context card when the editor matches | popup test: old action bubble → `.tutor-context` holds program 1; load → editor restored; re-review → no context card | popup test |
+| T11 | Drill compilation: deterministic under (topic, seed, count, stats); real variation across seeds; every template has topic/title/explain | same-seed lessons identical; ≥4 distinct programs across 8 seeds; registry audit | drills determinism test |
+| T12 | Every drill template generates a clean, gradable program | per template: trace → `completed`, predict-output question buildable, `checkErrors()` empty | drills sweep test |
+| T13 | Drill round: seeded session, per-template miss stats persist and weight selection, misses show the template's explain scaffold, reload restores the identical round from the stored compiled script | drill e2e: wrong → pause + `{seen:1,missed:1}`; reload → same lessonId, next ask; skip counts as miss; end card | drill round test |
+
 ## Security (SEC-series)
 
 | # | Feature | Best evidence | Coverage |
