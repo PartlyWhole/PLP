@@ -223,17 +223,13 @@ function generateMemoryKind(ctx, opts, gap, kind) {
   const picked = pickMemoryPositions(ctx, opts, gap);
   if (Array.isArray(picked)) {
     const question = memoryQuestion(ctx, picked[0], picked[1], kind);
-    if (question && opts.renderer === "legacy") question.presentation = "legacy";
     return question;
   }
   const { candidates, off } = picked;
   for (let n = 0; n < candidates.length; n++) {
     const [i, j] = candidates[(n + off) % candidates.length];
     const q = memoryQuestion(ctx, i, j, kind);
-    if (q) {
-      if (opts.renderer === "legacy") q.presentation = "legacy";
-      return q;
-    }
+    if (q) return q;
   }
   return null;
 }

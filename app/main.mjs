@@ -11,9 +11,6 @@ import { initLayout } from "./layout.mjs";
 import { createCollab } from "./collab.mjs";
 import { createQuiz } from "./quiz.mjs";
 import * as questions from "./questions.mjs";
-import { createStage } from "./stage.mjs";
-import { createDirector, lintLesson } from "./director.mjs";
-import { evaluateCheck } from "./conditions.mjs";
 import { events } from "./events.mjs";
 
 const CODE_STORE_KEY = "plp.editor.code.v1";
@@ -169,12 +166,6 @@ stopBtn.addEventListener("click", () => { runner.interrupt(); setStatus("stoppin
 const quiz = createQuiz({ memory, editor });
 document.getElementById("btn-quiz").addEventListener("click", () => quiz.toggle());
 
-// Dormant Director infrastructure (see app/DIRECTOR.md). The lesson product
-// surface is deprecated while the core learner UI is redesigned; Stage and
-// Director remain available through window.plp for tests and experiments.
-const stage = createStage({ editor, consoleUI });
-const director = createDirector({ stage, app: { runner, memory, consoleUI, editor, quiz } });
-
 initLayout({ onResize: () => { editor.refresh(); consoleUI.fit(); } });
 window.addEventListener("resize", () => consoleUI.fit());
 
@@ -200,9 +191,5 @@ window.plp = {
   collab,
   quiz,
   questions, // pure engine module (generateQuestion, snapshotAt, …)
-  stage,
-  director,
   events,
-  lintLesson,
-  __eval: evaluateCheck, // condition-library test hook
 };

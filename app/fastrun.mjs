@@ -46,10 +46,11 @@ export function createFastRunner({ consoleUI, onOutput }) {
       stdinBytes = new Uint8Array(stdinBuffer, HEADER_INTS * 4);
     }
 
-    ready = new Promise((resolve) => {
+    ready = new Promise((resolve, reject) => {
+      let booted = false;
       worker.onmessage = (event) => {
         const m = event.data;
-        if (m.type === "ready") { resolve(); return; }
+        if (m.type === "ready") { booted = true; resolve(); return; }
         if (m.type === "out") { consoleUI.append(m.stream, m.text); onOutput?.(m.stream, m.text); return; }
         if (m.type === "input-request") {
           awaitingInput = true;
@@ -61,6 +62,13 @@ export function createFastRunner({ consoleUI, onOutput }) {
           return;
         }
         if (m.type === "done") {
+          if (!booted) {
+            worker?.terminate();
+            worker = null;
+            ready = null;
+            reject(new Error(m.error || "worker initialisation failed"));
+            return;
+          }
           if (watchdog !== null) { clearTimeout(watchdog); watchdog = null; }
           awaitingInput = false;
           running = false;
@@ -71,6 +79,13 @@ export function createFastRunner({ consoleUI, onOutput }) {
         }
       };
       worker.onerror = (err) => {
+        if (!booted) {
+          worker?.terminate();
+          worker = null;
+          ready = null;
+          reject(new Error(String(err.message ?? err)));
+          return;
+        }
         running = false;
         awaitingInput = false;
         settle?.({ terminal_reason: "engine_error", traced: false, error: String(err.message ?? err) });
@@ -85,12 +100,17 @@ export function createFastRunner({ consoleUI, onOutput }) {
     if (running) throw new Error("a run is already active");
     running = true;
     events.emit("run-started", { runId: `fast-${Date.now()}`, traced: false });
-    await ensureWorker();
-    const done = new Promise((resolve) => { settle = resolve; });
-    worker.postMessage({ type: "run", source });
-    const summary = await done;
-    events.emit("run-ended", { reason: summary.terminal_reason, trace_complete: false, traced: false });
-    return summary;
+    try {
+      await ensureWorker();
+      if (interruptView) Atomics.store(interruptView, 0, 0);
+      const done = new Promise((resolve) => { settle = resolve; });
+      worker.postMessage({ type: "run", source });
+      const summary = await done;
+      events.emit("run-ended", { reason: summary.terminal_reason, trace_complete: false, traced: false });
+      return summary;
+    } finally {
+      running = false;
+    }
   }
 
   // Answer a pending input() — writes into the shared buffer and wakes the
@@ -169,6 +189,6 @@ export function createFastRunner({ consoleUI, onOutput }) {
       stdinLen: stdinHeader ? Atomics.load(stdinHeader, 1) : null,
       interruptFlag: interruptView ? Atomics.load(interruptView, 0) : null,
     }),
-    dispose: () => { worker?.terminate(); worker = null; ready = null; running = false; },
+    dispose: () => { hardReset("engine_error"); },
   };
 }
