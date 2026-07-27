@@ -138,6 +138,11 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
     } finally {
       running = false;
       consoleUI.hideInput();
+      // A finished trace is something to walk THROUGH, so it opens at the
+      // start anchor rather than the last step the stream happened to reach.
+      // (The panes still follow live while records arrive — that shows the
+      // program working — but the resting position is the beginning.)
+      if (memory.stepCount() > 0) memory.goTo(0, { silent: true });
       if (records.length) {
         const { errors } = traceStreamCheck(records);
         if (errors.length) console.error("PLP stream-check violations:", errors);

@@ -76,6 +76,12 @@ is the default):
   *before* the event's line executes. Useful for seeing calls/returns and
   per-iteration evaluation explicitly.
 
+**Trace rests at the beginning.** A finished trace parks on position 0 —
+the start anchor — so you step *forward* through the program rather than
+landing on its last step and dragging back. The console keeps showing the
+run that just happened; it only reconstructs partial output once you
+actually scrub.
+
 Both modes scrub the same in-memory record array; `window.plp.memory.goTo()`
 and `stepCount()` operate in the current mode's position space, while
 `steps()` always returns raw engine steps.

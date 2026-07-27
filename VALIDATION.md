@@ -109,6 +109,7 @@ driver included. Each row asserts a way a run can end still releases it.
 | P1 | Line mode default; position 0 anchor | `lineMode()` true; `goTo(0)` → `line 0/N`, empty canvas, "before the program runs", no highlight, console "no output yet" | S-1 |
 | P2 | Grouping: one position per executed line; iterations collapse | 4-line grid program → `stepCount()` = 5; raw steps > positions; comprehension position labeled `(k engine steps)` | S-8 |
 | P3 | Produced-state semantics | Position "line 1" shows the binding line 1 created | S-8 |
+| P8 | A finished trace rests at the start anchor, not the last step | after `trace()`: `stepIndex()` 0, counter `line 0/N`, nothing bound; stepping to 1 reveals the first line's effect; the console still shows the completed run (repositioning is silent, so it is not a learner scrub) | S-2 |
 | P4 | Engine-step mode toggle | Uncheck → counter `step k/n`, before-line semantics (state at step `line N` lacks line N's effect) | S-8 (counter only); add semantics assertion |
 | P5 | Prev/next/slider parity | `goTo(i)`, next, prev round-trips index | GAP (trivial) |
 | P6 | Live follow + resume-at-end | During a slow run: view tracks latest; scrub back → frozen while records grow; slider to end → follows again | GAP |

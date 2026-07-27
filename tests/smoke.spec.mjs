@@ -13,6 +13,12 @@ async function gotoIsolated(page) {
   await page.waitForFunction(() => Boolean(window.plp));
 }
 
+// Tracing now rests at the START anchor (position 0, "before the program
+// runs") so the learner walks forward from the beginning. Tests that assert
+// the FINAL memory state therefore say so explicitly.
+const showFinalStep = (page) =>
+  page.evaluate(() => window.plp.memory.goTo(window.plp.memory.stepCount() - 1));
+
 test.describe("PLP smoke", () => {
   test("isolated: run sample, answer input() live, verify console + memory + scrubber", async ({ page }) => {
     await gotoIsolated(page);
@@ -28,6 +34,7 @@ test.describe("PLP smoke", () => {
 
     await page.evaluate(() => window.plp.provideInput("Ada"));
     const summary = await page.evaluate(() => window.__run);
+    await showFinalStep(page);
     expect(summary.terminal_reason).toBe("completed");
     expect(summary.trace_complete).toBe(true);
 
@@ -65,10 +72,37 @@ test.describe("PLP smoke", () => {
     await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toContain("thanks, Ada");
   });
 
+  test("isolated: a finished trace rests at the start, ready to step forward", async ({ page }) => {
+    await gotoIsolated(page);
+    await page.evaluate(() => window.plp.editor.setValue(
+      "a = 1\nb = a + 1\nc = b + 1\nprint(c)\n"));
+    const summary = await page.evaluate(() => window.plp.trace());
+    expect(summary.terminal_reason).toBe("completed");
+
+    // The scrubber lands on the "before the program runs" anchor, not on the
+    // last step the stream reached — tracing is for walking forward.
+    expect(await page.evaluate(() => window.plp.memory.stepIndex())).toBe(0);
+    await expect(page.locator("[data-role=step-counter]")).toHaveText(/^line 0\//);
+    await expect(page.locator("[data-role=step-event]")).toContainText("before the program runs");
+    // Nothing is bound yet at the anchor, and the trace is fully available.
+    await expect(page.locator("[data-role=names-table]")).not.toContainText("a");
+    expect(await page.evaluate(() => window.plp.memory.stepCount())).toBeGreaterThan(1);
+
+    // Stepping forward from there reveals the program one line at a time.
+    await page.evaluate(() => window.plp.memory.goTo(1));
+    await expect(page.locator("[data-role=step-counter]")).toHaveText(/^line 1\//);
+    await expect(page.locator("[data-role=names-table]")).toContainText("a");
+
+    // An untraced Run has no steps, so nothing to reposition.
+    await page.evaluate(() => window.plp.run());
+    expect(await page.evaluate(() => window.plp.memory.steps().length)).toBe(0);
+  });
+
   test("isolated: uncaught exception surfaces on stderr styling and terminal note", async ({ page }) => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue("x = 1\nprint(x)\ny = x // 0\n"));
     const summary = await page.evaluate(() => window.plp.trace());
+    await showFinalStep(page);
     expect(summary.terminal_reason).toBe("uncaught_exception");
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
     await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toContain("ZeroDivisionError");
@@ -86,6 +120,7 @@ test.describe("PLP smoke", () => {
       + "print(rex.name)\n",
     ));
     const summary = await page.evaluate(() => window.plp.trace());
+    await showFinalStep(page);
     expect(summary.terminal_reason).toBe("completed");
 
     const objects = page.locator("[data-role=objects-table]");
@@ -141,6 +176,7 @@ test.describe("PLP smoke", () => {
       + "dog1 = Dog('Buddy', 3)\n",
     ));
     expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    await showFinalStep(page);
 
     const exposed = await page.evaluate(() => {
       const results = [];
@@ -176,6 +212,7 @@ test.describe("PLP smoke", () => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue("a = [1, 2]\nb = a\ncount = 3\nb.append(3)\n"));
     expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    await showFinalStep(page);
     await expect.poll(() => page.locator(".mm-name-box").count()).toBe(3);
 
     const graph = await page.evaluate(() => {
@@ -250,6 +287,7 @@ test.describe("PLP smoke", () => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue("outer = [[1]]\n"));
     expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    await showFinalStep(page);
     await expect.poll(() => page.locator(".mm-object-node").count()).toBe(2);
 
     const childUid = await page.evaluate(() => {
@@ -273,6 +311,7 @@ test.describe("PLP smoke", () => {
       "x = 1\ny = x\nx = x+y\ny = x+x\ndef add(x,y):\n    return x+y\nz = add(x,y)\nprint(z)\n",
     ));
     const summary = await page.evaluate(() => window.plp.trace());
+    await showFinalStep(page);
     expect(summary.terminal_reason).toBe("completed");
 
     // Names: the `add` binding is hidden entirely (hideFunctionBindings).
@@ -313,6 +352,7 @@ test.describe("PLP smoke", () => {
     // Modules: `import math` adds no name binding or object pill by default.
     await page.evaluate(() => window.plp.editor.setValue("import math\nx = 1\n"));
     const summary2 = await page.evaluate(() => window.plp.trace());
+    await showFinalStep(page);
     expect(summary2.terminal_reason).toBe("completed");
     // Rendering is rAF-scheduled — poll.
     await expect.poll(() => page.evaluate(() => document.querySelector("[data-role=names-table]").textContent))
@@ -337,6 +377,7 @@ test.describe("PLP smoke", () => {
     await gotoIsolated(page);
     await page.evaluate(() => window.plp.editor.setValue('count = 1\ncount = count + 1\nprint("count", count)\n'));
     const summary = await page.evaluate(() => window.plp.trace());
+    await showFinalStep(page);
     expect(summary.terminal_reason).toBe("completed");
     await expect.poll(() => page.evaluate(() => document.querySelector("[data-role=names-table]").textContent))
       .toContain("count");
@@ -373,6 +414,7 @@ test.describe("PLP smoke", () => {
       + "print(t)\n",
     ));
     expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    await showFinalStep(page);
     const scoped = await page.evaluate(() => {
       // Scrub to a position where the total() frame is on screen.
       const m = window.plp.memory;
@@ -407,6 +449,7 @@ test.describe("PLP smoke", () => {
       + "print(grid_bad)\n",
     ));
     const summary = await page.evaluate(() => window.plp.trace());
+    await showFinalStep(page);
     expect(summary.terminal_reason).toBe("completed");
 
     // 4 source lines executed -> 5 positions (synthetic start + one per
@@ -438,6 +481,7 @@ test.describe("PLP smoke", () => {
     await page.waitForFunction(() => Boolean(window.plp));
     expect(await page.evaluate(() => crossOriginIsolated)).toBe(false);
     const summary = await page.evaluate(() => window.plp.trace());
+    await showFinalStep(page);
     expect(summary.terminal_reason).toBe("needs_input");
     await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toContain("live input is unavailable");
   });
@@ -450,6 +494,7 @@ test.describe("PLP smoke", () => {
     ].join("\n");
     await page.evaluate((code) => window.plp.editor.setValue(code), source);
     expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    await showFinalStep(page);
 
     const scroller = page.locator(".mm-object-scroll");
     await expect(scroller).toHaveAttribute("data-scrollable", "true");
@@ -490,6 +535,7 @@ test.describe("PLP smoke", () => {
       + "print(dog1.bark())\n",
     ));
     expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    await showFinalStep(page);
 
     const names = page.locator("[data-role=names-table]");
     const objects = page.locator("[data-role=objects-table]");

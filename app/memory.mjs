@@ -667,9 +667,15 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     events.emit("memory-rendered", { position: index });
   }
 
-  function userShow(i) {
+  // `silent` repositions the scrubber WITHOUT claiming the learner scrubbed:
+  // no console reconstruction, no shared-scrub broadcast, no event. Used when
+  // a finished trace parks at the start anchor — the console must keep showing
+  // the run that just happened, or a completed program looks like it printed
+  // nothing.
+  function userShow(i, { silent = false } = {}) {
     follow = i >= positionCount() - 1; // scrubbing to the end resumes live follow
     show(i);
+    if (silent) return;
     onUserScrub?.(stateIndex, steps);
     events.emit("scrubbed", {
       position: index,
@@ -914,7 +920,7 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
     },
     // Position-space API (positions = executed lines in line-step mode,
     // raw engine steps otherwise).
-    goTo: (i) => userShow(i),
+    goTo: (i, opts) => userShow(i, opts),
     stepCount: () => positionCount(),
     stepIndex: () => index,
     steps: () => steps, // raw engine step records, always
