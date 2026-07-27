@@ -120,6 +120,19 @@ export function snapshotAt(steps, stateIndex) {
   return { entries };
 }
 
+// Program output up to and including steps[stateIndex]'s deltas — the pure
+// twin of the console's showUpTo replay (stdout/stderr only; echoed input
+// lives in the console chunk store, not in trace records).
+export function outputUpTo(steps, stateIndex) {
+  let out = "";
+  for (let j = 0; j <= stateIndex && j < steps.length; j++) {
+    const o = steps[j].output;
+    if (o?.stdout_delta) out += o.stdout_delta;
+    if (o?.stderr_delta) out += o.stderr_delta;
+  }
+  return out;
+}
+
 const entryKey = (e) => `${e.scope}|${e.name}`;
 
 export function diffSnapshots(before, after) {
@@ -252,6 +265,42 @@ function memoryConstructQuestion(ctx, opts = {}) {
         return { correct: false, feedback: ["Construct the memory graph before checking."], expected: target };
       }
       return gradeMemoryGraph(answer.graph, target);
+    },
+  };
+}
+
+// ---- output prediction ------------------------------------------------------
+// Text answers compare per-line with trailing whitespace (and trailing blank
+// lines) ignored; everything else — case, internal spacing, order — is exact.
+// Precision is curriculum content; sloppier matching would undermine it.
+export function normalizeOutput(s) {
+  return String(s ?? "")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/, ""))
+    .join("\n")
+    .replace(/\n+$/, "");
+}
+
+function predictOutputQuestion(ctx, opts = {}) {
+  const P = ctx.positions;
+  if (!P?.length) return null;
+  const position = opts.position ?? P.length - 1;
+  if (!P[position]) return null;
+  const wholeProgram = position === P.length - 1;
+  const expected = outputUpTo(ctx.steps, P[position].stateIndex);
+  if (normalizeOutput(expected) === "") return null; // nothing printed yet
+  return {
+    kind: "predict-output",
+    prompt: wholeProgram
+      ? "What does this program print? Type the exact output."
+      : `What has been printed once line ${P[position].line} has run? Type the exact output so far.`,
+    line: P[position].line,
+    wholeProgram,
+    blanks: [],
+    grade(answer) {
+      const got = normalizeOutput(answer?.text);
+      const correct = got === normalizeOutput(expected);
+      return { correct, expected: { text: expected } };
     },
   };
 }
@@ -393,6 +442,11 @@ export const questionGenerators = {
     label: "Predict memory: line X → line Y",
     needsTrace: true,
     generate: (ctx, opts = {}) => generateMemoryKind(ctx, opts, 3, "memory-line-to-line"),
+  },
+  "predict-output": {
+    label: "Predict the output",
+    needsTrace: true,
+    generate: predictOutputQuestion,
   },
   "expression-sequence": {
     label: "Build expression evaluation",

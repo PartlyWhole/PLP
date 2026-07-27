@@ -180,12 +180,14 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
     onStatus?.({ type: "state", state: "running" });
     const runId = `plp-run-${Date.now()}-${++runCounter}`;
     hooks?.onRunStart?.(runId, { mode: "untraced" });
+    events.emit("run-started", { runId, mode: "untraced" });
     try {
       const summary = await fast.run(editor.getValue());
       lastSummary = summary;
       consoleUI.system(END_NOTES[summary.terminal_reason] ?? `── ended: ${summary.terminal_reason} ──`);
       onStatus?.({ type: "done", summary });
       hooks?.onRunEnd?.(summary);
+      events.emit("run-ended", { reason: summary.terminal_reason, trace_complete: false, mode: "untraced" });
       return summary;
     } catch (err) {
       // The shared run must reach a terminal state on EVERY path: while it

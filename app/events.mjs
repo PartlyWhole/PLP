@@ -16,7 +16,9 @@
 //   memory-rendered    { position }         (view redraw; stage re-anchors)
 //   quiz-question      { kind }
 //   quiz-graded        { kind, correct }
-//   lesson-*           (emitted by the director itself)
+//   lesson-started     { lessonId }        (tutor runtime)
+//   lesson-step        { lessonId, index }
+//   lesson-ended       { lessonId, reason }
 
 const listeners = new Set();
 const log = [];
