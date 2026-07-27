@@ -132,28 +132,6 @@ driver included. Each row asserts a way a run can end still releases it.
 | Q11 | Expression evaluation sequence for augmented assignment includes target read, RHS literal/list construction, overloaded operation, and store | `items += [4]` exact action list; correct order passes, reverse fails | Q-4, Q-8 |
 | Q12 | Construction type fields allow typing and filtering without showing advanced types initially | empty data-type field suggests five common types; typing `gen` narrows to `generator` and commits it | Q-8 |
 
-## Director layer (D-series = `tests/director.spec.mjs`)
-
-Dormant infrastructure: the learner-facing Lesson control is intentionally
-absent and lesson data is not loaded by `app/main.mjs`. D-series tests import
-the reference fixture directly.
-
-| # | Feature | Best evidence | Coverage |
-|---|---|---|---|
-| DR1 | Event bus: semantic events in order, correct payloads; `edited` only for user-origin changes | scripted session → ordered log assertions | D-1a/b |
-| DR2 | Lesson lint catches unknown targets/actions/cue motions/events/conditions/signals/beat refs, invalid hover dwell, dup ids, idleMs-in-until, missing until; `start()` refuses | malformed lesson → every specific message asserted; reference lesson lints clean | D-2 |
-| DR3 | Gates: every capability denies (DOM/behavioral) and restores; `reset()` leaves zero artifacts | per-cap DOM/state assertions; gatedCaps bookkeeping | D-3a |
-| DR4 | console-input gate: prompt shows, line mode never engages, interrupt escape works | input program under gate → transcript has prompt, isWaiting false | D-3b |
-| DR5 | Effects: spotlight/dim backdrop, pulse/bounce/wiggle cues, rich-text popover + Esc dismiss, veil/unveil, clearEffects | class/count assertions per effect | D-4a |
-| DR6 | Structured `{name}` targets resolve and effects re-anchor across memory re-renders | spotlight a Names cell → scrub (table rebuilt) → still spotted; veil persists re-render | D-4b |
-| DR7 | Condition library: every predicate true+false case incl. `sameObject` aliasing and typed `raisedException` | known trace → exact boolean table | D-5 |
-| DR8 | Runtime: event/check/all triggers with latching, continuous-hover `dwellMs` with leave cancellation, gates persist across beats while effects clear, signal branching, terminal resting beat, progress recorded | synthetic lesson walks | D-6a/d |
-| DR9 | Hints: idle (once semantics), event-pattern (repeatable), signal-threshold; why-on-demand; strip dots; exit restores everything; telemetry rows | synthetic lesson with 500ms idle hint | D-6b |
-| DR10 | Crash safety: a beat that throws while staging tears down to free play (gates fail open) | crashing quiz action → director inactive, caps restored | D-6c |
-| DR11 | Reference lesson end-to-end as a learner (run, sustained hover, scrub, input, rerun, quiz) + struggle branch to review | full walk with pre-dwell hold assertion; 3-wrong-answers detour | D-7a/b |
-| DR12 | Solo-only guard (collab × director) | manual/GAP (needs a room fixture) | GAP |
-| DR13 | Tutor speech is a first-class `{say}` action and hint: project-local art, progressive rich-text typing, click-to-reveal, glass/blur surface, target-aware placement with author `avoid` regions, viewport containment, why/dismiss behavior, reduced-motion fallback, and teardown | lint + geometry/API assertions; reference lesson keeps editor and memory fully visible | D-2, D-4c, D-7a |
-
 ## Security (SEC-series)
 
 | # | Feature | Best evidence | Coverage |

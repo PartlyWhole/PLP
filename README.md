@@ -154,14 +154,6 @@ particular data-id numbers. See
 [app/CONSTRUCTION.md](app/CONSTRUCTION.md) and
 [app/QUESTIONS.md](app/QUESTIONS.md).
 
-## Director prototype (dormant)
-
-The lesson product surface is currently deprecated while the core learner UI
-is redesigned. The tested Director, Stage, tutor, and reference lesson remain
-in the repository as experimental infrastructure, but no lesson data loads and
-no Lesson control appears in the learner-facing application. See
-[app/DIRECTOR.md](app/DIRECTOR.md) for the preserved grammar.
-
 ## Live collaboration
 
 Click **Share session** to get an invite link (`#room=…`). Peers who open

@@ -59,10 +59,7 @@ node tools/dev-server.mjs        # → http://127.0.0.1:8619/PLP/
    `window.plp` is not a debugging afterthought — **it is the app's
    contract surface**. Every Playwright test asserts through it, and so
    will you.
-6. **Inspect the dormant Director prototype.** The learner-facing Lesson
-   control is deprecated during the core UI redesign. Run the D-series tests
-   to exercise `app/director.mjs` and its preserved reference lesson.
-7. **Run the tests.**
+6. **Run the tests.**
    ```sh
    npx playwright test           # ~2 min, all series
    ```
@@ -88,7 +85,7 @@ node tools/dev-server.mjs        # → http://127.0.0.1:8619/PLP/
 A static, build-free web app that runs and *traces* Python in the
 browser, then renders the trace three ways: a terminal (what the program
 did), a memory model (what the interpreter's state was, line by line),
-and — through the director — guided lessons over both. There is no
+and generative practice questions over both. There is no
 server; it deploys as a GitHub Pages **project site** under `/PLP/`.
 
 ### The engine, in ten sentences
@@ -173,8 +170,8 @@ iteration or the interrupt lands as `engine_error`.
                               │
               ┌───────────────┼───────────────┐
         ┌─────▼─────┐   ┌─────▼─────┐   ┌─────▼──────┐
-        │ director  │   │ questions │   │ your tests │
-        │ + stage   │   │ + quiz    │   │            │
+        │ questions │   │ collab    │   │ your tests │
+        │ + quiz    │   │ (events)  │   │            │
         └───────────┘   └───────────┘   └────────────┘
 ```
 
@@ -191,11 +188,10 @@ Around that core sit two decoupling layers:
 
 - **[app/events.mjs](app/events.mjs)** — modules *emit* semantic learner
   events (`run-ended`, `scrubbed`, `hover-name`, `quiz-graded`, …);
-  the director and tests *subscribe*. Emitters don't know listeners
-  exist.
+  tests *subscribe*. Emitters don't know listeners exist.
 - **`window.plp`** — the debug/contract API assembled in
-  [app/main.mjs](app/main.mjs). Tests, lessons' condition predicates, and
-  your devtools sessions all go through it.
+  [app/main.mjs](app/main.mjs). Tests and your devtools sessions all go
+  through it.
 
 ### Reading order (follow it — each module assumes the previous)
 
@@ -203,12 +199,9 @@ Around that core sit two decoupling layers:
 2. [app/runner.mjs](app/runner.mjs) (+ its collab hooks)
 3. [app/console.mjs](app/console.mjs) with [app/CONSOLE.md](app/CONSOLE.md)
 4. [app/memory.mjs](app/memory.mjs) with [app/MEMORY.md](app/MEMORY.md)
-5. [app/stage.mjs](app/stage.mjs) → [app/conditions.mjs](app/conditions.mjs)
-   → [app/director.mjs](app/director.mjs) with [app/DIRECTOR.md](app/DIRECTOR.md),
-   then [lessons/meet-the-machine.mjs](lessons/meet-the-machine.mjs)
-6. [app/questions.mjs](app/questions.mjs) with [app/QUESTIONS.md](app/QUESTIONS.md)
-7. [app/collab.mjs](app/collab.mjs) with [app/COLLAB.md](app/COLLAB.md)
-8. Glue: [app/main.mjs](app/main.mjs), [app/editor.mjs](app/editor.mjs),
+5. [app/questions.mjs](app/questions.mjs) with [app/QUESTIONS.md](app/QUESTIONS.md)
+6. [app/collab.mjs](app/collab.mjs) with [app/COLLAB.md](app/COLLAB.md)
+7. Glue: [app/main.mjs](app/main.mjs), [app/editor.mjs](app/editor.mjs),
    [app/layout.mjs](app/layout.mjs), [index.html](index.html),
    [tools/dev-server.mjs](tools/dev-server.mjs)
 
@@ -267,30 +260,22 @@ your safety net.
 **6. Uids are per-step, per-run.** The engine's identity encoding
 guarantees nothing across steps or runs. Anything that compares uids
 across runs (or targets them from lesson files) is wrong by
-construction — which is why stage targets and question payloads use
-*names and paths*, never uids.
+construction — which is why question payloads use *names and paths*,
+never uids.
 
 **7. `term.write` is asynchronous.** The one flake this repo has had in
 its own suites: reading `console.buffer()` immediately after a replay
 races xterm's parser. Every buffer assertion polls. If you see a
 console-related flake, check this first.
 
-**8. The stage arranges; the learner performs; gates fail open**
-([app/DIRECTOR.md](app/DIRECTOR.md)). There is deliberately no director
-action that runs code or presses buttons (`until` triggers are
-learner-events only; the linter rejects `idleMs` in `until`). And every
-exit path — completion, user exit, *any* internal error — runs
-`stage.reset()`. A lesson bug must degrade to free play, never to a
-locked app. The crash test literally ships a beat that throws.
-
-**9. CSS can defeat the `hidden` attribute.** Found by screenshot during
-director work: the quiz panel's `display: flex` overrode `[hidden]` and
+**8. CSS can defeat the `hidden` attribute.** Found by screenshot: the
+quiz panel's `display: flex` overrode `[hidden]` and
 the panel had been visible-when-closed for its entire life — no state
 assertion caught it because state said `hidden: true`. The lesson:
 DOM-visibility contracts need a visual or computed-style check at least
 once; state and pixels can disagree.
 
-**10. Presence staleness is checked at read time** ([app/collab.mjs](app/collab.mjs)).
+**9. Presence staleness is checked at read time** ([app/collab.mjs](app/collab.mjs)).
 Background tabs throttle timers, so TTL *pruning* can lag by minutes; a
 dead driver would wedge the room's run lock. The roster is therefore
 filtered through a freshness window wherever it's *read*. Generalized:
@@ -366,24 +351,7 @@ explain why `generateQuestion` returns `null` rather than a degenerate
 question; sketch (don't build) a new kind and check it against the
 "Extending" section of the doc.
 
-### 4.5 Director stack ([app/events.mjs](app/events.mjs) · [app/stage.mjs](app/stage.mjs) · [app/conditions.mjs](app/conditions.mjs) · [app/director.mjs](app/director.mjs) · [lessons/](lessons/) · [app/DIRECTOR.md](app/DIRECTOR.md))
-
-The grammar/pedagogy split: the runtime implements beats, gates,
-attention effects, triggers, hints, signals, branching, telemetry — and
-contains **zero curriculum**; lessons are human-authored data, linted at
-load. Grounded in the verified research
-([design/game-tutorial-research.md](design/game-tutorial-research.md))
-and the plan ([design/director-plan.md](design/director-plan.md)).
-Gates persist across beats; effects don't. Structured targets re-anchor
-across the memory pane's re-renders.
-
-*Exercises*: author a 3-beat lesson for `for` loops in a scratch file and
-`plp.director.start(yourLesson)` it — the linter will teach you the
-grammar; add a `usedScrubber` condition predicate locally; read
-`plp.director.telemetry()` after a lesson and say which beat needs
-rewording (that *is* the fluency metric).
-
-### 4.6 Collab ([app/collab.mjs](app/collab.mjs) · [app/COLLAB.md](app/COLLAB.md) · [tools/collab-vendor-build/](tools/collab-vendor-build/))
+### 4.5 Collab ([app/collab.mjs](app/collab.mjs) · [app/COLLAB.md](app/COLLAB.md) · [tools/collab-vendor-build/](tools/collab-vendor-build/))
 
 Rooms replicate **the record stream, not the panes**, over an Automerge
 doc `{code, run}` carried concurrently by three free transports (public
@@ -404,7 +372,7 @@ B's transcript is string-equal (`plp.console.text()`); read the
 fault-injection test (`tests/collab.spec.mjs`) and explain what SIGKILL
 proves that a graceful shutdown wouldn't.
 
-### 4.7 Shell, layout, serving ([app/main.mjs](app/main.mjs) · [app/layout.mjs](app/layout.mjs) · [index.html](index.html) · [tools/dev-server.mjs](tools/dev-server.mjs))
+### 4.6 Shell, layout, serving ([app/main.mjs](app/main.mjs) · [app/layout.mjs](app/layout.mjs) · [index.html](index.html) · [tools/dev-server.mjs](tools/dev-server.mjs))
 
 Wiring, the `window.plp` contract, pane gutters/maximize (sizes persist
 in localStorage; Esc restores), COI shim bootstrap, and the 80-line
@@ -426,10 +394,10 @@ The repo's testing philosophy, in order of importance:
    coverage (honest GAPs included). Adding a feature means adding a row —
    ideally before the code. The matrix is organized in series that map
    1:1 to spec files: S (smoke), X (emulator), Q (questions),
-   D (director), CO (collab).
+   CO (collab), F (fastrun).
 2. **Assert state, not pixels.** Tests drive `window.plp` and the event
    bus. DOM assertions are reserved for features whose contract *is* the
-   DOM (gates, effects, chips, style classes). Screenshots are for
+   DOM (chips, style classes). Screenshots are for
    humans.
 3. **Prefer independent oracles.** The strongest assertions compare two
    things that could disagree: `console.engineText()` vs the
@@ -517,23 +485,12 @@ new implementation. *Principle*: *scope against the contract, not the
 wishlist; adopt dependencies behind your own API so the suite diff
 measures exactly what changed.*
 
-**Case 6 — Director: grammar vs pedagogy.** *Problem*: game-quality
-tutorials need sequencing, gating, attention, adaptivity — but curriculum
-judgment is human. *Decision*: implement an expressive, lintable grammar
-(beats/gates/effects/triggers/signals) with hard non-goals (no autoplay,
-no modals, no built-in pacing policy) and put every word and every beat
-in data files. The research doc's verified findings became runtime
-*constraints* (e.g. `idleMs` is grammatically illegal in `until` because
-help must be a response, never a schedule). *Principle*: *encode values
-as invariants of the mechanism; keep taste in data where domain experts
-can own it.*
-
 ---
 
 ## Part 7 — Working practices
 
 - **Docs live beside code.** Substantial modules carry an as-built `.md`
-  sibling (CONSOLE/MEMORY/QUESTIONS/DIRECTOR/COLLAB). If your change
+  sibling (CONSOLE/MEMORY/QUESTIONS/COLLAB). If your change
   makes the doc wrong, the doc change goes in the same commit.
 - **Decisions live in [design/](design/).** Research reports and plans,
   written *before* implementation, kept after — they're why Part 6 could
@@ -581,19 +538,18 @@ follow/detach). Rebuild the collab vendor bundle from the recipe and
 verify the hash discipline. *Ready when*: you can review a PR touching
 console/memory and cite the invariant it threatens.
 
-**L4 — The product layer** Author a *real* lesson (not the placeholder):
-pick one concept (aliasing is ready — `sameObject` exists), write the
-kishōtenketsu arc, add any missing condition predicate, run five humans
-or five honest self-sessions, read `plp.director.telemetry()`, and
-revise. Also: strengthen one Q-series generator (e.g. blank-selection
-options). *Ready when*: your lesson's telemetry drove a change you can
-defend with Part 6-style reasoning.
+**L4 — The product layer** Strengthen one Q-series generator (e.g.
+blank-selection options); design and implement a new question kind
+end-to-end with the contract in [app/QUESTIONS.md](app/QUESTIONS.md).
+*Ready when*: your generator's test is exact and you can defend the
+design with Part 6-style reasoning.
 
 **L5 — Design authority** Do a design-doc-first feature end to end.
-Curated candidates: DR12 (collab × director — who is the learner in a
-shared lesson?); an engine EOF proposal (protocol change writeup against
-the wire contract); adaptive question difficulty over quiz telemetry
-(the research doc's open question #4). *Ready when*: your design doc
+Curated candidates: an engine EOF proposal (protocol change writeup
+against the wire contract); adaptive question difficulty over quiz
+telemetry; a guided-lesson runtime (the research in
+[design/game-tutorial-research.md](design/game-tutorial-research.md)
+is the starting point). *Ready when*: your design doc
 survives adversarial review — someone tried to refute it and the doc
 already contained the answer. That's the bar this repo's research and
 plans set.
@@ -611,10 +567,6 @@ plans set.
 | data id | the clickable data<sub>N</sub> identity handle in the memory canvas |
 | chunk store | the console's authoritative output log; the xterm screen is its projection |
 | echo | the transcript copy of an accepted input line (exactly once, via `runner.provideInput`) |
-| beat | one unit of a lesson: arrange (`do`) → learner acts (`until`) → advance |
-| gate | a capability the stage can deny (run/edit/scrub/…); fails open |
-| veil / spotlight / say / popover / cue / pulse | the stage's per-beat attention effects; `say` types through the illustrated tutor, and `cue` selects pulse/bounce/wiggle motion |
-| signal | per-beat fluency counter (`attempts`, `quizTries`, `hintsShown`, `elapsedMs`) |
 | driver / follower | collab roles per run: who executes vs who replays |
 | degraded mode | non-isolated posture: pre-supplied stdin, hard-kill interrupt |
 | posture | how isolation is achieved: real headers (`--coi`) vs service-worker shim |
@@ -625,7 +577,7 @@ plans set.
 Day 1: this guide Parts 0–2 → [README.md](README.md).
 Week 1: [CLAUDE.md](CLAUDE.md) → engine guide (`~/Pilot/FRONTEND-INTEGRATION-GUIDE.md`,
 Parts I–II, IV) → [app/CONSOLE.md](app/CONSOLE.md) + [app/MEMORY.md](app/MEMORY.md).
-Month 1: [app/DIRECTOR.md](app/DIRECTOR.md) + [app/QUESTIONS.md](app/QUESTIONS.md)
+Month 1: [app/QUESTIONS.md](app/QUESTIONS.md)
 + [app/COLLAB.md](app/COLLAB.md) → [design/](design/) (research + plan) →
 [VALIDATION.md](VALIDATION.md) end to end.
 Reference forever: [vendor/PROVENANCE.md](vendor/PROVENANCE.md),
@@ -637,14 +589,12 @@ Reference forever: [vendor/PROVENANCE.md](vendor/PROVENANCE.md),
 node tools/dev-server.mjs            # http://127.0.0.1:8619/PLP/ (GH-Pages posture)
 node tools/dev-server.mjs --coi      # real-headers posture
 npx playwright test                  # all series; PW_ALL_BROWSERS=1 for 3 engines
-npx playwright test tests/director.spec.mjs -g "hints"   # one test
+npx playwright test tests/smoke.spec.mjs -g "input"      # one test
 ```
 
 Debug API essentials: `plp.run()` · `plp.records()` · `plp.checkErrors()`
 · `plp.console.text()/buffer()/term` · `plp.memory.steps()/goTo()/filters/refresh()`
-· `plp.events.log()/on()` · `plp.director.start()/state()/telemetry()` ·
-`plp.stage.gate()/spotlight()/reset()` · `plp.quiz.newQuestion()/check()`
-· `plp.lintLesson()` · `plp.__eval({check…})` · `plp.collab`.
+· `plp.events.log()/on()` · `plp.quiz.newQuestion()/check()` · `plp.collab`.
 
 Engine facts you will forget at your peril: uids are per-step; no EOF;
 interrupts uncatchable; `stdinLines` ignored when isolated; flood tests

@@ -21,21 +21,22 @@ No build step exists anywhere — plain ES modules, vendored dependencies.
 |---|---|
 | `index.html` | shell: COI-shim bootstrap, pane markup, classic-script CodeMirror, `app/main.mjs` module entry |
 | `app/main.mjs` | wiring + `window.plp` debug API (tests assert through it; keep it stable) |
-| `app/runner.mjs` | PyTrace session: run guard, record fan-out, terminal-reason notes, single input-echo path; routes to the untraced path and owns the auto-fallback |
-| `app/fastrun.mjs` + `app/fastrun-worker.mjs` | untraced execution: plain Pyodide, no trace hooks, no step limits — the only way large programs finish (see invariant 3) |
+| `app/runner.mjs` | PyTrace session: run guard, record fan-out, terminal-reason notes, single input-echo path |
 | `app/console.mjs` | terminal emulator — see **app/CONSOLE.md** (as-built doc) |
-| `app/memory.mjs` | Names/Objects tables, toggleable display filters, line-step scrubbing — see **app/MEMORY.md** (as-built doc) |
+| `app/memory.mjs` | visual binding canvas, contextual reference arrows, expandable Data In Memory list, display filters, line-step scrubbing; see **app/MEMORY.md** |
 | `app/editor.mjs` | CodeMirror 5 wrapper (single file, line highlight, collab splice/change hooks) |
 | `app/collab.mjs` | live collaboration: shared editor + shared run/scrub over Automerge, multi-transport (ws + WebRTC/Nostr + BroadcastChannel) — see **app/COLLAB.md** |
 | `tools/collab-vendor-build/` | esbuild recipe that produces `vendor/automerge-collab.mjs` (never served; rebuild only to change pinned versions) |
 | `app/events.mjs` | semantic event bus (learner actions; modules emit, tests subscribe) |
 | `app/questions.mjs` | generative-question engine (pure; trace-grounded memory-prediction + code questions) — see **app/QUESTIONS.md** |
+| `app/construction.mjs` | pure graph-memory answers, graph-isomorphic grading, and curated expression-evaluation plans — see **app/CONSTRUCTION.md** |
+| `app/construction-ui.mjs` | editable memory graph and evaluation-sequence question renderers |
 | `app/quiz.mjs` | thin pilot UI over the question engine (floating panel; disposable) |
 | `app/layout.mjs` | draggable gutters (CSS vars + localStorage), per-pane maximize (Esc restores) |
 | `app/stream-checks.mjs` | consumer-side trace-stream invariants (`traceStreamCheck`) |
 | `vendor/` | pinned third-party: Pyodide 314.0.2, PyTrace 0.1.0 (worker **patched** for sub-path — the ONLY upstream divergence, see `vendor/PATCHES.md`), CodeMirror 5.65.21, xterm.js 6.0.0 (+fit). Hashes in `vendor/PROVENANCE.md`; record any addition there |
 | `tools/dev-server.mjs` | zero-dep static server simulating the `/PLP/` prefix; `--coi` for header posture |
-| `tests/` | Playwright: `smoke.spec.mjs` (core flows), `emulator.spec.mjs` (X-series console), `collab.spec.mjs` (CO-series collaboration), `questions.spec.mjs` (Q-series question engine), `fastrun.spec.mjs` (F-series untraced execution) |
+| `tests/` | Playwright: `smoke.spec.mjs` (core flows), `emulator.spec.mjs` (X-series console), `collab.spec.mjs` (CO-series collaboration), `questions.spec.mjs` (Q-series question engine) |
 | `VALIDATION.md` | feature → best-evidence → coverage matrix; add a row when adding a feature |
 | `README.md` | user-facing doc incl. **Stepping model** and **Memory model display rules** |
 | `ONBOARDING.md` | engineer onboarding: architecture tour, invariants-with-incidents, design case studies, growth ladder |
@@ -52,59 +53,30 @@ source of the vendored assets and test machinery).
    → PyTrace degraded mode). `.nojekyll` must exist.
 2. **Runner**: reject a concurrent `run()` BEFORE resetting any per-run
    state. After the first record, failures are terminal records, not
-   rejections — the UI has exactly two failure paths. **Every run must
-   reach a terminal state on every path** (success, throw, interrupt):
-   a run that never ends wedges the buttons solo and wedges the whole
-   room in collab, because `canRun()` is false for a live run — including
-   the driver's own. A cooperative interrupt is a request, not a
-   guarantee: interrupting at the stdin rendezvous leaves Pyodide's
-   `runPythonAsync` unsettled, so the host arms a deadline and forces an
-   ending (app/fastrun.mjs; regression F-4b, L-series).
-3. **Two execution paths**: PyTrace ALWAYS traces (its 14 options have no
-   off switch) and stops at `max_steps`, so anything past a few thousand
-   executed lines can only finish untraced. **Run = untraced** (the
-   default; `runner.run()`), **Trace = traced** (`runner.trace()`). A
-   budget terminal (`step_limit`/`trace_limit`) keeps the truncated trace
-   and points at Run; `runner.setAutoFallback(true)` opts into re-running
-   untraced instead. Untraced runs produce NO records, so collab shares
-   them as an output stream rather than a record stream (invariant 7). In
-   the untraced worker, output flushes are driven by the writes
-   themselves, NEVER by a timer: running Python blocks that worker's
-   event loop, so timer-based flushing shows nothing until the program
-   ends.
-4. **Console**: the chunk store is the source of truth; the xterm screen is
+   rejections — the UI has exactly two failure paths.
+3. **Console**: the chunk store is the source of truth; the xterm screen is
    a deterministic replay view. Input echo happens exactly once, only in
    `runner.provideInput` (live mode runs with `echo_stdin: false`;
    degraded keeps engine echo). `term.write` is async — poll `buffer()` in
    tests.
-5. **Memory model**: render at most once per animation frame while records
+4. **Memory model**: render at most once per animation frame while records
    stream (traces arrive at thousands/sec; per-record rendering freezes the
-   tab). The Objects-table policy is the `displayFilters` flag set
-   (chip-reachable only, inline class bases, inline plain functions,
-   dimmed-never-hidden opaque); elided markers always render; every chip
-   must resolve to a row regardless of flag state (app/MEMORY.md).
-6. **Stepping**: line-step mode (default) = synthetic position 0 + one
+   tab). The object-list policy is the `displayFilters` flag set
+   (name-reachable only, inline class bases, inline plain functions,
+   dimmed-never-hidden opaque); elided markers always render; every object
+   target must resolve to exactly one object pill regardless of flag state
+   (app/MEMORY.md).
+5. **Stepping**: line-step mode (default) = synthetic position 0 + one
    position per executed line, each showing the state that line *produced*.
    Engine-step mode keeps raw before-the-line semantics. `memory.goTo()`/
    `stepCount()` are position-space; `memory.steps()` is always raw.
-7. **Collab**: rooms replicate what the driver's ENGINE emitted, not the
-   panes. A traced run shares its RECORD STREAM (`renderRecordToUI` is
-   the single fan-out); an untraced run has no records, so it shares one
-   ordered console OUTPUT stream (stdout/stderr/echo) instead, capped at
-   `SHARED_OUTPUT_CAP`. `run.mode` says which.
+6. **Collab**: rooms replicate the RECORD STREAM, not the panes (both are
+   deterministic projections — `renderRecordToUI` is the single fan-out).
    Driver mirrors records one `handle.change` per animation frame, never
    per record. Presence/scrub is ephemeral, never in the doc. Transports
    run concurrently (idempotent sync); no fallback state machine
    (app/COLLAB.md).
-8. **Trust boundary**: records from the local engine are schema-validated by
-   its facade; records arriving over collab are NOT — any peer holding a
-   room link can write arbitrary JSON into the doc. Everything crossing
-   that boundary passes `isRenderableRecord` (app/record-guard.mjs) before
-   reaching `renderRecordToUI`, and renderers never interpolate a uid into
-   markup or a selector unescaped. General rule: a component whose
-   invariants assume trusted input must not be handed an untrusted source
-   without a gate (this is exactly how the collab XSS arose).
-9. **Tests** assert via `window.plp` state, not pixels; every run ends by
+7. **Tests** assert via `window.plp` state, not pixels; every run ends by
    checking `plp.checkErrors()` is empty. Suite runs under the `/PLP/`
    prefix with NO headers (service-worker posture = real GitHub Pages).
    First-visit COI shim reload: `waitForFunction(() => crossOriginIsolated)`.

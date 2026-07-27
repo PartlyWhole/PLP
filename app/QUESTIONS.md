@@ -1,8 +1,8 @@
 # Generative questions - as-built documentation (dormant pilot)
 
 The learner-facing Quiz control is intentionally hidden while the UI is being
-redesigned. The engine, floating panel, Director integration, and debug/test API
-remain available as experimental infrastructure.
+redesigned. The engine, floating panel, and debug/test API remain available as
+experimental infrastructure.
 
 The question system uses four modules:
 
@@ -50,9 +50,7 @@ All generators are deterministic under explicit options (`seed` uses a
 mulberry32 PRNG). A generator returns `null` when it can't build a sensible
 question here (e.g. no observable memory diff, no calls, no trace yet).
 
-The preserved Director prototype requests `{renderer: "legacy"}` for its
-historical fill-in quiz beat. New learner-facing memory questions use graph
-construction by default.
+Memory questions use graph construction by default.
 
 ## Question object contract
 
