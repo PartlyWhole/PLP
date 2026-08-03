@@ -105,6 +105,37 @@ export function renderReference(kb, outputs, waivers = []) {
   L.push(`- **Structural roots**: ${structuralTags.join(", ")}`);
   L.push("");
 
+  // The full concept DAG (design §8 "the topic DAG rendering"), grouped by
+  // topic, edges parent → child, deterministic ordering throughout.
+  L.push("## Concept graph");
+  L.push("");
+  L.push("Edges point parent → child (prerequisite → dependent). Solid boxes");
+  L.push("are core, rounded are edge, hexagons are the structural roots.");
+  L.push("");
+  L.push("```mermaid");
+  L.push("graph TD");
+  const nodeLine = (c) => {
+    const label = `${c.tag} ${c.slug}`;
+    if (c.kind === "structural") return `  ${c.tag}{{"${label}"}}`;
+    if (c.kind === "edge") return `  ${c.tag}("${label}")`;
+    return `  ${c.tag}["${label}"]`;
+  };
+  L.push("  subgraph roots [Structural roots]");
+  for (const t of structuralTags) L.push("  " + nodeLine(kb.concepts.get(t)).trim());
+  L.push("  end");
+  for (const [tid, title] of TOPICS) {
+    const tags = concepts.filter((c) => conceptTopic.get(c.tag) === tid).map((c) => c.tag).sort(byTag);
+    if (!tags.length) continue;
+    L.push(`  subgraph ${tid} [${title}]`);
+    for (const t of tags) L.push("  " + nodeLine(kb.concepts.get(t)).trim());
+    L.push("  end");
+  }
+  for (const c of [...concepts].sort((a, b) => byTag(a.tag, b.tag))) {
+    for (const p of [...c.parents].sort(byTag)) L.push(`  ${p} --> ${c.tag}`);
+  }
+  L.push("```");
+  L.push("");
+
   // Per-concept sections, in tag order.
   L.push("## Concepts");
   L.push("");

@@ -23,6 +23,199 @@
 - **Dicts & tuples** (`structures`): 001R, 001S, 001T, 001V, 001W, 001X, 001Y
 - **Structural roots**: 0001, 0002, 0003, 0004
 
+## Concept graph
+
+Edges point parent → child (prerequisite → dependent). Solid boxes
+are core, rounded are edge, hexagons are the structural roots.
+
+```mermaid
+graph TD
+  subgraph roots [Structural roots]
+  0001{{"0001 run-top-to-bottom"}}
+  0002{{"0002 values-have-types"}}
+  0003{{"0003 int-literal"}}
+  0004{{"0004 one-line-per-print"}}
+  end
+  subgraph state [State & I/O]
+  0005["0005 print-text"]
+  0006["0006 name-holds-value"]
+  0007["0007 quoted-vs-name"]
+  0009["0009 evaluate-before-bind"]
+  000A["000A rebind-updates-name"]
+  000B["000B accumulate-rebind"]
+  000C["000C name-from-name"]
+  000J["000J print-multi-args"]
+  000K["000K str-literal-vs-number"]
+  000M("000M swap-right-side-first")
+  end
+  subgraph numbers [Numbers & bools]
+  0008["0008 arith-on-ints"]
+  000N["000N op-precedence"]
+  000P["000P div-yields-float"]
+  000Q["000Q floordiv-quotient"]
+  000R["000R mod-remainder"]
+  000S("000S mod-sign-of-divisor")
+  000T["000T str-of-int"]
+  000V["000V int-of-str"]
+  000W("000W float-inexact")
+  000X("000X bool-is-int")
+  end
+  subgraph strings [Strings]
+  000Y["000Y str-concat"]
+  000Z["000Z str-repeat"]
+  0010("0010 index-from-end")
+  0011["0011 slice-half-open"]
+  0012["0012 slice-open-ended"]
+  0013("0013 str-immutable-rebind")
+  0014("0014 str-compare-code-points")
+  end
+  subgraph lists [Lists & aliasing]
+  000D["000D list-literal"]
+  000E["000E index-from-zero"]
+  000F["000F index-assign-mutates"]
+  000G["000G append-mutates"]
+  000H("000H names-share-list")
+  001Z["001Z aggregate-builtins"]
+  0020("0020 extend-vs-append")
+  0021["0021 list-concat-new"]
+  0022["0022 nested-lists"]
+  0023("0023 plus-eq-mutates-list")
+  0024("0024 slice-copies")
+  0025("0025 copy-is-shallow")
+  end
+  subgraph logic [Conditions & logic]
+  0015["0015 compare-ops"]
+  0016["0016 bool-values"]
+  0017["0017 if-runs-or-skips"]
+  0018["0018 else-otherwise"]
+  0019["0019 elif-first-true-wins"]
+  001A["001A bool-ops"]
+  001B("001B truthiness-empty-falsy")
+  001C("001C and-or-return-operand")
+  001D("001D chained-compare")
+  end
+  subgraph loops [Loops & ranges]
+  001E["001E loop-for-visits-each"]
+  001F["001F range-stop-excluded"]
+  001G["001G range-start-stop"]
+  001H["001H range-step"]
+  001J["001J loop-accumulate"]
+  001K["001K loop-build-list"]
+  001M["001M while-repeats-while-true"]
+  001N["001N break-exits"]
+  001P["001P continue-skips"]
+  001Q("001Q for-else-no-break")
+  end
+  subgraph structures [Dicts & tuples]
+  001R["001R dict-lookup-by-key"]
+  001S["001S dict-key-assign"]
+  001T["001T dict-get-default"]
+  001V("001V in-dict-checks-keys")
+  001W["001W tuple-pack-print"]
+  001X["001X tuple-unpack"]
+  001Y("001Y tuple-by-comma")
+  end
+  0001 --> 0005
+  0004 --> 0005
+  0003 --> 0006
+  0005 --> 0006
+  0005 --> 0007
+  0006 --> 0007
+  0003 --> 0008
+  0005 --> 0008
+  0006 --> 0009
+  0008 --> 0009
+  0006 --> 000A
+  0009 --> 000B
+  000A --> 000B
+  000A --> 000C
+  0002 --> 000D
+  0006 --> 000D
+  0007 --> 000E
+  000D --> 000F
+  000E --> 000F
+  000D --> 000G
+  000C --> 000H
+  000G --> 000H
+  0005 --> 000J
+  0006 --> 000J
+  0002 --> 000K
+  0007 --> 000K
+  000Y --> 000K
+  0009 --> 000M
+  000C --> 000M
+  0008 --> 000N
+  0008 --> 000P
+  0008 --> 000Q
+  000Q --> 000R
+  000R --> 000S
+  000K --> 000T
+  0008 --> 000V
+  000K --> 000V
+  000P --> 000W
+  0008 --> 000X
+  0016 --> 000X
+  0007 --> 000Y
+  0008 --> 000Z
+  000Y --> 000Z
+  000E --> 0010
+  000E --> 0011
+  0011 --> 0012
+  000C --> 0013
+  000Y --> 0013
+  0007 --> 0014
+  0015 --> 0014
+  0008 --> 0015
+  0016 --> 0015
+  0005 --> 0016
+  0015 --> 0017
+  0017 --> 0018
+  0018 --> 0019
+  0016 --> 001A
+  000D --> 001B
+  0017 --> 001B
+  001A --> 001C
+  001B --> 001C
+  0015 --> 001D
+  001A --> 001D
+  000D --> 001E
+  001E --> 001F
+  001F --> 001G
+  001G --> 001H
+  000B --> 001J
+  001E --> 001J
+  000G --> 001K
+  001E --> 001K
+  000B --> 001M
+  0015 --> 001M
+  0017 --> 001N
+  001E --> 001N
+  0017 --> 001P
+  001E --> 001P
+  001N --> 001Q
+  0007 --> 001R
+  000E --> 001R
+  001R --> 001S
+  001R --> 001T
+  0016 --> 001V
+  001R --> 001V
+  0002 --> 001W
+  0006 --> 001W
+  001W --> 001X
+  001W --> 001Y
+  000D --> 001Z
+  000G --> 0020
+  000D --> 0021
+  000D --> 0022
+  000E --> 0022
+  000H --> 0023
+  0021 --> 0023
+  000H --> 0024
+  0011 --> 0024
+  0022 --> 0025
+  0024 --> 0025
+```
+
 ## Concepts
 
 ### 0001 · run-top-to-bottom — structural
