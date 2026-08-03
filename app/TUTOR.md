@@ -139,8 +139,10 @@ lesson being authored demands it.
 - **predict-output** (predict-then-verify): the card takes a free-text
   prediction FIRST; "Lock in & run ▶" triggers a real, visible Trace, then
   grades against what the engine actually printed (`outputUpTo`, the pure
-  twin of the console's `showUpTo`). Grading forgives trailing whitespace
-  and trailing blank lines, nothing else. Hints are available pre-lock;
+  twin of the console's `showUpTo`). Grading forgives trailing whitespace,
+  trailing blank lines, and content-equivalent container display (spacing
+  around commas/colons inside brackets/parens/braces, repr quote style) —
+  never a content difference. Hints are available pre-lock;
   there are no post-reveal retries.
 
 ## Persistence and the code stash

@@ -9,7 +9,7 @@
 ## Overview
 
 - **69 concepts** — 4 structural / 47 core / 18 edge.
-- **82 exercises** across 7 topics.
+- **87 exercises** across 7 topics.
 - **Forms:** fill-one-blank, predict-exact-output, predict-state, spot-the-difference.
 
 ## Topics
@@ -135,7 +135,7 @@ b = a gives b the value a holds now; rebinding a later does not change b.
 - Children: 000H, 000M, 0013
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 000A
 - Characteristic wrong answer: a's new value
-- Exercises: copy-then-rebind
+- Exercises: copy-latent-value, copy-then-rebind
 
 ### 000D · list-literal — core
 
@@ -235,7 +235,7 @@ In a, b = b, a the whole right side is evaluated before either name rebinds — 
 - Children: 000W
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0008
 - Characteristic wrong answer: the whole number, without the .0
-- Exercises: div-always-float
+- Exercises: div-always-float, div-type-contrast
 
 ### 000Q · floordiv-quotient — core
 
@@ -425,7 +425,7 @@ In an if/elif/… chain, tests run top to bottom and only the first true branch 
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0008 ← 0015 ← 0016 ← 0017 ← 0018
 - Characteristic wrong answer: a later true branch also runs
-- Exercises: elif-chain
+- Exercises: elif-chain, first-true-wins-contrast
 
 ### 001A · bool-ops — core
 
@@ -455,7 +455,7 @@ and/or hand back one of their operands, not necessarily True or False.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 000D ← 0015 ← 0016 ← 0017 ← 001A ← 001B
 - Characteristic wrong answer: True instead of the operand value
-- Exercises: and-or-value
+- Exercises: and-or-value, or-value-contrast
 
 ### 001D · chained-compare — edge
 
@@ -515,7 +515,7 @@ A running total updates once per loop pass; its final value is there after the l
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000B ← 000D ← 001E
 - Characteristic wrong answer: an off-by-one total, or only the last value
-- Exercises: loop-total
+- Exercises: loop-total, loop-total-latent
 
 ### 001K · loop-build-list — core
 
@@ -1038,6 +1038,23 @@ After it runs, `a` holds:
 [2, 7]
 ```
 
+### copy-latent-value — focus 000C (name-from-name)
+
+- Form: `predict-state` · Role: review · Topic: state
+- Assumed: 0005, 0006, 000A
+- Shapes: copy-rebind-probe-copy · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+a = 5
+b = a
+a = 11
+```
+After it runs, `b` holds:
+```
+5
+```
+
 ### copy-then-rebind — focus 000C (name-from-name)
 
 - Form: `predict-exact-output` · Role: intro · Topic: state
@@ -1135,6 +1152,32 @@ print(5 * 3 / 5)
 prints:
 ```
 3.0
+```
+
+### div-type-contrast — focus 000P (div-yields-float)
+
+- Form: `spot-the-difference` · Role: review · Topic: numbers
+- Assumed: 0005, 0008
+- Contrast: 0008
+- Shapes: times-vs-div · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+print(14 * 2)
+```
+prints:
+```
+28
+```
+
+Program B (predicted):
+```py
+print(14 / 2)
+```
+prints:
+```
+7.0
 ```
 
 ### elif-chain — focus 0019 (elif-first-true-wins)
@@ -1254,6 +1297,42 @@ print(count)
 prints the target:
 ```
 6
+```
+
+### first-true-wins-contrast — focus 0019 (elif-first-true-wins)
+
+- Form: `spot-the-difference` · Role: review · Topic: logic
+- Assumed: 0005, 0016, 0017, 0018
+- Contrast: 0018
+- Shapes: elif-wins-vs-if-wins · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+if False:
+    print("high")
+elif True:
+    print("mid")
+else:
+    print("low")
+```
+prints:
+```
+mid
+```
+
+Program B (predicted):
+```py
+if True:
+    print("high")
+elif True:
+    print("mid")
+else:
+    print("low")
+```
+prints:
+```
+high
 ```
 
 ### float-tail — focus 000W (float-inexact)
@@ -1532,6 +1611,23 @@ prints:
 11
 ```
 
+### loop-total-latent — focus 001J (loop-accumulate)
+
+- Form: `predict-state` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 0009, 000A, 000B, 000D, 001E
+- Shapes: sum-probe-total · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+total = 0
+for x in [2, 3, 6]:
+    total = total + x
+```
+After it runs, `total` holds:
+```
+11
+```
+
 ### mod-basic — focus 000R (mod-remainder)
 
 - Form: `predict-exact-output` · Role: intro · Topic: numbers
@@ -1602,6 +1698,32 @@ print(count)
 prints:
 ```
 3
+```
+
+### or-value-contrast — focus 001C (and-or-return-operand)
+
+- Form: `spot-the-difference` · Role: review · Topic: logic
+- Assumed: 0005, 0016, 001A, 001B
+- Contrast: 001A
+- Shapes: bool-or-vs-value-or · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+print(True or False)
+```
+prints:
+```
+True
+```
+
+Program B (predicted):
+```py
+print(5 or 0)
+```
+prints:
+```
+5
 ```
 
 ### plain-arith — focus 0008 (arith-on-ints)

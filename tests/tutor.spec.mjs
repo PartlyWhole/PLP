@@ -30,7 +30,7 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#tutor-pane")).not.toBeVisible();
   });
 
-  test("predict-output: trace-grounded, position-aware, forgiving only on trailing whitespace", async ({ page }) => {
+  test("predict-output: trace-grounded, position-aware; forgives trailing whitespace + container display spacing, never content", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => window.plp.editor.setValue(
       'print("a")\nx = 1\nprint("b", x)\n'));
@@ -59,12 +59,39 @@ test.describe("PLP tutor (T-series)", () => {
     expect(r.wholePrompt).toContain("What does this program print?");
     expect(r.wholeRight).toBe(true);
     expect(r.wholeTrailing).toBe(true); // trailing whitespace forgiven
-    expect(r.wholeWrongSpace).toBe(false); // internal spacing exact
+    expect(r.wholeWrongSpace).toBe(false); // spacing OUTSIDE containers is content — exact
     expect(r.wholeWrongCase).toBe(false);
     expect(r.expectedText).toBe("a\nb 1\n");
     expect(r.partialLine).toBe(1);
     expect(r.partialRight).toBe(true);
     expect(r.partialWrong).toBe(false);
+
+    // Container displays forgive spacing/quote-style variants that carry the
+    // same content and understanding — but never a content difference.
+    await page.evaluate(() => window.plp.editor.setValue('d = {"a": 1}\nprint([1, 2, 3], d)\n'));
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    const c = await page.evaluate(() => {
+      const ctx = {
+        source: window.plp.editor.getValue(),
+        steps: window.plp.memory.steps(),
+        positions: window.plp.memory.linePositions(),
+      };
+      const q = window.plp.questions.generateQuestion("predict-output", ctx, {});
+      return {
+        exact: q.grade({ text: "[1, 2, 3] {'a': 1}" }).correct,
+        tightCommas: q.grade({ text: "[1,2,3] {'a':1}" }).correct,
+        mixedSpacing: q.grade({ text: "[1,2, 3] {'a': 1}" }).correct,
+        doubleQuotes: q.grade({ text: '[1, 2, 3] {"a": 1}' }).correct,
+        wrongContent: q.grade({ text: "[1, 2] {'a': 1}" }).correct,
+        gapIsContent: q.grade({ text: "[1, 2, 3]{'a': 1}" }).correct, // the space BETWEEN prints is content
+      };
+    });
+    expect(c.exact).toBe(true);
+    expect(c.tightCommas).toBe(true);
+    expect(c.mixedSpacing).toBe(true);
+    expect(c.doubleQuotes).toBe(true);
+    expect(c.wrongContent).toBe(false);
+    expect(c.gapIsContent).toBe(false);
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 

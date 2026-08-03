@@ -271,14 +271,47 @@ function memoryConstructQuestion(ctx, opts = {}) {
 
 // ---- output prediction ------------------------------------------------------
 // Text answers compare per-line with trailing whitespace (and trailing blank
-// lines) ignored; everything else — case, internal spacing, order — is exact.
-// Precision is curriculum content; sloppier matching would undermine it.
+// lines) ignored; case, order, and the CONTENT of text are exact.
 export function normalizeOutput(s) {
   return String(s ?? "")
     .split("\n")
     .map((line) => line.replace(/[ \t]+$/, ""))
     .join("\n")
     .replace(/\n+$/, "");
+}
+
+// Content-equivalence fallback for container displays: `[1,2, 3]` and
+// `[1, 2, 3]` are the same answer in understanding — the spacing is
+// Python's printing choice, not a concept under test (same §13 Q4 argument
+// as quote style). Inside brackets/parens/braces — and NEVER inside quoted
+// text, where spacing IS content — spaces around commas/colons are dropped
+// and quote style is unified. The exact form still appears in the reveal.
+export function canonicalizeContainers(s) {
+  return normalizeOutput(s).split("\n").map((line) => {
+    let out = "";
+    let quote = null;
+    let depth = 0;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (quote) {
+        out += c === quote ? '"' : c;
+        if (c === quote) quote = null;
+        continue;
+      }
+      if (c === '"' || c === "'") { quote = c; out += '"'; continue; }
+      if ("[({".includes(c)) depth++;
+      if ("])}".includes(c)) depth = Math.max(0, depth - 1);
+      if (c === " " && depth > 0) {
+        const prev = out[out.length - 1];
+        let j = i;
+        while (line[j] === " ") j++;
+        const next = line[j] ?? "";
+        if (",:[({".includes(prev) || ",:])}".includes(next)) continue;
+      }
+      out += c;
+    }
+    return out;
+  }).join("\n");
 }
 
 function predictOutputQuestion(ctx, opts = {}) {
@@ -299,7 +332,11 @@ function predictOutputQuestion(ctx, opts = {}) {
     blanks: [],
     grade(answer) {
       const got = normalizeOutput(answer?.text);
-      const correct = got === normalizeOutput(expected);
+      const want = normalizeOutput(expected);
+      // Exact first; else the container-canonical forms must match (same
+      // content and understanding, different display spacing/quote style).
+      const correct = got === want
+        || canonicalizeContainers(got) === canonicalizeContainers(want);
       return { correct, expected: { text: expected } };
     },
   };

@@ -137,7 +137,7 @@ driver included. Each row asserts a way a run can end still releases it.
 | # | Feature | Best evidence | Coverage |
 |---|---|---|---|
 | T1 | Tutor pane: hidden by default, header toggle, collapse, persisted visibility | DOM visibility across toggle + reload; idle menu shows one control per unit | T-1 |
-| T2 | `predict-output`: trace-grounded whole-program and after-line-N grading; forgiving only on trailing whitespace | generate at default and explicit `position`; right/trailing/internal-space/case answers graded as specified; `expected.text` matches engine output | T-2 |
+| T2 | `predict-output`: trace-grounded whole-program and after-line-N grading; forgives trailing whitespace and content-equivalent container display (comma/colon spacing inside `[] () {}`, repr quote style) — never content (text spacing, print's between-args space, case) | generate at default and explicit `position`; right/trailing/internal-space/case answers graded as specified; `[1,2, 3]` ≡ `[1, 2, 3]`, `{"a":1}` ≡ `{'a': 1}`; wrong-content and gap-between-prints stay wrong; `expected.text` matches engine output | T-2 |
 | T3 | Lesson lint: malformed steps rejected at start | five malformed step shapes → five errors via `plp.tutor.lintLesson` | T-3 |
 | T4 | Unit 1 end-to-end: loadCode resets panes; actions complete via real events (run-ended, scrubbed ×3, input-answered); predict-then-verify grades against the actual run; `if:` branches fire on lastAnswer; pocket + done cards | full drive through `plp.tutor` with real trace runs and console input rendezvous; `checkErrors()` empty after final run | T-4 |
 | T5 | Transcript persistence: reload restores every card and the resume point | card count equality (store vs DOM) across reload; finished state intact | T-4 |

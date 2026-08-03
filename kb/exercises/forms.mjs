@@ -451,6 +451,136 @@ export default [
   },
 
   {
+    id: "first-true-wins-contrast",
+    topic: "logic",
+    focus: "0019", // elif-first-true-wins — both tests true, only the FIRST runs
+    assumed: ["0005", "0016", "0017", "0018"],
+    contrast: "0018", // else-otherwise — parent of the focus
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["elif-wins-vs-if-wins"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const w1 = pick(rng, ["red", "gold", "high"]);
+        const w2 = pick(rng, ["blue", "silver", "mid"]);
+        const w3 = pick(rng, ["green", "bronze", "low"]);
+        return {
+          code: `if False:\n    print("${w1}")\nelif True:\n    print("${w2}")\nelse:\n    print("${w3}")\n`,
+          aOutput: w2,
+          contrastCode: `if True:\n    print("${w1}")\nelif True:\n    print("${w2}")\nelse:\n    print("${w3}")\n`,
+          shape: "elif-wins-vs-if-wins", variant: "plain",
+          variantCard: `Now BOTH tests are true — but the chain stops at the FIRST true `
+            + `one. Only \`${w1}\` prints; the true \`elif\` below is never even looked at.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "or-value-contrast",
+    topic: "logic",
+    focus: "001C", // and-or-return-operand — or hands back an operand, not True
+    assumed: ["0005", "0016", "001A", "001B"],
+    contrast: "001A", // bool-ops — parent of the focus
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["bool-or-vs-value-or"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const n = int(rng, 2, 9);
+        return {
+          code: `print(True or False)\n`,
+          aOutput: "True",
+          contrastCode: `print(${n} or 0)\n`,
+          shape: "bool-or-vs-value-or", variant: "plain",
+          variantCard: `With plain values, \`or\` does not convert anything: \`${n}\` counts `
+            + `as true, so \`or\` hands back \`${n}\` ITSELF — not \`True\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "copy-latent-value",
+    topic: "state",
+    focus: "000C", // name-from-name — the copied value survives the rebind, latently
+    assumed: ["0005", "0006", "000A"],
+    role: "review",
+    form: "predict-state",
+    generator: {
+      shapes: ["copy-rebind-probe-copy"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const p = int(rng, 2, 9), q = int(rng, 10, 20);
+        return {
+          code: `a = ${p}\nb = a\na = ${q}\n`,
+          probeName: "b",
+          shape: "copy-rebind-probe-copy", variant: "plain",
+          variantCard: `\`b = a\` copied the value \`a\` held at that moment: ${p}. Rebinding `
+            + `\`a\` to ${q} afterwards never touches \`b\` — it still holds ${p}.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "loop-total-latent",
+    topic: "loops",
+    focus: "001J", // loop-accumulate — the finished total as latent state
+    assumed: ["0005", "0006", "0008", "0009", "000A", "000B", "000D", "001E"],
+    role: "review",
+    form: "predict-state",
+    generator: {
+      shapes: ["sum-probe-total"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const items = Array.from({ length: 3 }, () => int(rng, 1, 6));
+        const total = items.reduce((a, b) => a + b, 0);
+        return {
+          code: `total = 0\nfor x in [${items.join(", ")}]:\n    total = total + x\n`,
+          probeName: "total",
+          shape: "sum-probe-total", variant: "plain",
+          variantCard: `The total updated once per pass: ${items.join(" + ")} = ${total}. `
+            + `After the loop, that finished value is what \`total\` holds.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "div-type-contrast",
+    topic: "numbers",
+    focus: "000P", // div-yields-float — same numbers, / always hands back a float
+    assumed: ["0005", "0008"],
+    contrast: "0008", // arith-on-ints — parent of the focus
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["times-vs-div"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const b = pick(rng, [2, 4, 5]);
+        const a = b * int(rng, 2, 9); // divides evenly, so the .0 is the whole lesson
+        return {
+          code: `print(${a} * ${b})\n`,
+          aOutput: String(a * b),
+          contrastCode: `print(${a} / ${b})\n`,
+          shape: "times-vs-div", variant: "plain",
+          variantCard: `\`*\` on whole numbers gives a whole number — but \`/\` ALWAYS gives `
+            + `a float, even dividing evenly: \`${(a / b).toFixed(1)}\`, with the .0.`,
+        };
+      },
+    },
+  },
+
+  {
     id: "copy-latent-state",
     topic: "lists",
     focus: "0024", // slice-copies — the copy's independence as latent state
