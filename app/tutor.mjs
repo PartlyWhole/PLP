@@ -25,7 +25,7 @@
 // printed. The run IS the reveal.
 
 import { generateQuestion, questionGenerators } from "./questions.mjs";
-import { renderQuestionBody } from "./question-ui.mjs";
+import { renderQuestionBody, createAnswerInput, appendExpected } from "./question-ui.mjs";
 import { buildKBSession, kbTopics, migrateStats, spliceBlank, lintLessonConcepts, frontierTags, drillTopicFor } from "./kb-session.mjs";
 import { events } from "./events.mjs";
 
@@ -151,7 +151,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     ui.clear();
     ui.setProgress("");
     ui.setExitVisible(false);
-    ui.addCard({
+    const welcome = {
       type: "say",
       md: "Pick a topic and try some questions. You'll read a tiny "
         + "program and type **exactly** what it prints — then it really "
@@ -159,7 +159,11 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
         + "Getting one wrong is part of the plan: you'll see **why**, and "
         + "that idea will come back until it's easy. Every round has fresh "
         + "questions. Your own code is kept safe.",
-    });
+    };
+    ui.addCard(welcome);
+    // The menu is a beat too: in focus mode it renders on the stage (the
+    // roomy center surface), with the topic buttons mirrored in its foot.
+    ui.popBatch([welcome]);
     // Exercises only: guided units stay available to tests/debug via
     // plp.tutor.start(unitId), but the learner-facing menu is drills.
     // When mastery exists, the frontier (unmet concepts whose parents are
@@ -316,7 +320,9 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     let view = null;
     const card = ui.addInteractiveCard({
       prompt: q.prompt,
-      render: (body) => { view = renderQuestionBody(body, q); return view; },
+      // The card chrome renders the prompt; omitPrompt stops the question
+      // body from printing it a second time.
+      render: (body) => { view = renderQuestionBody(body, q, { omitPrompt: true }); return view; },
       actions: [],
       prog: store.currentProg,
     });
@@ -379,16 +385,10 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
       render: (body) => {
         // One-thing-at-a-time asks (drills, single-print programs) get a
         // single-line input; free prediction keeps the textarea.
-        if (ask.singleLine) {
-          ta = document.createElement("input");
-          ta.type = "text";
-          ta.className = "tutor-output-input tutor-output-line";
-        } else {
-          ta = document.createElement("textarea");
-          ta.className = "tutor-output-input";
-        }
-        ta.placeholder = isState ? "the value it holds…" : ask.singleLine ? "the one line this prints…" : "type your predicted output…";
-        ta.spellcheck = false;
+        ta = createAnswerInput({
+          singleLine: ask.singleLine,
+          placeholder: isState ? "the value it holds…" : ask.singleLine ? "the one line this prints…" : "type your predicted output…",
+        });
         body.appendChild(ta);
         return null;
       },
@@ -423,15 +423,10 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
       ta.classList.toggle("ok", result.correct);
       ta.classList.toggle("bad", !result.correct);
       if (!result.correct) {
-        const div = document.createElement("div");
-        div.className = "tutor-expected";
-        const label = document.createElement("span");
-        label.className = "hint";
-        label.textContent = isState ? "What it really held:" : "What it really printed:";
-        const pre = document.createElement("pre");
-        pre.textContent = result.expected.text;
-        div.append(label, pre);
-        card.body.appendChild(div);
+        appendExpected(card.body, {
+          label: isState ? "What it really held:" : "What it really printed:",
+          text: result.expected.text,
+        });
       }
       // Met grant (lesson-kb-binding §4): a clean first-attempt correct
       // predict-output — before the final hint was revealed — evidences the
@@ -500,11 +495,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     const card = ui.addInteractiveCard({
       prompt: ask.prompt ?? "Fill in the blank so the program prints the target.",
       render: (body) => {
-        input = document.createElement("input");
-        input.type = "text";
-        input.className = "tutor-output-input tutor-output-line";
-        input.placeholder = "the missing piece…";
-        input.spellcheck = false;
+        input = createAnswerInput({ singleLine: true, placeholder: "the missing piece…" });
         input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !input.readOnly) doFill(); });
         body.appendChild(input);
         return null;
@@ -532,15 +523,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
       input.classList.toggle("ok", correct);
       input.classList.toggle("bad", !correct);
       if (!correct) {
-        const div = document.createElement("div");
-        div.className = "tutor-expected";
-        const label = document.createElement("span");
-        label.className = "hint";
-        label.textContent = "A fill that works:";
-        const pre = document.createElement("pre");
-        pre.textContent = ask.blank.target;
-        div.append(label, pre);
-        card.body.appendChild(div);
+        appendExpected(card.body, { label: "A fill that works:", text: ask.blank.target });
       }
       resolveAsk(card, {
         prompt: ask.prompt, ok: correct,

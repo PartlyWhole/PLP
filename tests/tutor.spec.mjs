@@ -13,10 +13,17 @@ async function setup(page) {
 }
 
 test.describe("PLP tutor (T-series)", () => {
-  test("pane starts hidden; header button toggles; visibility persists", async ({ page }) => {
+  test("Exercises starts hidden; the header button enters focus mode (stage up, transcript tucked away); visibility persists", async ({ page }) => {
     await setup(page);
-    await expect(page.locator("#tutor-pane")).not.toBeVisible();
+    await expect(page.locator(".tutor-stage")).not.toBeVisible();
+    await expect(page.locator("#layout")).not.toHaveClass(/focus/);
     await page.locator("#btn-tutor").click();
+    // Focus mode: the stage carries the menu beat; the transcript pane stays
+    // tucked behind the 📜 History toggle.
+    await expect(page.locator("#layout")).toHaveClass(/focus/);
+    await expect(page.locator(".tutor-stage")).toBeVisible();
+    await expect(page.locator("#tutor-pane")).not.toBeVisible();
+    await page.locator("[data-role=stage-history]").click();
     await expect(page.locator("#tutor-pane")).toBeVisible();
     // Idle state: welcome card + exercises-only menu (drill topics; guided
     // units are debug-only via plp.tutor.start).
@@ -25,9 +32,12 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator(".tutor-controls button")).toHaveCount(8); // all + 7 topics
     await page.reload();
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
-    await expect(page.locator("#tutor-pane")).toBeVisible(); // persisted
-    await page.locator("[data-role=tutor-collapse]").click();
-    await expect(page.locator("#tutor-pane")).not.toBeVisible();
+    await expect(page.locator("#layout")).toHaveClass(/focus/); // persisted (flags reset)
+    await expect(page.locator(".tutor-stage")).toBeVisible();
+    await expect(page.locator("#tutor-pane")).not.toBeVisible(); // history flag never persists
+    await page.locator("#btn-tutor").click(); // toggle off: leaves Exercises entirely
+    await expect(page.locator("#layout")).not.toHaveClass(/focus/);
+    await expect(page.locator(".tutor-stage")).not.toBeVisible();
   });
 
   test("predict-output: trace-grounded, position-aware; forgives trailing whitespace + container display spacing, never content", async ({ page }) => {
@@ -171,71 +181,84 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
-  test("popup: current beat pops up, close returns it to the feed, bubble click reopens with state intact", async ({ page }) => {
+  test("stage: beats take center stage in focus mode; Back-to-editor falls back to the classic dock; bubble click reopens with state intact", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => window.plp.tutor.start("u1-state-io"));
-    // First beat (loadCode note + "press Trace" action) pops automatically.
-    await expect(page.locator(".tutor-popup")).toBeVisible();
-    await expect(page.locator(".tutor-popup .tutor-action")).toHaveCount(1);
+    // First beat (loadCode note + "press Trace" action) lands on the stage.
+    await expect(page.locator("#layout")).toHaveClass(/focus/);
+    await expect(page.locator(".tutor-stage")).toBeVisible();
+    await expect(page.locator(".tutor-stage .tutor-action")).toHaveCount(1);
     await expect(page.locator(".tutor-bubble-stub")).toHaveCount(1);
-    // Docked, not floating: under the code pane, above the console, bounded
-    // by the code column's divider. Let the entrance animation settle first —
-    // its translate briefly shifts the measured rect.
-    await page.locator(".tutor-popup").evaluate((el) =>
+    // Focus geometry: the stage fills the code column (left of the editor,
+    // which recedes to the right column), above the console strip — still
+    // docked in the grid, never floating.
+    await page.locator(".tutor-stage").evaluate((el) =>
       Promise.all(el.getAnimations().map((a) => a.finished)));
     const geom = await page.evaluate(() => {
-      const pr = document.querySelector(".tutor-popup").getBoundingClientRect();
+      const sr = document.querySelector(".tutor-stage").getBoundingClientRect();
       const er = document.getElementById("editor-pane").getBoundingClientRect();
       const cr = document.getElementById("console-pane").getBoundingClientRect();
       return {
-        sameLeft: Math.abs(pr.left - er.left) < 2,
-        sameRight: Math.abs(pr.right - er.right) < 2,
-        belowEditor: pr.top >= er.bottom,
-        aboveConsole: pr.bottom <= cr.top,
+        leftOfEditor: sr.right <= er.left + 2,
+        aboveConsole: sr.bottom <= cr.top,
+        editorVisible: er.width > 100 && er.height > 100,
+        consoleSlim: cr.height < window.innerHeight * 0.3,
       };
     });
-    expect(geom).toEqual({ sameLeft: true, sameRight: true, belowEditor: true, aboveConsole: true });
-    // Non-modal: closing changes nothing about the lesson; the card returns.
-    await page.locator("[data-role=popup-close]").click();
-    await expect(page.locator(".tutor-popup")).toBeHidden();
-    await expect(page.locator(".tutor-feed .tutor-action")).toHaveCount(1);
-    await expect(page.locator(".tutor-bubble-stub")).toHaveCount(0);
-    expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("action");
-    // Clicking the bubble reopens the same live card.
-    await page.locator(".tutor-feed .tutor-action").click();
-    await expect(page.locator(".tutor-popup .tutor-action")).toHaveCount(1);
+    expect(geom).toEqual({ leftOfEditor: true, aboveConsole: true, editorVisible: true, consoleSlim: true });
 
-    // Reach the first ask; type into the popup's textarea, close, reopen —
-    // the reparented card keeps the typed prediction.
+    // Back to editor: classic layout, stage docked under the code pane —
+    // the old geometry — with the transcript pane back. Non-modal: nothing
+    // about the lesson changes.
+    await page.locator("[data-role=popup-close]").click();
+    await expect(page.locator("#layout")).not.toHaveClass(/focus/);
+    await expect(page.locator(".tutor-stage")).toBeVisible();
+    await expect(page.locator("#tutor-pane")).toBeVisible();
+    const classic = await page.evaluate(() => {
+      const sr = document.querySelector(".tutor-stage").getBoundingClientRect();
+      const er = document.getElementById("editor-pane").getBoundingClientRect();
+      const cr = document.getElementById("console-pane").getBoundingClientRect();
+      return {
+        sameLeft: Math.abs(sr.left - er.left) < 2,
+        sameRight: Math.abs(sr.right - er.right) < 2,
+        belowEditor: sr.top >= er.bottom,
+        aboveConsole: sr.bottom <= cr.top,
+      };
+    });
+    expect(classic).toEqual({ sameLeft: true, sameRight: true, belowEditor: true, aboveConsole: true });
+    expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("action");
+
+    // Reach the first ask; type into the stage's input, hop through history
+    // bubbles, and come back — the reparented card keeps the typed text.
     expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
     await page.evaluate(() => window.plp.tutor.continue());
     await page.evaluate(() => {
       for (let i = 0; i < 3; i++) document.querySelector("[data-role=step-next]").click();
     });
     await page.evaluate(() => window.plp.tutor.continue());
-    await expect(page.locator(".tutor-popup .tutor-output-input")).toBeVisible();
+    await expect(page.locator(".tutor-stage .tutor-output-input")).toBeVisible();
     // One-thing-at-a-time: the single-print ask renders a single-line input.
-    await expect(page.locator(".tutor-popup input.tutor-output-line")).toBeVisible();
-    await page.locator(".tutor-popup .tutor-output-input").fill("6");
-    await page.locator("[data-role=popup-close]").click();
-    await expect(page.locator(".tutor-feed .tutor-output-input")).toHaveValue("6");
-    // Click the card itself, not its inputs (input clicks never pop).
-    await page.locator(".tutor-feed .tutor-question").click({ position: { x: 8, y: 8 } });
-    await expect(page.locator(".tutor-popup .tutor-output-input")).toHaveValue("6");
-    // A past static bubble also reopens (rebuilt read-only in the popup).
+    await expect(page.locator(".tutor-stage input.tutor-output-line")).toBeVisible();
+    await page.locator(".tutor-stage .tutor-output-input").fill("6");
+    // A past static bubble reopens read-only on the stage; the live card
+    // returns to its feed bubble, typed value intact.
     await page.locator(".tutor-feed .tutor-say").first().click();
-    await expect(page.locator(".tutor-popup .tutor-say")).toHaveCount(1);
+    await expect(page.locator(".tutor-stage .tutor-say")).toHaveCount(1);
+    await expect(page.locator(".tutor-feed .tutor-output-input")).toHaveValue("6");
+    // Click the question card itself, not its inputs (input clicks never pop).
+    await page.locator(".tutor-feed .tutor-question").click({ position: { x: 8, y: 8 } });
+    await expect(page.locator(".tutor-stage .tutor-output-input")).toHaveValue("6");
 
     // Reviewing a bubble about an EARLIER program shows a context card with
     // that program (the editor has moved on; line talk would mislead), and
     // its "load this program" button restores it via the stash-safe path.
     await page.locator(".tutor-feed .tutor-action").first().click(); // completed "press Trace" step (program 1)
-    await expect(page.locator(".tutor-popup .tutor-context")).toContainText("x = 3");
-    await page.locator(".tutor-popup .tutor-context .tutor-tryit").click();
+    await expect(page.locator(".tutor-stage .tutor-context")).toContainText("x = 3");
+    await page.locator(".tutor-stage .tutor-context .tutor-tryit").click();
     expect(await page.evaluate(() => window.plp.editor.getValue())).toContain("x = 3");
     // Editor now matches that program again → reviewing shows no context card.
     await page.locator(".tutor-feed .tutor-action").first().click();
-    await expect(page.locator(".tutor-popup .tutor-context")).toHaveCount(0);
+    await expect(page.locator(".tutor-stage .tutor-context")).toHaveCount(0);
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 

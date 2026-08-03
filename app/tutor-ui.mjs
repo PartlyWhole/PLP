@@ -116,28 +116,42 @@ export function createTutorUI({ root, layout }) {
   exitBtn.addEventListener("click", () => onExit?.());
   collapseBtn.addEventListener("click", () => { closePopup(); layout.setTutorVisible(false); });
 
-  // ---- beat panel chrome -------------------------------------------------
-  // Docked in the layout grid under the CODE pane, above the console, in
-  // the code column (style.css `#layout > .tutor-popup`) — the question
-  // sits in the same eye-line as the program it asks about, and can never
-  // occlude a pane. ✕ collapses it; clicking any feed bubble reopens it.
+  // ---- the stage (promoted beat panel) -----------------------------------
+  // In FOCUS mode the stage fills the code column full-height — the question
+  // takes center stage while the editor recedes to the right column. Outside
+  // focus it falls back to the classic docked beat panel under the code pane
+  // (style.css `#layout > .tutor-popup`). Either way it never floats and
+  // never occludes. The head's "Back to editor" drops focus to the classic
+  // layout; 📜 toggles the transcript rail; clicking any feed bubble
+  // (re)opens the current beat.
   const popup = document.createElement("div");
-  popup.className = "tutor-popup";
+  popup.className = "tutor-popup tutor-stage";
   popup.hidden = true;
   popup.innerHTML = `
     <div class="tutor-popup-head" data-role="popup-head">
       <span class="tutor-popup-title" data-role="popup-title">Exercises</span>
+      <span class="tutor-stage-progress" data-role="stage-progress"></span>
       <span class="spacer"></span>
-      <button data-role="popup-close" type="button" title="Hide (click any card in Exercises to bring it back)">✕</button>
+      <button data-role="stage-history" type="button" title="Show or hide the transcript">📜 History</button>
+      <button data-role="popup-close" type="button" title="Back to the editor layout (Exercises stays open in the corner)">⇱ Back to editor</button>
     </div>
     <div class="tutor-popup-body" data-role="popup-body"></div>
     <div class="tutor-popup-foot" data-role="popup-foot"></div>`;
-  document.getElementById("layout").appendChild(popup);
+  const layoutEl = document.getElementById("layout");
+  layoutEl.appendChild(popup);
   const popupBody = popup.querySelector("[data-role=popup-body]");
   const popupFoot = popup.querySelector("[data-role=popup-foot]");
-  popup.querySelector("[data-role=popup-close]").addEventListener("click", () => closePopup());
+  popup.querySelector("[data-role=popup-close]").addEventListener("click", () => {
+    if (layout.isFocused?.()) layout.exitFocus({ pane: true }); // classic dock, transcript back
+    else closePopup();
+  });
+  popup.querySelector("[data-role=stage-history]").addEventListener("click", () => {
+    layout.setFocusFlags?.({ history: !layoutEl.classList.contains("focus-history") });
+  });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !popup.hidden) closePopup();
+    if (e.key !== "Escape" || popup.hidden) return;
+    if (layout.isFocused?.()) layout.exitFocus({ pane: true });
+    else closePopup();
   });
 
   let livePopped = null; // interactive/live handle currently reparented
@@ -182,7 +196,10 @@ export function createTutorUI({ root, layout }) {
       popupBody.appendChild(liveHandle.el);
       livePopped = liveHandle;
     }
-    if (!popupBody.childElementCount) { closePopup(); return; }
+    // In focus mode the stage IS the center surface: an empty beat keeps it
+    // up (the foot's Continue/menu controls remain actionable). Outside
+    // focus, an empty beat panel closes as before.
+    if (!popupBody.childElementCount && !layout.isFocused?.()) { closePopup(); return; }
     const wasHidden = popup.hidden;
     popup.hidden = false;
     popupBody.scrollTop = 0;
@@ -374,6 +391,12 @@ export function createTutorUI({ root, layout }) {
       },
       verdict(ok, text) {
         card.appendChild(verdictSpan(ok, text));
+        // One-shot success bloom (CSS keyframe; removed on animation end so
+        // a reopened card can bloom again if re-answered).
+        if (ok) {
+          card.classList.add("t-bloom");
+          card.addEventListener("animationend", () => card.classList.remove("t-bloom"), { once: true });
+        }
       },
       freeze() {
         card.classList.add("frozen");

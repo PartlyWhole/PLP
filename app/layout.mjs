@@ -18,8 +18,13 @@ export function initLayout({ onResize }) {
   if (saved.rowConsole) layout.style.setProperty("--row-console", saved.rowConsole);
   if (saved.colTutor) layout.style.setProperty("--col-tutor", saved.colTutor);
   // The tutor column starts hidden (index.html ships class="tutor-hidden");
-  // an explicit saved visibility wins.
-  if (saved.tutorVisible) layout.classList.remove("tutor-hidden");
+  // an explicit saved visibility wins. Exercises-visible now means FOCUS
+  // mode (the stage layout); the focus sub-flags (reveal/memory/history)
+  // are never persisted — the runtime re-derives them per beat.
+  if (saved.tutorVisible) {
+    layout.classList.remove("tutor-hidden");
+    layout.classList.add("focus");
+  }
 
   function persist() {
     try {
@@ -58,7 +63,9 @@ export function initLayout({ onResize }) {
   drag(gutterH, (ev) => {
     const rect = layout.getBoundingClientRect();
     const px = Math.min(Math.max(rect.bottom - ev.clientY, 60), rect.height - 106);
-    layout.style.setProperty("--row-console", `${px}px`);
+    // Focus mode sizes the console with its own variable (the reveal grows
+    // it); dragging adjusts whichever mode is live.
+    layout.style.setProperty(isFocused() ? "--row-console-f" : "--row-console", `${px}px`);
   });
   drag(gutterT, (ev) => {
     const rect = layout.getBoundingClientRect();
@@ -66,9 +73,43 @@ export function initLayout({ onResize }) {
     layout.style.setProperty("--col-tutor", `${px}px`);
   });
 
-  // Tutor column visibility (the pane itself is owned by tutor-ui.mjs).
+  // ---- focus mode (the Exercises "stage" layout) --------------------------
+  // focus       — stage fills the code column; editor recedes to the right
+  //               column; memory hides; console stays as a slim strip.
+  // focus-reveal — the console strip grows: the "now watch it run" cue.
+  // focus-memory — the beat needs the memory pane (predict-state, scrubs).
+  // focus-history — the transcript pane (feed) shows alongside the stage.
+  // None of these persist; plp.layout keeps only tutorVisible.
+  const FOCUS_FLAGS = ["focus-reveal", "focus-memory", "focus-history"];
+  function isFocused() { return layout.classList.contains("focus"); }
+  function enterFocus() {
+    layout.classList.add("focus");
+    layout.classList.remove("tutor-hidden");
+    layout.style.removeProperty("--row-console-f");
+    onResize?.();
+  }
+  // exitFocus({pane:true}) falls back to the CLASSIC layout with the
+  // transcript pane visible (non-modal escape hatch: "Back to editor");
+  // plain exitFocus() leaves Exercises entirely (pane hidden too).
+  function exitFocus({ pane = false } = {}) {
+    layout.classList.remove("focus", ...FOCUS_FLAGS);
+    layout.classList.toggle("tutor-hidden", !pane);
+    layout.style.removeProperty("--row-console-f");
+    persist();
+    onResize?.();
+  }
+  function setFocusFlags(flags = {}) {
+    if (!isFocused()) return;
+    for (const [key, cls] of [["reveal", "focus-reveal"], ["memory", "focus-memory"], ["history", "focus-history"]]) {
+      if (flags[key] !== undefined) layout.classList.toggle(cls, Boolean(flags[key]));
+    }
+    onResize?.();
+  }
+
+  // Tutor visibility (the header 🎓 toggle and the collab hook): showing
+  // Exercises IS entering focus mode; hiding leaves it entirely.
   function setTutorVisible(visible) {
-    layout.classList.toggle("tutor-hidden", !visible);
+    if (visible) enterFocus(); else exitFocus();
     persist();
     onResize?.();
   }
@@ -98,6 +139,10 @@ export function initLayout({ onResize }) {
     toggleMax,
     setTutorVisible,
     isTutorVisible: () => !layout.classList.contains("tutor-hidden"),
+    enterFocus,
+    exitFocus,
+    setFocusFlags,
+    isFocused,
     // For grid children that appear/disappear outside this module's own
     // controls (the exercise beat panel): let them trigger pane refits.
     notifyResize: () => onResize?.(),

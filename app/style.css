@@ -4,6 +4,40 @@
   --col-left: 50%;
   --row-console: 220px;
   --col-tutor: 340px;
+
+  /* ---- tutor design tokens (--t-*): tutor & question surfaces ONLY.
+     The learner-facing surfaces use these; app chrome, memory pane,
+     console, and collab keep the legacy variables above. Semantic rule:
+     a miss is amber INFORMATION (--t-miss), never error-red. ---- */
+  --t-surface-0: #14161a;            /* page */
+  --t-surface-1: #1b1f27;            /* cards */
+  --t-surface-2: #232936;            /* inputs, chips, learner bubbles */
+  --t-surface-3: #2b3345;            /* hover / active raise */
+  --t-code-bg: #101216;              /* code fences & answer inputs */
+  --t-border: #2c313c;
+  --t-border-strong: #3d4557;
+  --t-ink: #dde2ec;
+  --t-ink-dim: #98a1b3;
+  --t-ink-faint: #6b7385;
+  --t-accent: #6ba1f8;
+  --t-accent-ink: #cfe0ff;
+  --t-accent-soft: rgba(107, 161, 248, 0.12);
+  --t-accent-line: rgba(107, 161, 248, 0.45);
+  --t-success: #57c785;
+  --t-success-soft: rgba(87, 199, 133, 0.12);
+  --t-miss: #e3b25c;
+  --t-miss-soft: rgba(227, 178, 92, 0.10);
+  /* spacing (4px base) */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px;
+  /* radius */
+  --r-s: 6px; --r-m: 10px; --r-l: 14px; --r-pill: 999px;
+  /* type (learner minimum 15px wherever prose is read) */
+  --fs-meta: 12.5px; --fs-code: 13.5px; --fs-body: 15px; --fs-read: 16px; --fs-title: 18px;
+  --lh-body: 1.6;
+  /* motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.25, 1);
+  --ease-in-out: cubic-bezier(0.45, 0, 0.25, 1);
+  --dur-1: 120ms; --dur-2: 200ms; --dur-3: 320ms;
 }
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #2c313c #14161a; }
 *::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -46,6 +80,42 @@ header h1 { font-size: 15px; margin: 0 8px 0 0; }
 #console-pane { grid-area: 4 / 3 / 5 / 6; }
 #layout.tutor-hidden { grid-template-columns: 0 0 minmax(180px, var(--col-left)) 6px minmax(180px, 1fr); }
 #layout.tutor-hidden #tutor-pane, #layout.tutor-hidden #gutter-t { display: none; }
+/* Exercises fully hidden hides the stage too (its content — the menu beat —
+   stays mounted, so toggling 🎓 back brings it straight up). */
+#layout.tutor-hidden > .tutor-popup { display: none; }
+
+/* ---- focus mode: the Exercises stage takes center stage -----------------
+   The stage (the promoted beat panel) fills the code column full-height;
+   the editor recedes to the right column (code visible-but-secondary);
+   memory hides unless the beat needs it (focus-memory); the console stays
+   mounted as a slim strip — never display:none, a run can start anytime —
+   and grows for the reveal (focus-reveal). The transcript pane becomes an
+   optional history rail (focus-history). */
+#layout.focus {
+  grid-template-columns: 0 0 minmax(180px, var(--col-left)) 6px minmax(180px, 1fr);
+  grid-template-rows: minmax(100px, 1fr) auto 6px minmax(60px, var(--row-console-f, 110px));
+}
+#layout.focus #tutor-pane, #layout.focus #gutter-t { display: none; }
+#layout.focus.focus-history {
+  grid-template-columns: minmax(240px, var(--col-tutor)) 6px minmax(180px, var(--col-left)) 6px minmax(180px, 1fr);
+}
+#layout.focus.focus-history #tutor-pane, #layout.focus.focus-history #gutter-t { display: flex; }
+#layout.focus.focus-history #gutter-t { display: block; }
+#layout.focus > .tutor-popup { grid-area: 1 / 3 / 3 / 4; max-height: none; margin: 0; }
+#layout.focus #editor-pane { grid-area: 1 / 5 / 3 / 6; }
+#layout.focus #memory-pane { display: none; }
+#layout.focus.focus-memory #editor-pane { grid-area: 1 / 5 / 2 / 6; }
+#layout.focus.focus-memory #memory-pane { display: flex; grid-area: 2 / 5 / 3 / 6; }
+#layout.focus.focus-memory {
+  grid-template-rows: minmax(100px, 0.55fr) minmax(140px, 0.45fr) 6px minmax(60px, var(--row-console-f, 110px));
+}
+/* The reveal: the console growing IS the "now watch it run" cue. */
+#layout.focus.focus-reveal {
+  grid-template-rows: minmax(100px, 1fr) auto 6px minmax(60px, var(--row-console-f, 38%));
+}
+#layout.focus.focus-memory.focus-reveal {
+  grid-template-rows: minmax(100px, 0.55fr) minmax(140px, 0.45fr) 6px minmax(60px, var(--row-console-f, 34%));
+}
 
 .gutter { background: var(--line); }
 .gutter.v { cursor: col-resize; }
@@ -407,84 +477,99 @@ a.mm-ref:hover { border-color: var(--accent); }
 .director-strip .dot.now { background: var(--accent); }
 .director-strip button { font-size: 11px; padding: 1px 8px; }
 
-/* tutor pane (transcript feed) */
-.tutor-body { display: flex; flex-direction: column; background: var(--bg); }
+/* tutor pane (transcript feed) — learner surfaces speak --t-* tokens */
+.tutor-body { display: flex; flex-direction: column; background: var(--t-surface-0); }
 .tutor-feed {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  display: flex; flex-direction: column; gap: 10px; padding: 10px;
+  display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3);
 }
-.tutor-controls { flex: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); }
+.tutor-controls { flex: none; display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--t-border); }
 .tutor-controls:empty { display: none; }
 .tutor-card {
-  border: 1px solid var(--line); border-radius: 12px; padding: 10px 13px;
-  font-size: 15px; line-height: 1.6; background: var(--panel); min-width: 0;
+  border: 1px solid var(--t-border); border-radius: var(--r-l); padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-body); line-height: var(--lh-body); background: var(--t-surface-1);
+  color: var(--t-ink); min-width: 0;
 }
 .tutor-card p { margin: 0 0 6px; }
 .tutor-card p:last-child { margin-bottom: 0; }
 .tutor-card code {
-  background: #101216; border-radius: 4px; padding: 0 5px;
-  font: 13.5px ui-monospace, monospace;
+  background: var(--t-code-bg); border-radius: 4px; padding: 0 5px;
+  font: var(--fs-code) ui-monospace, monospace;
 }
 .tutor-card pre {
   margin: 6px 0; padding: 7px 9px; overflow-x: auto; position: relative;
-  background: #101216; border: 1px solid var(--line); border-radius: 6px;
-  font: 13.5px/1.6 ui-monospace, monospace;
+  background: var(--t-code-bg); border: 1px solid var(--t-border); border-radius: var(--r-s);
+  font: var(--fs-code)/var(--lh-body) ui-monospace, monospace;
 }
 .tutor-card pre code { background: none; padding: 0; }
-.tutor-say { background: rgba(79, 143, 247, 0.07); border-color: #2e4370; }
-.tutor-learner { align-self: flex-end; max-width: 88%; background: #21252e; }
+.tutor-say { background: var(--t-accent-soft); border-color: var(--t-accent-line); }
+.tutor-learner { align-self: flex-end; max-width: 88%; background: var(--t-surface-2); }
 .tutor-learner .tutor-verdict { margin-left: 6px; }
-.tutor-action { border-style: dashed; border-color: #4a5262; }
+.tutor-action { border-style: dashed; border-color: var(--t-border-strong); }
 .tutor-action .tutor-action-goal { font-weight: 600; }
 .tutor-action.done { border-style: solid; opacity: 0.75; }
-.tutor-action.done .tutor-action-goal::before { content: "✓ "; color: var(--good); }
-.tutor-pocket { border-color: var(--warn); background: rgba(217, 164, 65, 0.07); }
+.tutor-action.done .tutor-action-goal::before { content: "✓ "; color: var(--t-success); }
+.tutor-pocket { border-color: var(--t-miss); background: var(--t-miss-soft); }
 .tutor-pocket-title {
   font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--warn); margin-bottom: 4px;
+  text-transform: uppercase; color: var(--t-miss); margin-bottom: 4px;
 }
 .tutor-question .tutor-q-body { margin-top: 4px; }
-.tutor-question .tutor-q-actions { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.tutor-question .tutor-q-actions { display: flex; gap: var(--sp-2); align-items: center; margin-top: var(--sp-2); }
 .tutor-question.frozen { opacity: 0.92; }
 .tutor-question.frozen .tutor-q-actions { display: none; }
 .tutor-verdict { font-size: 14px; font-weight: 600; }
-.tutor-verdict.good { color: var(--good); }
-.tutor-verdict.bad { color: var(--bad); }
-.tutor-hint-card { border-color: var(--warn); }
+.tutor-verdict.good { color: var(--t-success); }
+/* A miss is information, not an alarm: amber, never red (growth framing). */
+.tutor-verdict.bad { color: var(--t-miss); }
+.tutor-hint-card { border-color: var(--t-miss); }
 .tutor-tryit {
   position: absolute; top: 4px; right: 4px; font-size: 11px; padding: 1px 7px;
 }
 .tutor-output-input {
   width: 100%; min-height: 64px; resize: vertical;
-  background: #0d0f12; color: #d6dae3; border: 1px solid var(--line);
-  border-radius: 8px; padding: 8px 10px; font: 15px/1.5 ui-monospace, monospace;
+  background: var(--t-code-bg); color: var(--t-ink); border: 1px solid var(--t-border);
+  border-radius: var(--r-m); padding: var(--sp-2) var(--sp-3);
+  font: var(--fs-body)/1.5 ui-monospace, monospace;
+  transition: border-color var(--dur-1) var(--ease-out), background-color var(--dur-1) var(--ease-out);
 }
 input.tutor-output-line { min-height: 38px; height: 38px; resize: none; }
-.tutor-output-input.ok { border-color: var(--good); background: #14241a; }
-.tutor-output-input.bad { border-color: var(--bad); background: #2a1615; }
-.tutor-card .tutor-expected { margin-top: 6px; }
-.tutor-card .tutor-expected pre { border-color: var(--good); }
+.tutor-output-input.ok { border-color: var(--t-success); background: var(--t-success-soft); }
+.tutor-output-input.bad { border-color: var(--t-miss); background: var(--t-miss-soft); }
+.tutor-card .tutor-expected { margin-top: 6px; animation: t-reveal-in var(--dur-2) var(--ease-out); }
+.tutor-card .tutor-expected pre { border-color: var(--t-success); }
 .tutor-feed .quiz-code input, .tutor-feed .mem-table input {
-  background: #101216; border: 1px solid var(--line); border-radius: 4px;
-  color: var(--fg); font: 12px ui-monospace, monospace; padding: 2px 6px; width: 130px;
+  background: var(--t-code-bg); border: 1px solid var(--t-border); border-radius: 4px;
+  color: var(--t-ink); font: 12px ui-monospace, monospace; padding: 2px 6px; width: 130px;
 }
-.tutor-feed input.ok { border-color: var(--good); background: #14241a; }
-.tutor-feed input.bad { border-color: var(--bad); background: #2a1615; }
+.tutor-feed input.ok { border-color: var(--t-success); background: var(--t-success-soft); }
+.tutor-feed input.bad { border-color: var(--t-miss); background: var(--t-miss-soft); }
+/* Feedback moments: a one-shot success bloom on the answered card (no
+   confetti — a calm pulse), and the reveal easing in rather than popping. */
+.tutor-card.t-bloom { animation: t-correct var(--dur-3) var(--ease-out) 1; }
+@keyframes t-correct {
+  from { box-shadow: 0 0 0 0 rgba(87, 199, 133, 0.35); }
+  to { box-shadow: 0 0 0 12px rgba(87, 199, 133, 0); }
+}
+@keyframes t-reveal-in {
+  from { opacity: 0; translate: 0 4px; }
+  to { opacity: 1; translate: 0 0; }
+}
 
 /* tutor popup (the roomy reading surface for the current beat).
    Non-modal by design: no backdrop, the app stays fully usable, and the
    header is a drag handle so it can never permanently occlude a pane. */
 .tutor-bubble { display: contents; }
-.tutor-feed .tutor-card.openable { cursor: pointer; }
-.tutor-feed .tutor-card.openable:hover { border-color: var(--accent); }
+.tutor-feed .tutor-card.openable { cursor: pointer; transition: border-color var(--dur-1) var(--ease-out); }
+.tutor-feed .tutor-card.openable:hover { border-color: var(--t-accent); }
 .tutor-bubble-stub {
   display: block; width: 100%; text-align: left;
-  border: 1px dashed var(--accent); border-radius: 12px;
-  background: rgba(79, 143, 247, 0.06); color: var(--dim);
-  padding: 10px 13px; font-size: 13.5px;
+  border: 1px dashed var(--t-accent); border-radius: var(--r-l);
+  background: var(--t-accent-soft); color: var(--t-ink-dim);
+  padding: var(--sp-3) var(--sp-4); font-size: var(--fs-code);
 }
-.tutor-bubble-stub:hover { color: var(--fg); }
-.tutor-context { border-style: dashed; border-color: var(--warn); background: rgba(217, 164, 65, 0.05); }
+.tutor-bubble-stub:hover { color: var(--t-ink); }
+.tutor-context { border-style: dashed; border-color: var(--t-miss); background: var(--t-miss-soft); }
 .tutor-context pre { max-height: 180px; overflow-y: auto; }
 .tutor-popup[hidden] { display: none; }
 /* Docked beat panel: lives in the layout grid under the code pane (see
@@ -493,33 +578,38 @@ input.tutor-output-line { min-height: 38px; height: 38px; resize: none; }
   min-height: 0; max-height: 42vh;
   display: flex; flex-direction: column;
   margin-top: 6px;
-  background: var(--panel); border: 1px solid var(--accent); border-radius: 10px;
-  animation: tutor-popup-in 160ms cubic-bezier(.2, .8, .25, 1);
+  background: var(--t-surface-1); border: 1px solid var(--t-accent); border-radius: var(--r-m);
+  animation: tutor-popup-in var(--dur-2) var(--ease-out);
 }
 @keyframes tutor-popup-in {
   from { opacity: 0; translate: 0 8px; }
   to { opacity: 1; translate: 0 0; }
 }
 .tutor-popup-head {
-  display: flex; gap: 6px; align-items: center; flex: none;
-  padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--line);
+  display: flex; gap: var(--sp-2); align-items: center; flex: none;
+  padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--t-border);
   user-select: none;
 }
 .tutor-popup-title {
   font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--dim);
+  text-transform: uppercase; color: var(--t-ink-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .tutor-popup-body {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  display: flex; flex-direction: column; gap: 12px; padding: 14px;
-  font-size: 16px;
+  display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4);
+  font-size: var(--fs-read);
 }
 .tutor-popup-body .tutor-card { font-size: inherit; }
-.tutor-popup-foot { flex: none; display: flex; gap: 6px; justify-content: flex-end; padding: 8px 12px; border-top: 1px solid var(--line); }
+.tutor-popup-foot { flex: none; display: flex; gap: var(--sp-2); justify-content: flex-end; padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--t-border); }
 .tutor-popup-foot:empty { display: none; }
+/* Consolidated reduced-motion for the learner surfaces. */
 @media (prefers-reduced-motion: reduce) {
-  .tutor-popup { animation: none; }
+  .tutor-popup,
+  .tutor-card.t-bloom,
+  .tutor-card .tutor-expected { animation: none; }
+  .tutor-output-input,
+  .tutor-feed .tutor-card.openable { transition: none; }
 }
 
 /* quiz pilot */

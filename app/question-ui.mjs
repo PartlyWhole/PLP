@@ -44,10 +44,44 @@ function renderMemoryTable(container, snapshot, withBlanks) {
   container.appendChild(table);
 }
 
-export function renderQuestionBody(body, q) {
-  const prompt = document.createElement("p");
-  prompt.textContent = q.prompt;
-  body.appendChild(prompt);
+// The one answer-input builder for free-text predictions (single-line for
+// one-thing-at-a-time asks, textarea for free prediction). Shared by the
+// quiz panel renderer below and the tutor's predict/fill paths.
+export function createAnswerInput({ singleLine = false, placeholder = "" } = {}) {
+  let el;
+  if (singleLine) {
+    el = document.createElement("input");
+    el.type = "text";
+    el.className = "tutor-output-input tutor-output-line";
+  } else {
+    el = document.createElement("textarea");
+    el.className = "tutor-output-input";
+  }
+  el.placeholder = placeholder;
+  el.spellcheck = false;
+  return el;
+}
+
+// The one "what it really printed" reveal block. Idempotent per container.
+export function appendExpected(container, { label = "actual output:", text } = {}) {
+  if (text == null || container.querySelector(".tutor-expected")) return;
+  const div = document.createElement("div");
+  div.className = "tutor-expected";
+  const span = document.createElement("span");
+  span.className = "hint";
+  span.textContent = label;
+  const pre = document.createElement("pre");
+  pre.textContent = text;
+  div.append(span, pre);
+  container.appendChild(div);
+}
+
+export function renderQuestionBody(body, q, { omitPrompt = false } = {}) {
+  if (!omitPrompt) {
+    const prompt = document.createElement("p");
+    prompt.textContent = q.prompt;
+    body.appendChild(prompt);
+  }
 
   const collectBlankInputs = () => {
     const answers = {};
@@ -108,10 +142,7 @@ export function renderQuestionBody(body, q) {
   }
 
   if (q.kind === "predict-output") {
-    const ta = document.createElement("textarea");
-    ta.className = "tutor-output-input";
-    ta.placeholder = "type the program's output…";
-    ta.spellcheck = false;
+    const ta = createAnswerInput({ placeholder: "type the program's output…" });
     body.appendChild(ta);
     return {
       collect: () => ({ text: ta.value }),
@@ -121,17 +152,8 @@ export function renderQuestionBody(body, q) {
       applyResult(result, { reveal = true } = {}) {
         ta.classList.toggle("ok", result.correct === true);
         ta.classList.toggle("bad", result.correct === false);
-        if (reveal && !result.correct && result.expected?.text != null
-          && !body.querySelector(".tutor-expected")) {
-          const div = document.createElement("div");
-          div.className = "tutor-expected";
-          const label = document.createElement("span");
-          label.className = "hint";
-          label.textContent = "actual output:";
-          const pre = document.createElement("pre");
-          pre.textContent = result.expected.text;
-          div.append(label, pre);
-          body.appendChild(div);
+        if (reveal && !result.correct) {
+          appendExpected(body, { text: result.expected?.text });
         }
       },
       line: q.wholeProgram ? null : q.line,
