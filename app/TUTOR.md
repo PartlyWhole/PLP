@@ -43,11 +43,14 @@ the session notes / commit message):
   points/gamification chrome.
 - **Buttons say what they do**: "Check my answer ▶", "Skip this one",
   "Give me a hint" — never terse adult UI verbs. Big targets.
-- **Teach first, then no leaks**: a concept the student has never seen is
-  introduced by its rule card ("🌱 New idea!") in the same beat, right
-  above their first question on it — an intro instructs before it asks.
-  From then on prompts never name the rule; it returns only in the
-  after-miss explain card.
+- **Teach first (core), discover first (edge), then no leaks**: a CORE
+  concept the student has never seen is introduced by its rule card
+  ("🌱 New idea!") in the same beat, right above their first question —
+  fundamentals instruct before they ask. EDGE concepts (the corner-case
+  traps) stay discovery-first: the surprise miss creates the felt need
+  the card then answers. A concept may override via
+  `introStyle: "teach-first" | "discover-first"`. Once seen, prompts
+  never name the rule; it returns only in the after-miss explain card.
 
 ## Two reading surfaces, one history
 

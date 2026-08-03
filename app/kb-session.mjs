@@ -98,12 +98,16 @@ export function buildKBSession(topic, { count = 8, seed = 1, stats = {} } = {}) 
     const concept = kb.concepts.get(ex.focus);
     const n = `(${i + 1}/${count})`;
 
-    // FIRST ENCOUNTER teaches first: an exercise introduces exactly one new
-    // concept, so before a student's first-ever question on it, its rule
-    // card is presented as instruction (in the same beat as the question,
-    // right above it). Once the concept has been seen, later questions stay
-    // unspoiled — the rule returns only in the after-miss explain.
-    if (!stats[ex.focus]?.seen && !taught.has(ex.focus)) {
+    // FIRST ENCOUNTER of a CORE concept teaches first: an exercise
+    // introduces exactly one new concept, and a fundamental deserves
+    // instruction before its first question (the card lands in the same
+    // beat, right above the ask). EDGE concepts stay discovery-first: they
+    // are the corner-case traps whose pedagogy IS the surprise — the miss
+    // creates the felt need the rule card then answers (design §10.3).
+    // A concept may override with introStyle: "teach-first"/"discover-first".
+    // Once seen, every concept stays unspoiled either way.
+    const introStyle = concept.introStyle ?? (concept.kind === "core" ? "teach-first" : "discover-first");
+    if (introStyle === "teach-first" && !stats[ex.focus]?.seen && !taught.has(ex.focus)) {
       taught.add(ex.focus);
       steps.push({ say: `🌱 **New idea!**\n\n${concept.card}\n\nNow you try one.` });
     }

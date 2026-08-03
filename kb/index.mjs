@@ -47,6 +47,9 @@ export function loadKB() {
       if (!c.parents.length) throw new Error(`kb: non-structural ${c.tag} has no parents`);
       if (!c.statement || !c.wrongAnswer || !c.card) throw new Error(`kb: ${c.tag} missing statement/wrongAnswer/card`);
     }
+    if (c.introStyle !== undefined && !["teach-first", "discover-first"].includes(c.introStyle)) {
+      throw new Error(`kb: ${c.tag} has invalid introStyle ${JSON.stringify(c.introStyle)}`);
+    }
     concepts.set(c.tag, c);
     bySlug.add(c.slug);
   }

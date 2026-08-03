@@ -244,6 +244,12 @@ uncommitted, so tags are not yet permanent; K-2 returns early.
   asks; the §2.8 met-rule is unaffected (the card teaches the rule, never
   the specific program's answer, and the prediction is still the
   student's own).
+- Teach-first is KIND-AWARE (follow-up refinement): core → teach-first
+  (fundamentals instruct before they ask); edge → discover-first (the
+  corner-case traps' pedagogy IS the surprise — the miss creates the felt
+  need the card answers, §10.3's alias-trap argument). Optional
+  per-concept override `introStyle: "teach-first" | "discover-first"`,
+  validated by loadKB; no concept currently overrides.
 
 ## Pending doc rows — MERGED (2026-07-30)
 

@@ -469,12 +469,17 @@ test.describe("PLP tutor (T-series)", () => {
     await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
 
     // Compiled-script level (pure): fresh stats → one teach card per distinct
-    // concept, each BEFORE that concept's first ask; primed stats → none.
+    // CORE concept (edge concepts stay discovery-first — the trap's surprise
+    // is the pedagogy), each BEFORE that concept's first ask; primed stats →
+    // none at all.
     const r = await page.evaluate(async () => {
       const { buildKBSession } = await import("./app/kb-session.mjs");
+      const { loadKB } = await import("./kb/index.mjs");
+      const kinds = loadKB().concepts;
       const fresh = buildKBSession("numbers", { seed: 7, count: 5, stats: {} });
       const asks = fresh.steps.filter((s) => s.ask);
       const focuses = [...new Set(asks.map((s) => s.ask.concept))];
+      const coreFocuses = focuses.filter((t) => kinds.get(t).kind === "core");
       const teach = fresh.steps.filter((s) => s.say?.includes("New idea!"));
       const firstTeachIdx = fresh.steps.findIndex((s) => s.say?.includes("New idea!"));
       const firstAskIdx = fresh.steps.findIndex((s) => s.ask);
@@ -483,13 +488,14 @@ test.describe("PLP tutor (T-series)", () => {
         stats: Object.fromEntries(focuses.map((t) => [t, { seen: 2, missed: 0 }])),
       });
       return {
-        distinctConcepts: focuses.length,
+        coreConcepts: coreFocuses.length,
         teachCount: teach.length,
         teachBeforeAsk: firstTeachIdx !== -1 && firstTeachIdx < firstAskIdx,
         primedTeachCount: primed.steps.filter((s) => s.say?.includes("New idea!")).length,
       };
     });
-    expect(r.teachCount).toBe(r.distinctConcepts); // one lesson per new concept, no repeats
+    expect(r.coreConcepts).toBeGreaterThan(0); // the fixture round must exercise the rule
+    expect(r.teachCount).toBe(r.coreConcepts); // one lesson per new CORE concept, no repeats
     expect(r.teachBeforeAsk).toBe(true);
     expect(r.primedTeachCount).toBe(0); // once seen, questions stay unspoiled
 
