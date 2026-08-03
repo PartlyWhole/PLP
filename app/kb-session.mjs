@@ -65,16 +65,28 @@ function weightOf(stats, ex) {
 }
 
 // Compile a practice round into an ordinary lesson script. Deterministic
-// under (topic, seed, count, stats) — a persisted session rebuilds exactly.
-export function buildKBSession(topic, { count = 8, seed = 1, stats = {} } = {}) {
-  const pool = poolFor(topic);
+// under (topic, seed, count, stats, focus) — a persisted session rebuilds
+// exactly. `focus` (a concept tag) narrows the pool to that concept's own
+// exercises — the concept map's "Practice this ▶" — with a shorter default
+// round; selection, no-repeat, and teach-first run unchanged on the
+// narrowed pool.
+export function buildKBSession(topic, { count, seed = 1, stats = {}, focus } = {}) {
+  let pool = poolFor(topic);
+  if (focus) {
+    const focused = pool.filter((ex) => ex.focus === focus);
+    if (focused.length) pool = focused;
+  }
+  count ??= focus ? 4 : 8;
   if (!pool.length) return null;
   const rng = mulberry32(seed >>> 0);
   const topicTitle = topic === "all" ? "everything" : (TITLE_BY_TOPIC.get(topic) ?? topic);
+  const focusLabel = focus ? (kb.concepts.get(focus)?.slug.replaceAll("-", " ") ?? focus) : null;
 
   const steps = [{
-    say: `**${topicTitle} — let's go!** ${count} tiny programs, one question `
-      + "each. Read the code, type exactly what it prints, and press Enter "
+    say: (focus
+      ? `**${focusLabel}** — ${count} quick questions on this one idea. `
+      : `**${topicTitle} — let's go!** ${count} tiny programs, one question each. `)
+      + "Read the code, type exactly what it prints, and press Enter "
       + "to see the real answer. Every character counts — spaces too. "
       + "If one tricks you, you'll see why, and it will come back later "
       + "so you can beat it.",
@@ -166,7 +178,47 @@ export function buildKBSession(topic, { count = 8, seed = 1, stats = {} } = {}) 
       + "for brand-new questions. The ones that tricked you will show up "
       + "again, so you can beat them.",
   });
-  return { id: `drill-${topic}-${seed >>> 0}`, unit: 0, title: `Practice · ${topicTitle}`, steps };
+  return {
+    id: focus ? `drill-${topic}-${focus}-${seed >>> 0}` : `drill-${topic}-${seed >>> 0}`,
+    unit: 0,
+    title: focus ? `Practice · ${focusLabel}` : `Practice · ${topicTitle}`,
+    steps,
+  };
+}
+
+// ---- progress helpers ------------------------------------------------------
+
+// tag → topicId, derived exactly like docgen's conceptTopic: a concept's
+// topic is the topic of its first exercise (every non-structural loaded
+// concept has ≥1 exercise; structural roots are excluded — they have no
+// learner meaning).
+let topicByTag = null;
+export function conceptTopics() {
+  if (topicByTag) return topicByTag;
+  topicByTag = new Map();
+  for (const ex of kb.exercises) {
+    if (!topicByTag.has(ex.focus)) topicByTag.set(ex.focus, ex.topic);
+  }
+  return topicByTag;
+}
+
+// Per-topic mastery: met = tags the student has met (iterable). Returns
+// kbTopics order: [{ id, title, met, total, ready }] where ready counts
+// frontier concepts (unlocked, unmet) in that topic.
+export function topicProgress(met) {
+  const metSet = new Set(met);
+  const topics = conceptTopics();
+  const frontier = kb.frontier(metSet);
+  const rows = kbTopics.map((t) => ({ id: t.id, title: t.title, met: 0, total: 0, ready: 0 }));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  for (const [tag, topicId] of topics) {
+    const row = byId.get(topicId);
+    if (!row) continue;
+    row.total += 1;
+    if (metSet.has(tag)) row.met += 1;
+    if (frontier.has(tag)) row.ready += 1;
+  }
+  return rows;
 }
 
 // ---- lesson↔KB binding helpers (design/lesson-kb-binding.md) --------------

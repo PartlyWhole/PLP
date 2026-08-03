@@ -250,6 +250,24 @@ uncommitted, so tags are not yet permanent; K-2 returns early.
   need the card answers, §10.3's alias-trap argument). Optional
   per-concept override `introStyle: "teach-first" | "discover-first"`,
   validated by loadKB; no concept currently overrides.
+- UI revamp (owner-approved plan, executed in 9 phases): focus mode — the
+  beat panel promoted to a full-height stage in the code column, editor
+  receded right, console a slim always-live strip that GROWS as the reveal
+  cue (explain beats keep it; the next question resets), memory pane
+  per-beat (`focus-memory`), transcript behind 📜 History, ⇱ Back to
+  editor → classic dock (non-modal preserved), flags never persisted;
+  tutor-scoped design tokens (`--t-*`) with amber-miss/growth framing and
+  a one-shot success bloom; per-topic mastery meters + welcome mastery
+  line (`topicProgress`); round summaries (`app/progress.mjs`, pure,
+  reload-restoring) with a frontier-thickest "Keep going" suggestion; the
+  learner concept map (`app/concept-map.mjs`: 7 lanes, longest-path
+  layering + barycenter, SVG edge underlay per the mm-binding-lines
+  precedent, in-lane edges only with cross-topic prerequisites as detail
+  jump links) and targeted practice (`buildKBSession` `focus` option:
+  one concept's own exercises, 4 questions,
+  `drill-{topic}-{tag}-{seed}`). T-series DOM contracts evolved with the
+  UI (stage geometry, 9/10-button menu); `window.plp` and all K-series
+  contracts unchanged.
 
 ## Pending doc rows — MERGED (2026-07-30)
 

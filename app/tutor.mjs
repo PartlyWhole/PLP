@@ -26,7 +26,9 @@
 
 import { generateQuestion, questionGenerators } from "./questions.mjs";
 import { renderQuestionBody, createAnswerInput, appendExpected } from "./question-ui.mjs";
-import { buildKBSession, kbTopics, migrateStats, spliceBlank, lintLessonConcepts, frontierTags, drillTopicFor } from "./kb-session.mjs";
+import { buildKBSession, kbTopics, migrateStats, spliceBlank, lintLessonConcepts, frontierTags, drillTopicFor, topicProgress, conceptTopics } from "./kb-session.mjs";
+import { summarizeRound } from "./progress.mjs";
+import { mapModel, renderConceptMap } from "./concept-map.mjs";
 import { events } from "./events.mjs";
 
 const STORE_KEY = "plp.tutor.v1";
@@ -139,11 +141,14 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
   function loadMetStore() {
     try { return JSON.parse(localStorage.getItem(KB_MET_KEY)) ?? {}; } catch { return {}; }
   }
+  // Returns true only when this call actually wrote the grant — the round
+  // summary uses that to list "new ideas you nailed" exactly.
   function grantMet(tag, source) {
     const met = loadMetStore();
-    if (met[tag]) return; // permanent once earned; first grant wins
+    if (met[tag]) return false; // permanent once earned; first grant wins
     met[tag] = { at: Date.now(), source };
     try { localStorage.setItem(KB_MET_KEY, JSON.stringify(met)); } catch { /* ephemeral */ }
+    return true;
   }
 
   // ---- idle state: unit menu ---------------------------------------------
@@ -151,6 +156,10 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     ui.clear();
     ui.setProgress("");
     ui.setExitVisible(false);
+    const met = Object.keys(loadMetStore());
+    const progress = topicProgress(met);
+    const known = progress.reduce((a, r) => a + r.met, 0);
+    const totalAll = progress.reduce((a, r) => a + r.total, 0);
     const welcome = {
       type: "say",
       md: "Pick a topic and try some questions. You'll read a tiny "
@@ -158,7 +167,8 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
         + "runs, so you see the true answer right away.\n\n"
         + "Getting one wrong is part of the plan: you'll see **why**, and "
         + "that idea will come back until it's easy. Every round has fresh "
-        + "questions. Your own code is kept safe.",
+        + "questions. Your own code is kept safe."
+        + (known > 0 ? `\n\nYou know **${known}** of ${totalAll} ideas so far.` : ""),
     };
     ui.addCard(welcome);
     // The menu is a beat too: in focus mode it renders on the stage (the
@@ -169,7 +179,8 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     // When mastery exists, the frontier (unmet concepts whose parents are
     // all met — lesson-kb-binding §5) adds a "drill what you just learned"
     // entry pointing at the topic with the most newly-unlocked intros.
-    const met = Object.keys(loadMetStore());
+    // Topic buttons carry their mastery meter (met/total per topic).
+    const byId = new Map(progress.map((r) => [r.id, r]));
     const frontier = met.length ? frontierTags(met) : [];
     ui.setControls([
       ...(frontier.length ? [{
@@ -177,8 +188,28 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
         onClick: () => startDrill(drillTopicFor(frontier)),
       }] : []),
       { label: "⚡ Everything", onClick: () => startDrill("all") },
-      ...kbTopics.map((t) => ({ label: t.title, onClick: () => startDrill(t.id) })),
+      { label: "🗺 My map", onClick: showMap },
+      ...kbTopics.map((t) => ({
+        label: t.title,
+        progress: { met: byId.get(t.id)?.met ?? 0, total: byId.get(t.id)?.total ?? 0 },
+        onClick: () => startDrill(t.id),
+      })),
     ]);
+  }
+
+  // The concept map view: the whole DAG as topic lanes with met/frontier/
+  // locked chips; a frontier chip's "Practice this ▶" starts a targeted
+  // round on that one concept.
+  function showMap() {
+    ui.clear();
+    ui.setProgress("My map");
+    ui.setExitVisible(false);
+    const host = document.createElement("div");
+    renderConceptMap(host, mapModel(Object.keys(loadMetStore())), {
+      onPractice: (tag) => startDrill(conceptTopics().get(tag) ?? "all", { focus: tag }),
+    });
+    ui.showCustom(host);
+    ui.setControls([{ label: "← Back to topics", onClick: showMenu }]);
   }
 
   // ---- sequencing ---------------------------------------------------------
@@ -255,6 +286,9 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
       const card = ui.addCard({ type: "action", md: step.action, done: false, prog: store.currentProg });
       ui.popBatch(batch, card);
       batch = [];
+      // Action beats USE the IDE: trace/scrub/input beats need the memory
+      // pane visible even in focus mode (the memory model is the lesson).
+      ui.setStageMemory?.(["scrubbed", "run-ended", "input-answered"].includes(step.await.event));
       let seen = 0;
       const need = step.await.count ?? 1;
       const off = events.on((e) => {
@@ -281,6 +315,18 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     }
 
     if (step.done !== undefined) {
+      // Practice rounds get a session summary first: per-question results,
+      // newly-met concepts, and the next-step suggestion (pure over the
+      // transcript store — reload rebuilds it like any recorded card).
+      if (store.drillLesson) {
+        const summary = {
+          type: "summary",
+          ...summarizeRound(store.cards ?? [], store.roundMet ?? [], Object.keys(loadMetStore())),
+        };
+        record(summary);
+        ui.addCard(summary);
+        batch.push(summary);
+      }
       const desc = { type: "say", md: step.done || "That's the end of this lesson — nice work." };
       record(desc);
       ui.addCard(desc);
@@ -296,7 +342,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     card.freeze();
     card.setNote("");
     card.verdict(ok, verdict);
-    record({ type: "question-frozen", prompt, ok, verdict, answerText });
+    record({ type: "question-frozen", prompt, ok, verdict, answerText, concept });
     store.lastAnswer = lastAnswer;
     if (concept) bumpDrillStats(concept, lastAnswer === "correct");
     events.emit("quiz-graded", { kind, correct: ok, template, concept });
@@ -328,6 +374,8 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     });
     ui.popBatch(batch, card);
     batch = [];
+    // Memory-model questions need the memory pane on stage in focus mode.
+    ui.setStageMemory?.(q.kind.startsWith("memory-") || Boolean(q.construction) || q.kind === "expression-sequence");
     if (view.line != null) editor.highlightLine(view.line);
 
     const doCheck = (provided) => {
@@ -404,6 +452,9 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
       ta.readOnly = true;
       card.setActions([]);
       card.setNote("Running it for real…");
+      // The reveal: the console grows NOW, so the eye lands on the real run
+      // (predict-state also opens the memory pane — the state IS the answer).
+      ui.beginReveal?.({ memory: isState });
       const summary = await actions.trace();
       if (!summary) {
         ta.readOnly = false;
@@ -437,7 +488,10 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
       const metTag = ask.focus ?? ask.concept;
       const beforeFinalHint = totalHints === 0 || hints.length > 0;
       if (result.correct && ask.kind === "predict-output" && metTag && beforeFinalHint) {
-        grantMet(metTag, ask.focus ? "lesson" : "drill");
+        if (grantMet(metTag, ask.focus ? "lesson" : "drill")) {
+          (store.roundMet ??= []).push(metTag); // exact newly-met list for the summary
+          persist();
+        }
       }
       resolveAsk(card, {
         prompt: ask.prompt, ok: result.correct,
@@ -517,6 +571,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
       store.lastLoadedCode = filled; // the reveal run is now the lesson's code
       registerProgram(filled);
       persist();
+      ui.beginReveal?.();
       const summary = await actions.trace();
       const q = summary?.terminal_reason === "completed" ? generateQuestion("predict-output", ctx(), {}) : null;
       const correct = Boolean(q && q.grade({ text: ask.targetOutput }).correct);
@@ -585,7 +640,17 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
   }
 
   function finish() {
-    ui.setControls([{ label: "Back to units", onClick: () => endLesson("completed") }]);
+    // Practice rounds end with a next-step suggestion drawn from the round's
+    // recorded summary (the frontier-thickest topic).
+    const next = (store.cards ?? []).findLast?.((c) => c.type === "summary")?.next;
+    ui.setControls([
+      ...(next ? [{
+        label: `Keep going: ${next.title} ▶`,
+        primary: true,
+        onClick: () => startDrill(next.topic),
+      }] : []),
+      { label: "Back to units", onClick: () => endLesson("completed") },
+    ]);
     ui.setExitVisible(false);
     setWaiting(null);
     ui.popBatch(batch); // the closing beat (empty on a resumed finish → no-op)
@@ -621,8 +686,9 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     if (isCollabActive?.()) return null;
     const built = buildKBSession(topic, {
       seed: opts.seed ?? (Date.now() >>> 0),
-      count: opts.count ?? 8,
+      count: opts.count, // unset lets the compiler pick (8, or 4 for a focus round)
       stats: loadDrillStats(),
+      focus: opts.focus, // targeted practice: one concept's own exercises
     });
     if (!built) throw new Error(`unknown drill topic: ${topic}`);
     const errors = lintLesson(built);
@@ -687,6 +753,9 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     drillStats: loadDrillStats,
     met: loadMetStore,           // tag → {at, source} (lesson-kb-binding §5)
     frontier: () => frontierTags(Object.keys(loadMetStore())),
+    progress: () => topicProgress(Object.keys(loadMetStore())),
+    mapModel: () => mapModel(Object.keys(loadMetStore())),
+    showMap,
     exit: () => { if (lesson) endLesson("exited"); },
     state: () => ({
       lessonId: lesson?.id ?? null,

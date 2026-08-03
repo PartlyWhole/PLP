@@ -485,6 +485,68 @@ a.mm-ref:hover { border-color: var(--accent); }
 }
 .tutor-controls { flex: none; display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--t-border); }
 .tutor-controls:empty { display: none; }
+/* topic buttons with a mastery meter (met/total per topic) */
+button.has-meter {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+}
+.t-meter {
+  display: inline-block; width: 44px; height: 5px; border-radius: var(--r-pill);
+  background: var(--t-surface-3); overflow: hidden; flex: none;
+}
+.t-meter-fill {
+  display: block; height: 100%; border-radius: var(--r-pill);
+  background: var(--t-accent);
+  transition: width var(--dur-2) var(--ease-out);
+}
+.t-meter-fill.full { background: var(--t-success); }
+.t-meter-count { font-size: var(--fs-meta); color: var(--t-ink-dim); flex: none; }
+/* round summary card */
+.tutor-summary { border-color: var(--t-accent-line); }
+.t-summary-head { font-size: var(--fs-read); }
+.t-summary-dots { display: flex; gap: var(--sp-2); margin: var(--sp-2) 0; }
+.t-dot {
+  width: 14px; height: 14px; border-radius: 50%; flex: none;
+}
+.t-dot.hit { background: var(--t-success); }
+.t-dot.open { background: transparent; border: 2px solid var(--t-miss); }
+.t-chip {
+  display: inline-block; margin: 2px 4px 2px 0; padding: 2px 10px;
+  border-radius: var(--r-pill); font-size: var(--fs-meta);
+}
+.t-chip.met { background: var(--t-accent-soft); border: 1px solid var(--t-accent); color: var(--t-accent-ink); }
+.t-summary-new { margin-top: var(--sp-2); }
+.t-summary-missed { font-size: var(--fs-meta); }
+
+/* concept map ("My map"): topic lanes of chips over an SVG edge underlay */
+.cm-map { display: flex; flex-direction: column; gap: var(--sp-5); }
+.cm-lane-title {
+  margin: 0 0 var(--sp-2); font-size: var(--fs-meta); font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--t-ink-dim);
+}
+.cm-rows { position: relative; display: flex; flex-direction: column; gap: var(--sp-4); }
+.cm-edge-lines { position: absolute; inset: 0; pointer-events: none; }
+.cm-edge { fill: none; stroke: var(--t-border-strong); stroke-width: 1.5; }
+.cm-edge.into-frontier { stroke: var(--t-accent); stroke-opacity: 0.5; }
+.cm-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); position: relative; }
+.cm-node {
+  font-size: var(--fs-meta); padding: 4px 12px; border-radius: var(--r-pill);
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.cm-node.met { background: var(--t-accent-soft); border-color: var(--t-accent); color: var(--t-accent-ink); }
+.cm-node.frontier {
+  background: var(--t-surface-2); border-color: var(--t-accent); color: var(--t-ink);
+  animation: cm-breathe 2.6s var(--ease-in-out) infinite;
+}
+.cm-node.locked { background: var(--t-surface-1); border-color: var(--t-border); color: var(--t-ink-faint); }
+.cm-node.cm-flash { animation: t-correct var(--dur-3) var(--ease-out) 1; }
+@keyframes cm-breathe {
+  0%, 100% { box-shadow: 0 0 0 3px var(--t-accent-soft), 0 0 14px rgba(107, 161, 248, 0.25); }
+  50% { box-shadow: 0 0 0 3px var(--t-accent-soft), 0 0 4px rgba(107, 161, 248, 0.08); }
+}
+.cm-detail { margin: var(--sp-2) 0; border-color: var(--t-accent-line); }
+.cm-parent-link {
+  font-size: var(--fs-meta); padding: 1px 8px; border-radius: var(--r-pill);
+}
 .tutor-card {
   border: 1px solid var(--t-border); border-radius: var(--r-l); padding: var(--sp-3) var(--sp-4);
   font-size: var(--fs-body); line-height: var(--lh-body); background: var(--t-surface-1);
@@ -601,14 +663,20 @@ input.tutor-output-line { min-height: 38px; height: 38px; resize: none; }
   font-size: var(--fs-read);
 }
 .tutor-popup-body .tutor-card { font-size: inherit; }
+/* On the full-height stage the reading surface earns one more step. */
+#layout.focus .tutor-popup-body { font-size: 17px; }
 .tutor-popup-foot { flex: none; display: flex; gap: var(--sp-2); justify-content: flex-end; padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--t-border); }
 .tutor-popup-foot:empty { display: none; }
 /* Consolidated reduced-motion for the learner surfaces. */
 @media (prefers-reduced-motion: reduce) {
   .tutor-popup,
   .tutor-card.t-bloom,
+  .cm-node.frontier,
+  .cm-node.cm-flash,
   .tutor-card .tutor-expected { animation: none; }
   .tutor-output-input,
+  .t-meter-fill,
+  .cm-node,
   .tutor-feed .tutor-card.openable { transition: none; }
 }
 

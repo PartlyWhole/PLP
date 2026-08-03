@@ -178,6 +178,11 @@ export function createTutorUI({ root, layout }) {
   function popBatch(descs = [], liveHandle = null, { review = false } = {}) {
     returnLive();
     popupBody.textContent = "";
+    // A NEW live question resets the reveal choreography: the console
+    // shrinks back to its strip and the memory pane tucks away. Static
+    // beats (explain cards, pauses) deliberately keep the grown console —
+    // the learner reads the card with the real output still on screen.
+    if (liveHandle) layout.setFocusFlags?.({ reveal: false, memory: false });
     if (review && reviewContext) {
       // A live handle carries its own program stamp via handle.desc.
       const all = liveHandle?.desc ? [...descs, liveHandle.desc] : descs;
@@ -264,6 +269,45 @@ export function createTutorUI({ root, layout }) {
     } else if (desc.type === "hint") {
       card = make("tutor-say tutor-hint-card");
       renderMd(card, desc.md, { onTryIt: onTryIt ?? undefined });
+    } else if (desc.type === "summary") {
+      // Round summary: headline, per-question dot row (filled = right, open
+      // amber ring = still open — growth framing, never red), newly-met
+      // chips, and the concepts coming back. Buttons live in the controls
+      // strip (finish()), not here — recorded cards stay static.
+      card = make("tutor-summary");
+      const head = document.createElement("p");
+      head.className = "t-summary-head";
+      head.innerHTML = `Round complete — <strong>${desc.correct} of ${desc.asked}</strong> right.`;
+      card.appendChild(head);
+      const dots = document.createElement("div");
+      dots.className = "t-summary-dots";
+      for (const q of desc.perQuestion ?? []) {
+        const dot = document.createElement("span");
+        dot.className = `t-dot ${q.ok ? "hit" : "open"}`;
+        const outcome = q.ok ? "right" : "still open";
+        dot.title = q.label ? `${q.label} — ${outcome}` : outcome;
+        dot.setAttribute("aria-label", dot.title);
+        dots.appendChild(dot);
+      }
+      card.appendChild(dots);
+      if (desc.newlyMet?.length) {
+        const p = document.createElement("p");
+        p.className = "t-summary-new";
+        p.textContent = "🌱 New ideas you nailed: ";
+        for (const m of desc.newlyMet) {
+          const chip = document.createElement("span");
+          chip.className = "t-chip met";
+          chip.textContent = m.label;
+          p.appendChild(chip);
+        }
+        card.appendChild(p);
+      }
+      if (desc.missed?.length) {
+        const p = document.createElement("p");
+        p.className = "t-summary-missed hint";
+        p.textContent = `Coming back for you: ${desc.missed.map((m) => m.label).join(", ")}.`;
+        card.appendChild(p);
+      }
     } else if (desc.type === "context") {
       // Review aid, never persisted: the program an old step was about,
       // shown when the editor has changed since.
@@ -415,7 +459,32 @@ export function createTutorUI({ root, layout }) {
     appendToPopup,
     closePopup,
     isPopupOpen: () => !popup.hidden,
-    clear() { closePopup(); feed.textContent = ""; },
+    clear() {
+      layout.setFocusFlags?.({ reveal: false, memory: false });
+      closePopup();
+      feed.textContent = "";
+    },
+    // Reveal choreography (focus mode): called right before the real run —
+    // the console strip growing IS the "now watch it run" cue; predict-state
+    // reveals also open the memory pane so the state is inspectable.
+    beginReveal({ memory = false } = {}) {
+      layout.setFocusFlags?.({ reveal: true, ...(memory ? { memory: true } : {}) });
+    },
+    // A custom stage view (the concept map): replaces the beat content with
+    // an arbitrary element; the next popBatch/beat reclaims the stage.
+    showCustom(el) {
+      returnLive();
+      popupBody.textContent = "";
+      layout.setFocusFlags?.({ reveal: false, memory: false });
+      popupBody.appendChild(el);
+      const wasHidden = popup.hidden;
+      popup.hidden = false;
+      popupBody.scrollTop = 0;
+      if (wasHidden) layout.notifyResize?.();
+    },
+    // Beats that USE the IDE (scrub actions, memory questions) need the
+    // memory pane even in focus mode.
+    setStageMemory(on) { layout.setFocusFlags?.({ memory: Boolean(on) }); },
     setControls(list) {
       // Mirrored: the pane strip stays authoritative; the popup foot lets
       // the learner act (Continue, Back to units) without leaving the popup.
@@ -424,7 +493,34 @@ export function createTutorUI({ root, layout }) {
         for (const a of list) {
           const btn = document.createElement("button");
           btn.type = "button";
-          btn.textContent = a.label;
+          if (a.progress) {
+            // A topic button with a mastery meter: label + track + count.
+            // met 0 shows a calm empty track (no "0/10" wall of debt);
+            // met === total swaps the count for a single ✓.
+            btn.classList.add("has-meter");
+            const { met, total } = a.progress;
+            const label = document.createElement("span");
+            label.className = "t-btn-label";
+            label.textContent = a.label;
+            const meter = document.createElement("span");
+            meter.className = "t-meter";
+            meter.setAttribute("role", "progressbar");
+            meter.setAttribute("aria-valuenow", String(met));
+            meter.setAttribute("aria-valuemax", String(total));
+            const fill = document.createElement("span");
+            fill.className = "t-meter-fill" + (met === total && total > 0 ? " full" : "");
+            fill.style.width = total ? `${Math.round((met / total) * 100)}%` : "0%";
+            meter.appendChild(fill);
+            btn.append(label, meter);
+            if (met > 0) {
+              const count = document.createElement("span");
+              count.className = "t-meter-count";
+              count.textContent = met === total ? "✓" : `${met}/${total}`;
+              btn.appendChild(count);
+            }
+          } else {
+            btn.textContent = a.label;
+          }
           if (a.primary) btn.classList.add("primary");
           btn.addEventListener("click", a.onClick);
           host.appendChild(btn);

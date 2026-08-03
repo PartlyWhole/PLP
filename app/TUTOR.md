@@ -52,16 +52,27 @@ the session notes / commit message):
   `introStyle: "teach-first" | "discover-first"`. Once seen, prompts
   never name the rule; it returns only in the after-miss explain card.
 
-## Two reading surfaces, one history
+## The stage, the history rail, and focus mode
 
-The narrow pane holds the complete transcript as clickable bubbles; the
-current **beat** (the lead-in prose since the last blocking step, plus the
-blocking question/action) also opens in the **beat panel** — a roomy
-reading surface DOCKED in the layout grid under the CODE pane, above the
-console, sharing the code column (bounded by the same vertical divider).
-The question sits in the same eye-line as the program it asks about, and
-can never occlude a pane. Esc or ✕ collapses it (the grid row returns to
-the editor); closing changes nothing about the lesson.
+Opening Exercises enters **focus mode** (`#layout.focus`, owned by
+app/layout.mjs): the current **beat** (the lead-in prose since the last
+blocking step, plus the blocking question/action) renders on the
+**stage** (`.tutor-stage`) — a full-height reading surface in the code
+column — while the editor recedes to the right column, the memory pane
+tucks away, and the console stays mounted as a slim always-live strip.
+Locking a prediction triggers the **reveal**: the console strip grows
+(`focus-reveal`) — the enlargement is the "now watch it run" cue — and
+predict-state/scrub/memory beats also open the memory pane
+(`focus-memory`). A static explain beat keeps the grown console so the
+learner reads the card with the real output on screen; the next live
+question resets it.
+
+The narrow transcript pane holds the complete history as clickable
+bubbles, tucked behind the stage head's **📜 History** toggle
+(`focus-history`). **⇱ Back to editor** (or Esc) drops focus to the
+classic layout — the stage falls back to its old docked position under
+the code pane, transcript visible — so the app never becomes modal. The
+focus flags never persist; only Exercises visibility does.
 
 Clicking any feed bubble (re)opens it in the popup: static cards are
 rebuilt from their descriptors; the LIVE card (question inputs,
@@ -117,6 +128,32 @@ artifact, byte-exact by the K-doc test; regenerate with
 
 (The original hand-authored template bank, `app/drills.mjs` +
 `curriculum/CURRICULUM.md`, was retired when the KB reached parity.)
+
+## Progress & mastery UI
+
+- **Topic meters**: menu topic buttons carry a met/total mastery meter
+  (`.t-meter`, computed by `topicProgress` in kb-session.mjs over the met
+  map); an empty track at zero, a ✓ at full. The welcome card states
+  "You know **N** of M ideas so far."
+- **Round summary**: a finished practice round records a `summary` card
+  (pure model: `summarizeRound` in [progress.mjs](progress.mjs)) —
+  headline, per-question dot row (filled = right, open amber ring =
+  still open), 🌱 newly-met chips, "coming back for you" line — and the
+  end controls add "Keep going: {frontier-thickest topic} ▶".
+- **My map** ([concept-map.mjs](concept-map.mjs)): the whole concept DAG
+  as seven topic lanes of chips — met (filled ✓), frontier (breathing
+  glow), locked (dimmed, never hidden) — with an SVG edge underlay
+  measured from the DOM. A chip's detail card shows the concept
+  statement, cross-topic prerequisites as jump links, and
+  **Practice this ▶**, which starts a targeted round on that one concept
+  (`buildKBSession`'s `focus` option: the concept's own exercises,
+  4 questions, id `drill-{topic}-{tag}-{seed}`).
+- Debug hooks: `plp.tutor.progress()`, `plp.tutor.met()`,
+  `plp.tutor.frontier()`, `plp.tutor.mapModel()`, `plp.tutor.showMap()`.
+- Design tokens: learner surfaces speak the `--t-*` custom properties
+  (style.css `:root`); a miss renders amber (information), never red;
+  correct answers get a one-shot bloom; all motion honors
+  `prefers-reduced-motion`.
 
 ## Step vocabulary
 

@@ -29,7 +29,7 @@ test.describe("PLP tutor (T-series)", () => {
     // units are debug-only via plp.tutor.start).
     await expect(page.locator(".tutor-feed .tutor-card")).toHaveCount(1);
     await expect(page.locator(".tutor-controls button").first()).toContainText("Everything");
-    await expect(page.locator(".tutor-controls button")).toHaveCount(8); // all + 7 topics
+    await expect(page.locator(".tutor-controls button")).toHaveCount(9); // all + map + 7 topics
     await page.reload();
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
     await expect(page.locator("#layout")).toHaveClass(/focus/); // persisted (flags reset)
@@ -262,6 +262,159 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
+  test("reveal choreography: locking grows the console, the explain keeps it, the next question resets; predict-state opens memory", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
+    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 7, count: 2 }));
+    await expect(page.locator("#layout")).toHaveClass(/focus/);
+    await expect(page.locator("#layout")).not.toHaveClass(/focus-reveal/);
+    const slim = await page.evaluate(() => document.getElementById("console-pane").getBoundingClientRect().height);
+
+    // Lock a (wrong) prediction: the console growing IS the reveal cue.
+    await page.evaluate(() => window.plp.tutor.lockPrediction("definitely wrong"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 15_000 });
+    await expect(page.locator("#layout")).toHaveClass(/focus-reveal/);
+    const grown = await page.evaluate(() => document.getElementById("console-pane").getBoundingClientRect().height);
+    expect(grown).toBeGreaterThan(slim * 1.5);
+
+    // The explain beat (static) keeps the grown console — the learner reads
+    // the card with the real output still on screen. The NEXT question resets.
+    await page.evaluate(() => window.plp.tutor.continue());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 15_000 });
+    await expect(page.locator("#layout")).not.toHaveClass(/focus-reveal/);
+    const slimAgain = await page.evaluate(() => document.getElementById("console-pane").getBoundingClientRect().height);
+    expect(Math.abs(slimAgain - slim)).toBeLessThan(4);
+
+    // predict-state reveal opens the memory pane (the state IS the answer).
+    await page.evaluate(() => window.plp.tutor.exit());
+    await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 4, count: 1 }));
+    expect((await page.evaluate(() => window.plp.tutor.ask())).kind).toBe("predict-state");
+    await expect(page.locator("#memory-pane")).not.toBeVisible();
+    await page.evaluate(() => window.plp.tutor.lockPrediction("[1]"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
+    await expect(page.locator("#layout")).toHaveClass(/focus-memory/);
+    await expect(page.locator("#memory-pane")).toBeVisible();
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("topic meters + round summary: menu buttons show mastery; a finished round summarizes and suggests the next step", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.clear(); location.reload(); });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+
+    // Pure helpers: totals over the 7 topics cover every non-structural
+    // loaded concept exactly once.
+    const totals = await page.evaluate(async () => {
+      const { topicProgress } = await import("./app/kb-session.mjs");
+      const { loadKB } = await import("./kb/index.mjs");
+      const rows = topicProgress([]);
+      const kb = loadKB();
+      const nonStructural = [...kb.concepts.values()].filter((c) => c.kind !== "structural").length;
+      return { sum: rows.reduce((a, r) => a + r.total, 0), nonStructural, met0: rows.every((r) => r.met === 0) };
+    });
+    expect(totals.sum).toBe(totals.nonStructural);
+    expect(totals.met0).toBe(true);
+
+    // Fresh menu: meters render empty (no count text at 0).
+    await page.evaluate(() => window.plp.layout.setTutorVisible(true));
+    await expect(page.locator(".tutor-controls .t-meter").first()).toBeAttached();
+    expect(await page.evaluate(() => document.querySelectorAll(".tutor-controls .t-meter-count").length)).toBe(0);
+
+    // A 2-question round: one right (grants met), one skipped.
+    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 7, count: 2 }));
+    const q1 = await page.evaluate(() => window.plp.tutor.ask());
+    expect(q1.kind).toBe("predict-output");
+    // Answer question 1 correctly: read the loaded program's real answer by
+    // evaluating it mentally is impossible here, so miss it on purpose, then
+    // skip question 2 — summary shape is what's under test.
+    await page.evaluate(() => window.plp.tutor.lockPrediction("wrong on purpose"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 15_000 });
+    await page.evaluate(() => window.plp.tutor.continue());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 15_000 });
+    await page.evaluate(() => window.plp.tutor.skip());
+    await page.evaluate(() => window.plp.tutor.continue());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === null, null, { timeout: 15_000 });
+
+    // Summary card: headline 0 of 2, two open dots, missed line; no
+    // newly-met chips (nothing was answered correctly).
+    const sum = await page.evaluate(() => {
+      const card = document.querySelector(".tutor-stage .tutor-summary") ?? document.querySelector(".tutor-feed .tutor-summary");
+      return {
+        head: card?.querySelector(".t-summary-head")?.textContent,
+        hits: card?.querySelectorAll(".t-dot.hit").length,
+        open: card?.querySelectorAll(".t-dot.open").length,
+        chips: card?.querySelectorAll(".t-chip").length,
+        missed: card?.querySelector(".t-summary-missed")?.textContent ?? "",
+      };
+    });
+    expect(sum.head).toContain("0 of 2");
+    expect(sum.hits).toBe(0);
+    expect(sum.open).toBe(2);
+    expect(sum.chips).toBe(0);
+    expect(sum.missed).toContain("Coming back for you");
+    // The frontier is non-empty even from zero (print-text), so the round
+    // ends with a "Keep going" suggestion.
+    const keepGoing = await page.evaluate(() =>
+      [...document.querySelectorAll(".tutor-controls button")].map((b) => b.textContent).find((t) => t.includes("Keep going")));
+    expect(keepGoing).toBeTruthy();
+
+    // Reload after the round: the summary card restores from the store.
+    // (no checkErrors after reload — no trace has run in the fresh page)
+    await page.reload();
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await expect(page.locator(".tutor-feed .tutor-summary")).toBeAttached();
+  });
+
+  test("concept map: lanes with met/frontier/locked chips; a frontier chip starts a targeted round on that concept", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.clear(); location.reload(); });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+
+    // Pure model: every non-structural loaded concept appears exactly once;
+    // a fresh student's frontier is exactly print-text; layering is
+    // deterministic (two builds identical).
+    const m = await page.evaluate(async () => {
+      const { mapModel } = await import("./app/concept-map.mjs");
+      const { loadKB } = await import("./kb/index.mjs");
+      const kb = loadKB();
+      const a = mapModel([]);
+      const b = mapModel([]);
+      const nodes = a.lanes.flatMap((l) => l.rows.flat());
+      return {
+        total: nodes.length,
+        nonStructural: [...kb.concepts.values()].filter((c) => c.kind !== "structural").length,
+        frontierTags: nodes.filter((n) => n.state === "frontier").map((n) => n.tag),
+        lockedCount: nodes.filter((n) => n.state === "locked").length,
+        deterministic: JSON.stringify(a) === JSON.stringify(b),
+      };
+    });
+    expect(m.total).toBe(m.nonStructural);
+    expect(m.frontierTags).toEqual(["0005"]); // cold start: print-text alone
+    expect(m.lockedCount).toBe(m.total - 1);
+    expect(m.deterministic).toBe(true);
+
+    // The map view renders on the stage with matching chip states.
+    await page.evaluate(() => { window.plp.layout.setTutorVisible(true); window.plp.tutor.showMap(); });
+    await expect(page.locator(".tutor-stage .cm-lane")).toHaveCount(7);
+    await expect(page.locator(".tutor-stage .cm-node.frontier")).toHaveCount(1);
+    expect(await page.evaluate(() => document.querySelectorAll(".tutor-stage .cm-node.met").length)).toBe(0);
+
+    // Clicking the frontier chip opens its detail; "Practice this ▶" starts
+    // a targeted round whose every ask is that concept.
+    await page.locator(".tutor-stage .cm-node.frontier").click();
+    await expect(page.locator(".tutor-stage .cm-detail")).toContainText("Ready to try");
+    await page.locator(".tutor-stage .cm-detail button.primary").click();
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask");
+    const round = await page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
+      const asks = s.drillLesson.steps.filter((x) => x.ask).map((x) => x.ask.concept);
+      return { id: s.lessonId, asks };
+    });
+    expect(round.id).toMatch(/^drill-state-0005-\d+$/);
+    expect(round.asks.every((t) => t === "0005")).toBe(true);
+    expect(round.asks.length).toBe(4); // focused rounds default shorter
+  });
+
   test("lesson lint rejects malformed steps", async ({ page }) => {
     await setup(page);
     const errors = await page.evaluate(() => window.plp.tutor.lintLesson({
@@ -350,7 +503,7 @@ test.describe("PLP tutor (T-series)", () => {
     expect(frontier.length).toBeGreaterThan(0);
     await page.evaluate(() => window.plp.tutor.exit());
     await expect(page.locator(".tutor-controls button").first()).toContainText("Drill what you just learned");
-    await expect(page.locator(".tutor-controls button")).toHaveCount(9); // frontier entry + all + 7 topics
+    await expect(page.locator(".tutor-controls button")).toHaveCount(10); // frontier entry + all + map + 7 topics
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
