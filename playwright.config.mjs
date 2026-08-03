@@ -3,7 +3,10 @@ import { defineConfig, devices } from "@playwright/test";
 // The dev server intentionally sends NO COOP/COEP headers: tests exercise
 // the coi-serviceworker path exactly as GitHub Pages will serve it, under
 // the simulated /PLP/ project prefix.
-const PORT = 8633;
+// PLP_PORT lets a second concurrent suite run (a parallel session, a git
+// worktree) bind its own server instead of fighting over 8633 —
+// reuseExistingServer is false, so two runs on one port kill each other.
+const PORT = Number(process.env.PLP_PORT) || 8633;
 const DEPLOYED_BASE_URL = process.env.PLP_BASE_URL;
 
 const browsers = [

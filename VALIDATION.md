@@ -146,10 +146,55 @@ driver included. Each row asserts a way a run can end still releases it.
 | T8 | Solo-only in collab: pane hides when a room goes live; `start()` refuses | room live → `isTutorVisible()` false, `start()` returns null | GAP (manual; add to CO-series when tutor+collab interact) |
 | T9 | Beat panel: current beat opens docked under the code pane, above the console, bounded by the code column's divider; ✕ collapses it and returns the live card to the feed with lesson state unchanged; bubble click reopens; reparenting preserves typed answers; static bubbles rebuild read-only | DOM drive: geometry assertion (same left/right as editor, below it, above console), ✕ → card in feed + waiting unchanged, bubble click → reopened, input value survives close/reopen cycle | T-2 (popup test) |
 | T10 | Review context: reopening a bubble about an earlier program shows that program in a context card with a stash-safe load button; no context card when the editor matches | popup test: old action bubble → `.tutor-context` holds program 1; load → editor restored; re-review → no context card | popup test |
-| T11 | Drill compilation: deterministic under (topic, seed, count, stats); real variation across seeds; every template has topic/title/explain and a core/edge level | same-seed lessons identical; ≥4 distinct programs across 8 seeds; registry audit incl. levels and ≥20 core | drills determinism test |
-| T12 | Every drill template generates a clean, gradable, ONE-question program | per template: trace → `completed`, predict-output buildable, expected output is a single line unless flagged `multiline`, `checkErrors()` empty | drills sweep test |
-| T14 | Rounds are mostly basics: core templates outweigh edge ~3:1 in selection | ≥60% core asks across three seeded 10-question "all" rounds | drills mix test |
-| T13 | Drill round: seeded session, per-template miss stats persist and weight selection, misses show the template's explain scaffold, reload restores the identical round from the stored compiled script | drill e2e: wrong → pause + `{seen:1,missed:1}`; reload → same lessonId, next ask; skip counts as miss; end card | drill round test |
+| T11–T17 | RETIRED — the hand-authored drill bank (`app/drills.mjs` + `curriculum/CURRICULUM.md`) was deleted once the KB reached parity. Each retired guarantee has a K-series successor: compilation determinism → K6; clean/gradable/one-line generation → K10; mostly-basics mix → K-inv18; variant-matched explanations → K14 (salience) + variant cards; doc exactness → K17 (KB-REFERENCE byte-identity) | — | K-series (below) |
+| T13 | Drill round: seeded session, per-CONCEPT miss stats persist and weight selection, misses show the concept/variant card, reload restores the identical round from the stored compiled script | drill e2e: wrong → pause + `{seen:1,missed:1}` keyed by tag; reload → same lessonId, next ask; skip counts as miss; end card | drill round test |
+
+## Knowledge base (K-series = `tests/kb.spec.mjs`)
+
+`design/knowledge-base-design.md` through full breadth and app wiring: all
+68 concepts (4 structural / 47 core / 17 edge — the §2.4 budget exactly),
+69 exercises across all four §5.2 forms, the footprint analyzer over the
+complete §4.1 grammar (branches, loops, comparisons, booleans, strings,
+dicts, tuples, slices, conversions, methods), interpreter oracles, and the
+generated reference. Invariant numbers = design §9.
+
+| # | Feature | Best evidence | Coverage |
+|---|---|---|---|
+| K1 | Tag ledger well-formed; every LOADED concept matches its active ledger entry byte-for-byte (inv 3). The ledger may run ahead of the loaded set during breadth build-out — the agreement is directional | tags unique + Crockford charset, slugs unique; per loaded tag: active status + identical slug/kind/parents | K-1 |
+| K2 | Tag permanence: the ledger is append-only; committed tags never change tag/kind/parents (inv 4) | working copy vs `git show HEAD:` — committed entries are a structural prefix | K-2 (local approximation; K-LC below is the real-VCS CI check) |
+| K3 | Concept graph is a DAG, fully reachable from the structural roots (inv 1, 2) | Kahn toposort (cycle printed on failure); BFS from roots covers all nodes | K-3 |
+| K4 | Static contract: `assumed ⊆ ancestors(focus)`, `focus ∉ assumed`, structural tags never listed, `contrast ∈ assumed` (inv 5) | closure computation + set inclusion per exercise | K-4 |
+| K5 | One-new-thing contract on every generated program: `footprint ⊆ assumed ∪ {focus} ∪ Structural`; analyzer total; declared shapes/variants reachable (inv 6, 7) | 40 seeds per exercise (`fnv1a32(id) ^ k`), analyzer on each (all executed sources for multi-program forms); excess tags fail with evidence lines | K-5, anchored by K-5a (design §10.2 hand-computed footprints reproduced exactly, incl. the `b = b + [x]` contrast and the latent-alias warning) |
+| K6 | Determinism: same (exercise, seed) → identical program; selection pure over the met set (inv 16) | double-generate deep-equal across two `loadKB()` instances | K-6 |
+| K7 | Every non-structural concept has ≥1 intro exercise (inv 12) | join exercises→focus over concepts — all 64 non-structural covered | K-7 |
+| K8 | Dynamic contract + cold start: frontier boots at `print-text`, the E1–E7 chain reaches `names-share-list`, the diamond (both `name-from-name` AND `append-mutates`) gates aliasing, nothing offerable assumes an unmet concept | pure walk over `frontier`/`offerable` asserting the §10.3 unlock sequence | K-8 |
+| K9 | kb/ RNG cannot drift from the app's (`kb/` imports nothing from `app/` by contract) | mulberry32(42) pinned 5-value stream asserted against both copies | K-rng (Node) + K-10 preamble (browser) |
+| K10 | Every exercise generates clean, gradable programs under real execution; one output line unless flagged `multiline` (inv 10) | 5 stratified seeds per exercise (first occurrence of each shape/variant): trace → `completed`, predict-output buildable, line-count check, `checkErrors()` empty | K-10 |
+| K11 | Parser fidelity: the hand-written micro-parser's tree equals Python's own `ast` normal form (inv 8) | per stratified sample, s-expression normalization of both trees compared byte-for-byte (expression programs; compound statements covered by inv 9/10 instead) | K-oracles |
+| K12 | Type fidelity: the abstract store's end-state types equal runtime `type(x).__name__` after real execution (inv 9) | per stratified sample, a probe prints each surviving name's runtime type; branch-ambiguous (⊤) names excluded by construction | K-oracles |
+| K13 | Discrimination: every focus concept's authored `wrongAnswer` differs from the real output on every sample (inv 11) | wrongAnswer ≠ executed output per stratified sample | K-oracles |
+| K14 | Focus salience: every exercise actually exercises its focus tag, or carries a live `focus-salience` waiver (inv 13) | footprint-contains-focus over 40 seeds; the one waiver (float-inexact — no syntactic witness for "prints a long tail") must fire | K-inv13 + K-inv17 |
+| K15 | Waiver hygiene: every waiver fires, budget ≤ max(3, ⌈5%⌉), known ruleId, non-empty issue (inv 17) | audit of `kb/waivers.json` against sampled generations | K-inv17 |
+| K16 | Variety floors: ≥3 program-shapes per core concept (across all its exercises); no consecutive `(form, shape)` repeats in a compiled session (inv 14) | shape-union per core ≥3; 30 compiled sessions × 12 questions scanned for adjacent repeats | K-inv14 |
+| K17 | Doc fidelity: `curriculum/KB-REFERENCE.md` is byte-identical to a fresh regeneration, every sample output obtained by real execution, provenance-stamped (inv 15) | regenerate in Pyodide → byte-compare; `KB_UPDATE_FIXTURES=1` is the only writer; `tools/kb-docgen.mjs --check` (system python3) produces identical bytes | K-doc |
+| K18 | Compiled sessions are mostly basics: core-focus questions ≥ 60% (inv 18, inherited from the retired drill bank's T14) | three seeded 10-question "all" rounds compiled in Node; core fraction of ask concepts | K-inv18 |
+
+## KB practice & lesson binding (T-series additions)
+
+The KB drives the practice UI (`app/kb-session.mjs` compiles §6-weighted
+rounds; `app/tutor.mjs` runs them) and guided lessons bind to concept tags
+(`design/lesson-kb-binding.md`). Mastery: stats keyed by tag in
+`plp.kb.v1`; the met map in `plp.kb.met.v1` (both surfaces write through
+`grantMet`).
+
+| # | Feature | Best evidence | Coverage |
+|---|---|---|---|
+| KT1 | predict-state: latent state is examinable — grades a name the program never printed, via a real probe run; quote-style forgiving (§5.2, §13 Q4) | alias exercise: `a` mutated through `b`, never printed; correct/wrong literals graded by executed `print(a)` | predict-state test |
+| KT2 | fill-one-blank: the typed token is substituted, run for real, judged by output equality — any fill that truly produces the target is correct | intended token correct; a wrong token wrong; grading is async through the real engine | fill-one-blank test |
+| KT3 | spot-the-difference: program A shown WITH its real output (executed, not authored); the student predicts program B | contrast pair `b += [x]` vs `b = b + [x]`; A's shown output is engine truth; B graded by execution | spot-the-difference test |
+| KT4 | Lesson↔KB binding lint: unknown / structural / out-of-unit `focus` tags rejected at lesson load; the shipped u1 lints clean | bad-fixture lint surfaces each violation; u1 (concepts 0006/0009/000A/000B, focus 0009+000B) → no errors | binding lint test |
+| KT5 | Met grants: only a clean first-attempt correct `predict-output` before the final hint grants met (design §2.8); wrong answers, demo steps, and post-final-hint corrects grant nothing; source recorded ("lesson"/"drill") | u1 drive-through: wrong → no grant; correct → `{000B: {at, source: "lesson"}}`; both-hints-then-correct → no grant | binding grant tests |
+| KT6 | The met set feeds the frontier and the menu: `kb.frontier(met)` computes newly-unlocked concepts; the post-lesson menu adds "Drill what you just learned"; fresh visits keep the 8-button menu | after a grant: frontier non-empty, 9 buttons; fresh visit: 8 buttons | binding menu test + pane test |
 
 ## Security (SEC-series)
 
@@ -270,3 +315,10 @@ equality bundle = records deep-equal, transcript equal, step count equal,
 - Engine-behavior claims (echo-once, interrupt semantics, recycle, budgets)
   are validated against the engine's documented contract — a failure here
   means OUR wiring broke, not the engine.
+
+## Knowledge base — ledger permanence & placement (side-work additions)
+
+| # | Feature | Best evidence | Coverage |
+|---|---|---|---|
+| K-LC | Tag-ledger permanence enforced against real VCS history (append-only; slug renames legal; splits/merges require successors) | `tools/check-ledger.mjs` pure `checkLedger(before, after)` verdicts pinned verbatim; CI runs it against the PR base via `.github/workflows/kb-ledger.yml` (bare Node, no browsers) | LC-1…LC-13 (`tests/ledger-check.spec.mjs`) |
+| K-PL | Placement diagnostic: deterministic deepest-first DAG bisection over `loadKB()` only; correct answers credit the lineage, wrong answers contradict the subtree | Pure-Node property tests derive every expectation from `loadKB()` at runtime (no hard-coded counts): perfect student converges in fewer questions than concepts; all-wrong ends empty; lineage student placed exactly; same answers ⇒ same placement | P-1…P-7 (`tests/placement.spec.mjs`) |

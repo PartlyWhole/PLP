@@ -10,7 +10,11 @@ export default {
   id: "u1-state-io",
   unit: 1,
   title: "1 · State and I/O",
-  skills: ["state-model", "read-trace", "predict-output", "input-boundary"],
+  // KB concepts this unit touches (design/lesson-kb-binding.md §3). The old
+  // free-text `skills` had no KB witness: state-model/read-trace are the
+  // structural-roots narrative, predict-output is a form not a concept, and
+  // input-boundary awaits an input concept being minted (known gap).
+  concepts: ["0006", "0009", "000A", "000B"],
   steps: [
     // ---- first contact: do, then see (no prose first) --------------------
     {
@@ -57,6 +61,7 @@ export default {
     {
       ask: {
         kind: "predict-output",
+        focus: "0009", // evaluate-before-bind: b was computed before a changed
         singleLine: true,
         hints: [
           "Step through the state in your head, line by line — exactly like "
@@ -123,6 +128,7 @@ export default {
     {
       ask: {
         kind: "predict-output",
+        focus: "000B", // accumulate-rebind: total reads old, computes, rebinds
         singleLine: true,
         hints: [
           "Follow `total` through the state: `0` → `5` → `15`.",

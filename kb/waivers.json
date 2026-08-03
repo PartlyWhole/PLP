@@ -1,0 +1,10 @@
+[
+  {
+    "exerciseId": "float-tail",
+    "ruleId": "focus-salience",
+    "tag": "000W",
+    "reason": "float-inexact has no syntactic witness: a static analyzer cannot see that a float sum prints with a long rounding tail (design §4.5). The exercise's value pool (FLOAT_PAIRS) guarantees the tail always appears, so the concept is genuinely exercised even though its tag is never emitted into the footprint.",
+    "issue": "kb-phase3-float-salience",
+    "added": "2026-07-29"
+  }
+]

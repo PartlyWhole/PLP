@@ -26,11 +26,18 @@
 
 import { generateQuestion, questionGenerators } from "./questions.mjs";
 import { renderQuestionBody } from "./question-ui.mjs";
-import { buildDrillLesson, drillTopics } from "./drills.mjs";
+import { buildKBSession, kbTopics, migrateStats, spliceBlank, lintLessonConcepts, frontierTags, drillTopicFor } from "./kb-session.mjs";
 import { events } from "./events.mjs";
 
 const STORE_KEY = "plp.tutor.v1";
-const DRILL_STATS_KEY = "plp.drills.v1";
+// Drill/practice mastery is keyed by concept TAG (design §6). One-time
+// migration carries forward the legacy drill-template store.
+const KB_STATS_KEY = "plp.kb.v1";
+const LEGACY_DRILL_STATS_KEY = "plp.drills.v1";
+// The shared met map (design/lesson-kb-binding.md §5): tag → {at, source}.
+// Lessons and drills both write through grantMet; the KB never reads it —
+// the met SET (the keys) is passed into KB queries (frontierTags).
+const KB_MET_KEY = "plp.kb.met.v1";
 
 const KNOWN_EVENTS = new Set([
   "run-started", "run-ended", "run-rejected", "input-answered",
@@ -57,6 +64,10 @@ export function lintLesson(lesson) {
       errors.push(`step ${i}: "if" supports { lastAnswer } only`);
     }
   }
+  // KB concept binding (design/lesson-kb-binding.md §2): unit `concepts`
+  // tags and ask-step `focus` tags must be real, non-structural, and every
+  // focus must be inside the unit's declared set.
+  errors.push(...lintLessonConcepts(lesson ?? {}));
   return errors;
 }
 
@@ -98,16 +109,41 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     positions: memory.linePositions(),
   });
 
-  // ---- drill stats (per-template seen/missed; weights future selection) --
-  function loadDrillStats() {
-    try { return JSON.parse(localStorage.getItem(DRILL_STATS_KEY)) ?? {}; } catch { return {}; }
+  // ---- practice stats (per-concept-TAG seen/missed; weights selection) ---
+  // One-time migration: if the tag-keyed store is absent but the legacy
+  // template-keyed store exists, fold it in (design §2.5 — tags are
+  // permanent, so mastery survives the exercise-source change).
+  function migrateLegacyStatsOnce() {
+    try {
+      if (localStorage.getItem(KB_STATS_KEY) != null) return;
+      const legacy = JSON.parse(localStorage.getItem(LEGACY_DRILL_STATS_KEY) ?? "null");
+      if (legacy) localStorage.setItem(KB_STATS_KEY, JSON.stringify(migrateStats(legacy)));
+    } catch { /* ephemeral */ }
   }
-  function bumpDrillStats(template, ok) {
+  migrateLegacyStatsOnce();
+
+  function loadDrillStats() {
+    try { return JSON.parse(localStorage.getItem(KB_STATS_KEY)) ?? {}; } catch { return {}; }
+  }
+  function bumpDrillStats(concept, ok) {
     const stats = loadDrillStats();
-    const s = stats[template] ??= { seen: 0, missed: 0 };
+    const s = stats[concept] ??= { seen: 0, missed: 0 };
     s.seen += 1;
     if (!ok) s.missed += 1;
-    try { localStorage.setItem(DRILL_STATS_KEY, JSON.stringify(stats)); } catch { /* ephemeral */ }
+    try { localStorage.setItem(KB_STATS_KEY, JSON.stringify(stats)); } catch { /* ephemeral */ }
+  }
+
+  // ---- met map (lesson-kb-binding §4–§5) ---------------------------------
+  // met(C) = at least one clean first-attempt correct prediction focused on
+  // C (design §2.8). grantMet is idempotent: the first grant wins at/source.
+  function loadMetStore() {
+    try { return JSON.parse(localStorage.getItem(KB_MET_KEY)) ?? {}; } catch { return {}; }
+  }
+  function grantMet(tag, source) {
+    const met = loadMetStore();
+    if (met[tag]) return; // permanent once earned; first grant wins
+    met[tag] = { at: Date.now(), source };
+    try { localStorage.setItem(KB_MET_KEY, JSON.stringify(met)); } catch { /* ephemeral */ }
   }
 
   // ---- idle state: unit menu ---------------------------------------------
@@ -126,9 +162,18 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     });
     // Exercises only: guided units stay available to tests/debug via
     // plp.tutor.start(unitId), but the learner-facing menu is drills.
+    // When mastery exists, the frontier (unmet concepts whose parents are
+    // all met — lesson-kb-binding §5) adds a "drill what you just learned"
+    // entry pointing at the topic with the most newly-unlocked intros.
+    const met = Object.keys(loadMetStore());
+    const frontier = met.length ? frontierTags(met) : [];
     ui.setControls([
+      ...(frontier.length ? [{
+        label: "⭐ Drill what you just learned",
+        onClick: () => startDrill(drillTopicFor(frontier)),
+      }] : []),
       { label: "⚡ Everything", onClick: () => startDrill("all") },
-      ...drillTopics.map((t) => ({ label: t.title, onClick: () => startDrill(t.id) })),
+      ...kbTopics.map((t) => ({ label: t.title, onClick: () => startDrill(t.id) })),
     ]);
   }
 
@@ -224,7 +269,10 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     if (step.ask !== undefined) {
       store.resumeIndex = stepIndex; // re-ask on reload
       persist();
-      if (step.ask.kind === "predict-output") return execPredictOutput(step.ask);
+      // predict-output and predict-state share the predict-then-verify path:
+      // a real trace, then grading against what the engine actually did.
+      if (step.ask.kind === "predict-output" || step.ask.kind === "predict-state") return execPredictOutput(step.ask);
+      if (step.ask.kind === "fill-one-blank") return execFillBlank(step.ask);
       return execGeneratedAsk(step.ask);
     }
 
@@ -240,14 +288,14 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
   }
 
   // ---- asks ---------------------------------------------------------------
-  function resolveAsk(card, { prompt, ok, verdict, answerText, lastAnswer, kind, template }) {
+  function resolveAsk(card, { prompt, ok, verdict, answerText, lastAnswer, kind, template, concept }) {
     card.freeze();
     card.setNote("");
     card.verdict(ok, verdict);
     record({ type: "question-frozen", prompt, ok, verdict, answerText });
     store.lastAnswer = lastAnswer;
-    if (template) bumpDrillStats(template, lastAnswer === "correct");
-    events.emit("quiz-graded", { kind, correct: ok, template });
+    if (concept) bumpDrillStats(concept, lastAnswer === "correct");
+    events.emit("quiz-graded", { kind, correct: ok, template, concept });
     resume();
   }
 
@@ -285,7 +333,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
         resolveAsk(card, {
           prompt: q.prompt, ok: true, verdict: "✓ Exactly right!",
           answerText: typeof answers?.text === "string" ? answers.text : undefined,
-          lastAnswer: "correct", template: ask.template, kind: q.kind,
+          lastAnswer: "correct", template: ask.template, concept: ask.concept, kind: q.kind,
         });
       } else if (attempts < maxAttempts) {
         view.applyResult(result, { reveal: false });
@@ -302,13 +350,13 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
         resolveAsk(card, {
           prompt: q.prompt, ok: false, verdict: "✗ Not this time — the right answer is marked above",
           answerText: typeof answers?.text === "string" ? answers.text : undefined,
-          lastAnswer: "wrong", template: ask.template, kind: q.kind,
+          lastAnswer: "wrong", template: ask.template, concept: ask.concept, kind: q.kind,
         });
       }
     };
     const doSkip = () => resolveAsk(card, {
       prompt: q.prompt, ok: false, verdict: "skipped",
-      lastAnswer: "skipped", template: ask.template, kind: q.kind,
+      lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: q.kind,
     });
 
     card.setActions([
@@ -320,8 +368,10 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
   }
 
   function execPredictOutput(ask) {
-    events.emit("quiz-question", { kind: "predict-output" });
+    events.emit("quiz-question", { kind: ask.kind });
+    const isState = ask.kind === "predict-state";
     const hints = [...(ask.hints ?? [])];
+    const totalHints = hints.length;
     let ta = null;
     const card = ui.addInteractiveCard({
       prompt: ask.prompt
@@ -337,7 +387,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
           ta = document.createElement("textarea");
           ta.className = "tutor-output-input";
         }
-        ta.placeholder = ask.singleLine ? "the one line this prints…" : "type your predicted output…";
+        ta.placeholder = isState ? "the value it holds…" : ask.singleLine ? "the one line this prints…" : "type your predicted output…";
         ta.spellcheck = false;
         body.appendChild(ta);
         return null;
@@ -361,11 +411,11 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
         armLockActions();
         return;
       }
-      const q = generateQuestion("predict-output", ctx(), ask.opts ?? {});
+      const q = generateQuestion(ask.kind, ctx(), ask.opts ?? {});
       if (!q) {
         resolveAsk(card, {
-          prompt: "Predict the output", ok: false, verdict: "couldn't grade this run",
-          answerText: text, lastAnswer: "skipped", template: ask.template, kind: "predict-output",
+          prompt: ask.prompt, ok: false, verdict: "couldn't grade this run",
+          answerText: text, lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: ask.kind,
         });
         return;
       }
@@ -377,18 +427,29 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
         div.className = "tutor-expected";
         const label = document.createElement("span");
         label.className = "hint";
-        label.textContent = "What it really printed:";
+        label.textContent = isState ? "What it really held:" : "What it really printed:";
         const pre = document.createElement("pre");
         pre.textContent = result.expected.text;
         div.append(label, pre);
         card.body.appendChild(div);
       }
+      // Met grant (lesson-kb-binding §4): a clean first-attempt correct
+      // predict-output — before the final hint was revealed — evidences the
+      // focused concept. predict-output has no retries, so the attempt is
+      // first by construction; a hint that states the output is a shown
+      // answer, so an answer after the last hint grants nothing. Lesson asks
+      // carry `focus`; practice-round asks carry `concept`.
+      const metTag = ask.focus ?? ask.concept;
+      const beforeFinalHint = totalHints === 0 || hints.length > 0;
+      if (result.correct && ask.kind === "predict-output" && metTag && beforeFinalHint) {
+        grantMet(metTag, ask.focus ? "lesson" : "drill");
+      }
       resolveAsk(card, {
-        prompt: "Predict the output", ok: result.correct,
+        prompt: ask.prompt, ok: result.correct,
         verdict: result.correct ? "✓ Exactly right!" : "✗ Not quite — compare with what really happened",
         answerText: text,
         lastAnswer: result.correct ? "correct" : "wrong",
-        template: ask.template, kind: "predict-output",
+        template: ask.template, concept: ask.concept, kind: ask.kind,
       });
     };
     const armLockActions = () => card.setActions([
@@ -404,8 +465,8 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
         },
       }] : []),
       { label: "Skip this one", onClick: () => resolveAsk(card, {
-        prompt: "Predict the output", ok: false, verdict: "skipped",
-        lastAnswer: "skipped", template: ask.template, kind: "predict-output",
+        prompt: ask.prompt, ok: false, verdict: "skipped",
+        lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: ask.kind,
       }) },
     ]);
     // Enter submits on single-line asks — drill cadence.
@@ -417,11 +478,101 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     armLockActions();
     setWaiting({
       type: "ask",
-      kind: "predict-output",
+      kind: ask.kind,
       lock: (text) => { if (text != null) ta.value = text; return doLock(); },
       skip: () => resolveAsk(card, {
-        prompt: "Predict the output", ok: false, verdict: "skipped",
-        lastAnswer: "skipped", template: ask.template, kind: "predict-output",
+        prompt: ask.prompt, ok: false, verdict: "skipped",
+        lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: ask.kind,
+      }),
+    });
+    return true;
+  }
+
+  // fill-one-blank (design §5.2): the program is shown with one hole and a
+  // target output; the learner types the missing token. Grading substitutes
+  // the token, runs the filled program for real, and accepts ANY fill whose
+  // real output equals the target — the interpreter is the only judge. A
+  // non-parsing fill just grades wrong (no traceback shown).
+  function execFillBlank(ask) {
+    events.emit("quiz-question", { kind: "fill-one-blank" });
+    const hints = [...(ask.hints ?? [])];
+    let input = null;
+    const card = ui.addInteractiveCard({
+      prompt: ask.prompt ?? "Fill in the blank so the program prints the target.",
+      render: (body) => {
+        input = document.createElement("input");
+        input.type = "text";
+        input.className = "tutor-output-input tutor-output-line";
+        input.placeholder = "the missing piece…";
+        input.spellcheck = false;
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !input.readOnly) doFill(); });
+        body.appendChild(input);
+        return null;
+      },
+      actions: [],
+      prog: store.currentProg,
+    });
+    ui.popBatch(batch, card);
+    batch = [];
+
+    const doFill = async () => {
+      const token = input.value;
+      if (!token.trim()) { card.setNote("Type the missing piece first"); return; }
+      input.readOnly = true;
+      card.setActions([]);
+      card.setNote("Filling it in and running it for real…");
+      const filled = spliceBlank(ask.code, ask.blank, token);
+      editor.setValue(filled);
+      store.lastLoadedCode = filled; // the reveal run is now the lesson's code
+      registerProgram(filled);
+      persist();
+      const summary = await actions.trace();
+      const q = summary?.terminal_reason === "completed" ? generateQuestion("predict-output", ctx(), {}) : null;
+      const correct = Boolean(q && q.grade({ text: ask.targetOutput }).correct);
+      input.classList.toggle("ok", correct);
+      input.classList.toggle("bad", !correct);
+      if (!correct) {
+        const div = document.createElement("div");
+        div.className = "tutor-expected";
+        const label = document.createElement("span");
+        label.className = "hint";
+        label.textContent = "A fill that works:";
+        const pre = document.createElement("pre");
+        pre.textContent = ask.blank.target;
+        div.append(label, pre);
+        card.body.appendChild(div);
+      }
+      resolveAsk(card, {
+        prompt: ask.prompt, ok: correct,
+        verdict: correct ? "✓ That prints the target!" : "✗ Not quite — that doesn't produce the target",
+        answerText: token,
+        lastAnswer: correct ? "correct" : "wrong",
+        template: ask.template, concept: ask.concept, kind: "fill-one-blank",
+      });
+    };
+    const armActions = () => card.setActions([
+      { label: "Check my answer ▶", primary: true, onClick: () => doFill() },
+      ...(hints.length ? [{
+        label: "Give me a hint",
+        onClick: () => {
+          const h = { type: "hint", md: hints.shift() };
+          record(h); ui.addCard(h); ui.appendToPopup(h);
+          if (!hints.length) armActions();
+        },
+      }] : []),
+      { label: "Skip this one", onClick: () => resolveAsk(card, {
+        prompt: ask.prompt, ok: false, verdict: "skipped",
+        lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: "fill-one-blank",
+      }) },
+    ]);
+    armActions();
+    setWaiting({
+      type: "ask",
+      kind: "fill-one-blank",
+      lock: (text) => { if (text != null) input.value = text; return doFill(); },
+      skip: () => resolveAsk(card, {
+        prompt: ask.prompt, ok: false, verdict: "skipped",
+        lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: "fill-one-blank",
       }),
     });
     return true;
@@ -479,12 +630,13 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     return unit.lesson.id;
   }
 
-  // A drill round is a compiled, seeded lesson (app/drills.mjs) — it runs
-  // on the ordinary lesson machinery. The compiled script is persisted
-  // verbatim so a reload resumes the identical round.
+  // A practice round is a compiled, seeded lesson (app/kb-session.mjs,
+  // sourced from the concept-DAG KB) — it runs on the ordinary lesson
+  // machinery. The compiled script is persisted verbatim so a reload
+  // resumes the identical round.
   function startDrill(topic = "all", opts = {}) {
     if (isCollabActive?.()) return null;
-    const built = buildDrillLesson(topic, {
+    const built = buildKBSession(topic, {
       seed: opts.seed ?? (Date.now() >>> 0),
       count: opts.count ?? 8,
       stats: loadDrillStats(),
@@ -550,6 +702,8 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     start,
     startDrill, // (topic?, {seed?, count?}) — deterministic under a seed
     drillStats: loadDrillStats,
+    met: loadMetStore,           // tag → {at, source} (lesson-kb-binding §5)
+    frontier: () => frontierTags(Object.keys(loadMetStore())),
     exit: () => { if (lesson) endLesson("exited"); },
     state: () => ({
       lessonId: lesson?.id ?? null,

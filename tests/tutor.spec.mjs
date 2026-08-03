@@ -68,6 +68,81 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
+  test("predict-state: latent state is examinable — grades a name never printed, quote-style forgiving", async ({ page }) => {
+    await setup(page);
+    // The classic aliasing trap, WITHOUT a print: `a` is never output, yet the
+    // predict-state form asks what it holds and grades against the real trace.
+    await page.evaluate(() => window.plp.editor.setValue("a = [1, 2]\nb = a\nb.append(3)\n"));
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    const r = await page.evaluate(() => {
+      const ctx = {
+        source: window.plp.editor.getValue(),
+        steps: window.plp.memory.steps(),
+        positions: window.plp.memory.linePositions(),
+      };
+      const q = window.plp.questions.generateQuestion("predict-state", ctx, { name: "a" });
+      const missing = window.plp.questions.generateQuestion("predict-state", ctx, { name: "zzz" });
+      return {
+        prompt: q.prompt,
+        expected: q.grade({ text: "" }).expected.text,
+        right: q.grade({ text: "[1, 2, 3]" }).correct,
+        rightSpacey: q.grade({ text: " [1,2,3] " }).correct, // whitespace forgiven
+        wrongUnmutated: q.grade({ text: "[1, 2]" }).correct,
+        unbound: missing, // no such name → null (cannot ask)
+      };
+    });
+    expect(r.prompt).toContain("what does `a` hold");
+    expect(r.expected).toBe("[1, 2, 3]"); // the aliased mutation shows through `a`
+    expect(r.right).toBe(true);
+    expect(r.rightSpacey).toBe(true);
+    expect(r.wrongUnmutated).toBe(false);
+    expect(r.unbound).toBeNull();
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("fill-one-blank: substitutes the typed token, runs it for real, judges by output", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
+    // Seed 2 of a numbers round opens with `print(14 ___ 8)`, target 6.
+    const id = await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 2, count: 1 }));
+    expect(id).toBe("drill-numbers-2");
+    expect((await page.evaluate(() => window.plp.editor.getValue())).trim()).toBe("print(14 ___ 8)");
+
+    // A WRONG fill: 14 * 8 is 112, not the target 6.
+    await page.evaluate(() => window.plp.tutor.lockPrediction("*"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 15_000 });
+    const s = await page.evaluate(() => window.plp.tutor.state());
+    expect(s.lastAnswer).toBe("wrong");
+    // The filled program really ran (the reveal): editor + console prove it.
+    expect((await page.evaluate(() => window.plp.editor.getValue())).trim()).toBe("print(14 * 8)");
+    expect((await page.evaluate(() => window.plp.console.text())).trim()).toBe("112");
+    // Mastery recorded by concept TAG (arith-on-ints), not by exercise id.
+    expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0008": { seen: 1, missed: 1 } });
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("spot-the-difference: program A shown with its real output; predict program B", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
+    // Seed 36 of a lists round opens with the += vs + [x] contrast.
+    const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 36, count: 1 }));
+    expect(id).toBe("drill-lists-36");
+    // The contrast card shows program A (uses +=) WITH its real output.
+    const feed = await page.evaluate(() => window.plp.tutor.feed().map((c) => c.md).filter(Boolean));
+    const contrast = feed.find((md) => md.includes("Spot the difference"));
+    expect(contrast).toContain("b += [88]");   // program A mutates the shared list
+    expect(contrast).toContain("[5, 7, 88]");  // …and its real output is shown
+    // The editor holds program B (the one to predict — a is left untouched).
+    expect((await page.evaluate(() => window.plp.editor.getValue())).trim())
+      .toBe("a = [5, 7]\nb = a\nb = b + [88]\nprint(a)");
+    // Predicting B's output correctly grades right and records the focus tag.
+    await page.evaluate(() => window.plp.tutor.lockPrediction("[5, 7]"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
+    expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0023": { seen: 1, missed: 0 } });
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
   test("popup: current beat pops up, close returns it to the feed, bubble click reopens with state intact", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => window.plp.tutor.start("u1-state-io"));
@@ -149,6 +224,105 @@ test.describe("PLP tutor (T-series)", () => {
       ],
     }));
     expect(errors.length).toBe(5);
+  });
+
+  test("lesson↔KB binding: lint rejects bad focus tags (binding spec §2/§7a)", async ({ page }) => {
+    await setup(page);
+    const errors = await page.evaluate(() => window.plp.tutor.lintLesson({
+      id: "bad-binding",
+      concepts: ["0006", "ZZZZ", "0001"],                       // unknown + structural
+      steps: [
+        { ask: { kind: "predict-output", focus: "XXXX" } },      // unknown focus
+        { ask: { kind: "predict-output", focus: "0001" } },      // structural focus
+        { ask: { kind: "predict-output", focus: "000A" } },      // not in unit concepts
+        { ask: { kind: "predict-output", focus: "0006" } },      // fine
+      ],
+    }));
+    expect(errors.some((e) => e.includes("unknown tag ZZZZ"))).toBe(true);
+    expect(errors.some((e) => e.includes("structural tag 0001"))).toBe(true);
+    expect(errors.some((e) => e.includes("XXXX is not a KB tag"))).toBe(true);
+    expect(errors.some((e) => e.includes("0001 is structural"))).toBe(true);
+    expect(errors.some((e) => e.includes("000A missing from the unit's concepts"))).toBe(true);
+    expect(errors.filter((e) => e.includes("0006")).length).toBe(0); // the good one is clean
+    // The shipped unit lints clean.
+    const u1errors = await page.evaluate(async () => {
+      const { curriculum } = await import("./curriculum/index.mjs");
+      return window.plp.tutor.lintLesson(curriculum.units[0].lesson);
+    });
+    expect(u1errors).toEqual([]);
+  });
+
+  test("lesson↔KB binding: clean first-attempt correct ask grants met; wrong or post-hint grants nothing; frontier feeds the menu (§7b–d)", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.removeItem("plp.kb.met.v1"); localStorage.removeItem("plp.kb.v1"); });
+
+    // Drive u1 to the b = a * 3 ask (focus 0009), skipping the demo steps.
+    await page.evaluate(() => window.plp.tutor.start("u1-state-io"));
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    await page.evaluate(() => window.plp.tutor.continue());
+    await page.evaluate(() => {
+      for (let i = 0; i < 3; i++) document.querySelector("[data-role=step-next]").click();
+    });
+    await page.evaluate(() => window.plp.tutor.continue());
+    expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
+
+    // (c) The demo-only walkthrough so far granted nothing.
+    expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
+
+    // (b) A WRONG answer grants nothing.
+    await page.evaluate(() => window.plp.tutor.lockPrediction("9"));
+    expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
+    await page.evaluate(() => window.plp.tutor.continue()); // past the wrong-branch card
+
+    // Input section: complete the rendezvous to reach the total ask.
+    await page.evaluate(() => { window.__p = window.plp.trace(); });
+    await page.waitForFunction(() => window.plp.console.isWaiting());
+    await page.evaluate(() => window.plp.provideInput("Ada"));
+    expect((await page.evaluate(() => window.__p)).terminal_reason).toBe("completed");
+    await page.evaluate(() => window.plp.tutor.continue()); // input card
+    await page.evaluate(() => window.plp.tutor.continue()); // output card
+    expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
+
+    // (b) A clean first-attempt CORRECT answer on the total ask (focus 000B)
+    // grants met with source "lesson".
+    await page.evaluate(() => window.plp.tutor.lockPrediction("total: 15"));
+    const met = await page.evaluate(() => window.plp.tutor.met());
+    expect(Object.keys(met)).toEqual(["000B"]);
+    expect(met["000B"].source).toBe("lesson");
+    expect(met["000B"].at).toBeGreaterThan(0);
+    // 0009 stayed ungranted (it was answered wrong).
+    expect(met["0009"]).toBeUndefined();
+
+    // (d) The met set feeds the frontier, and the post-lesson menu offers
+    // the frontier entry on top of the standard 8.
+    const frontier = await page.evaluate(() => window.plp.tutor.frontier());
+    expect(frontier.length).toBeGreaterThan(0);
+    await page.evaluate(() => window.plp.tutor.exit());
+    await expect(page.locator(".tutor-controls button").first()).toContainText("Drill what you just learned");
+    await expect(page.locator(".tutor-controls button")).toHaveCount(9); // frontier entry + all + 7 topics
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("lesson↔KB binding: an answer after the final hint grants nothing (§4.3)", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => localStorage.removeItem("plp.kb.met.v1"));
+    await page.evaluate(() => window.plp.tutor.start("u1-state-io"));
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    await page.evaluate(() => window.plp.tutor.continue());
+    await page.evaluate(() => {
+      for (let i = 0; i < 3; i++) document.querySelector("[data-role=step-next]").click();
+    });
+    await page.evaluate(() => window.plp.tutor.continue());
+    expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
+
+    // Reveal BOTH hints (the second states the reasoning outright), then
+    // answer correctly: correct grades correct, but met is NOT granted.
+    await page.locator(".tutor-popup button", { hasText: "Give me a hint" }).click();
+    await page.locator(".tutor-popup button", { hasText: "Give me a hint" }).click();
+    await page.evaluate(() => window.plp.tutor.lockPrediction("6"));
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
+    expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
   test("unit 1 end-to-end: actions, predict-then-verify, branches, input, completion", async ({ page }) => {
@@ -256,82 +430,11 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.editor.getValue())).toBe("# my solution attempt\n");
   });
 
-  test("drills: deterministic under a seed, varied across seeds", async ({ page }) => {
-    await setup(page);
-    const r = await page.evaluate(() => {
-      const { buildDrillLesson, drillTemplates } = window.plp.drills;
-      const a = buildDrillLesson("numbers", { seed: 42, count: 4 });
-      const b = buildDrillLesson("numbers", { seed: 42, count: 4 });
-      const codes = new Set();
-      for (let seed = 1; seed <= 8; seed++) {
-        codes.add(buildDrillLesson("lists", { seed, count: 1 }).steps[1].loadCode);
-      }
-      return {
-        sameSeedIdentical: JSON.stringify(a) === JSON.stringify(b),
-        distinctAcrossSeeds: codes.size,
-        templateCount: Object.keys(drillTemplates).length,
-        allHaveExplain: Object.values(drillTemplates).every((t) => t.explain?.length > 40 && t.topic && t.title),
-        allLeveled: Object.values(drillTemplates).every((t) => t.level === "core" || t.level === "edge"),
-        coreCount: Object.values(drillTemplates).filter((t) => t.level === "core").length,
-      };
-    });
-    expect(r.sameSeedIdentical).toBe(true);
-    expect(r.distinctAcrossSeeds).toBeGreaterThan(3); // real variation, not one program
-    expect(r.templateCount).toBeGreaterThanOrEqual(40);
-    expect(r.allHaveExplain).toBe(true);
-    expect(r.allLeveled).toBe(true);
-    expect(r.coreCount).toBeGreaterThanOrEqual(20); // basics dominate the bank
-  });
-
-  test("drills: rounds are mostly basics (core outweighs edge ~3:1)", async ({ page }) => {
-    await setup(page);
-    const r = await page.evaluate(() => {
-      const { buildDrillLesson, drillTemplates } = window.plp.drills;
-      let core = 0, total = 0;
-      for (const seed of [3, 11, 27]) {
-        const lesson = buildDrillLesson("all", { seed, count: 10 });
-        for (const step of lesson.steps) {
-          if (!step.ask) continue;
-          total += 1;
-          if (drillTemplates[step.ask.template].level === "core") core += 1;
-        }
-      }
-      return { core, total };
-    });
-    expect(r.total).toBe(30);
-    expect(r.core / r.total).toBeGreaterThanOrEqual(0.6); // "mostly basics"
-  });
-
-  test("drills: every template generates a clean, gradable program", async ({ page }) => {
-    test.setTimeout(240_000);
-    await setup(page);
-    const ids = await page.evaluate(() => Object.keys(window.plp.drills.drillTemplates));
-    for (const id of ids) {
-      const ok = await page.evaluate(async (templateId) => {
-        const { drillTemplates } = window.plp.drills;
-        const rng = window.plp.questions.mulberry32(7 + templateId.length);
-        const { code, multiline } = drillTemplates[templateId].generate(rng);
-        window.plp.editor.setValue(code);
-        const summary = await window.plp.trace();
-        const q = window.plp.questions.generateQuestion("predict-output", {
-          source: code,
-          steps: window.plp.memory.steps(),
-          positions: window.plp.memory.linePositions(),
-        });
-        const expected = q ? q.grade({ text: "" }).expected.text.replace(/\n+$/, "") : null;
-        return {
-          reason: summary?.terminal_reason,
-          gradable: Boolean(q),
-          oneLine: Boolean(multiline) || (expected !== null && !expected.includes("\n")),
-          errors: window.plp.checkErrors(),
-        };
-      }, id);
-      expect(ok.reason, `template ${id} must run clean`).toBe("completed");
-      expect(ok.gradable, `template ${id} must print something gradable`).toBe(true);
-      expect(ok.oneLine, `template ${id} must ask one thing (one output line)`).toBe(true);
-      expect(ok.errors).toEqual([]);
-    }
-  });
+  // The legacy drill-template bank (app/drills.mjs) and its six tests were
+  // retired once the KB reached drill parity: practice rounds now compile
+  // from kb/ exercises (app/kb-session.mjs), whose generation, variety,
+  // explanation, and doc-fidelity guarantees live in the K-series
+  // (tests/kb.spec.mjs). The round *behavior* tests below stayed.
 
   test("drill round: seeded session, miss stats, explain cards, reload-restores same round", async ({ page }) => {
     await setup(page);

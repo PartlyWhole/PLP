@@ -74,36 +74,43 @@ that is no longer there.
 ## Drill mode (questions-only practice)
 
 `plp.tutor.startDrill(topic, {seed?, count?})` — rapid-fire practice with
-no lesson narrative. [drills.mjs](drills.mjs) holds 44 parameterized
-**program generators** across 7 topics (state & I/O, numbers, strings,
-lists, logic, loops, structures), in two levels:
-
-- **core** — basic understanding (assign/read, output formatting,
-  indexing, branch selection, loop accumulation, dict/tuple/2D reading);
-  weighted 3:1, so rounds are mostly basics;
-- **edge** — the corner-case long tail (negative floor division,
-  aliasing, shallow copies, truthiness traps, …).
+no lesson narrative, sourced from the **concept-DAG knowledge base**
+([kb-session.mjs](kb-session.mjs) over `kb/`, design in
+`design/knowledge-base-design.md`). Every question is a KB exercise: one
+focus concept, a seeded deterministic program generator, and a
+machine-checked guarantee that the program uses at most one concept the
+student hasn't met (`footprint ⊆ assumed ∪ {focus} ∪ Structural`, the
+K-series). 7 topics (state & I/O, numbers, strings, lists, logic, loops,
+structures); selection weights core concepts 3:1 over edge, boosts unseen
+(×1.5) and missed (up to ×3) concepts, and never repeats a
+`(exercise, shape)` back to back.
 
 **One question at a time**: every generated program produces exactly one
-line of output — a template with several aspects prints ONE of them per
-question, chosen by the RNG (full coverage across variations). The
-answer surface is a single-line input with Enter-to-submit; the one
-`multiline: true` exception (print returns `None`) keeps the textarea.
-The sweep test enforces the one-line invariant on every template.
+line of output (single-line input, Enter to submit); the one
+`multiline: true` exception is `loop-for-visits-each`, where several
+lines ARE the concept. Forms beyond predict-exact-output — predict-state,
+fill-one-blank, spot-the-difference — plug in per exercise (design §5.2).
 
 A drill round compiles a seeded, stats-weighted sequence into an
 ordinary lesson script, so drills reuse the whole machinery (popup
 beats, predict-then-verify, persistence — the compiled script is stored
 verbatim, so reload restores the identical round).
 
-Ground truth is always the engine: templates generate programs, never
-answers. A miss (wrong or skipped) shows the template's `explain`
-scaffold and bumps `plp.drills.v1` per-template stats
-(`{seen, missed}`), which weight future template selection toward weak
-spots (unseen 1.5×, missed up to 3×). Generator rules — deterministic
-under a seed, always prints, no nondeterministic output (sets, `is` on
-cached ints), no exceptions, no input() — are documented at the top of
-drills.mjs.
+Ground truth is always the engine: exercises generate programs, never
+answers. A miss (wrong or skipped) shows the program's `variantCard`
+(interpolating the exact values asked) or the concept's canonical rule
+card, and bumps `plp.kb.v1` per-CONCEPT stats (`{seen, missed}`, keyed by
+permanent tag; one-time migration from the legacy `plp.drills.v1`
+template store). A clean first-attempt correct answer additionally grants
+the concept **met** in `plp.kb.met.v1` (see
+`design/lesson-kb-binding.md`), which feeds the menu's frontier entry.
+The generated catalogue of every concept and exercise is
+[../curriculum/KB-REFERENCE.md](../curriculum/KB-REFERENCE.md) (a build
+artifact, byte-exact by the K-doc test; regenerate with
+`node tools/kb-docgen.mjs --write`).
+
+(The original hand-authored template bank, `app/drills.mjs` +
+`curriculum/CURRICULUM.md`, was retired when the KB reached parity.)
 
 ## Step vocabulary
 

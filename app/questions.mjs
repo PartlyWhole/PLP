@@ -305,6 +305,30 @@ function predictOutputQuestion(ctx, opts = {}) {
   };
 }
 
+// predict-state (design §5.2): "after this program runs, what does `a`
+// hold?" — the way LATENT state (a value the program never prints) becomes
+// examinable. Graded synchronously against the name's final value in the
+// trace (the interpreter is still the only answer key); grading is quote-
+// style- and whitespace-insensitive (normalizeAnswer), which is exactly the
+// §13 Q4 default for this form.
+function predictStateQuestion(ctx, opts = {}) {
+  const name = opts.name;
+  if (!name || !ctx.steps?.length) return null;
+  const snap = snapshotAt(ctx.steps, ctx.steps.length - 1);
+  const entry = snap.entries.find((e) => e.scope === "globals" && e.name === name);
+  if (!entry) return null; // the name is not bound at the end — cannot ask
+  const expected = entry.value;
+  return {
+    kind: "predict-state",
+    prompt: `After this program runs, what does \`${name}\` hold?`,
+    blanks: [],
+    grade(answer) {
+      const correct = normalizeAnswer(answer?.text) === normalizeAnswer(expected);
+      return { correct, expected: { text: expected } };
+    },
+  };
+}
+
 // ---- code-prediction questions --------------------------------------------
 const STRUCTURAL_RE = /^\s*(def |class |for |while |if |elif |else\b|return\b|import |from )/;
 
@@ -447,6 +471,18 @@ export const questionGenerators = {
     label: "Predict the output",
     needsTrace: true,
     generate: predictOutputQuestion,
+  },
+  "predict-state": {
+    label: "Predict the final value of a name",
+    needsTrace: true,
+    generate: predictStateQuestion,
+  },
+  "fill-one-blank": {
+    // Graded by the tutor's async substitute-and-run path (design §5.2); this
+    // entry exists so lessons can declare the kind and lint accepts it.
+    label: "Fill in the missing token",
+    needsTrace: false,
+    generate: () => null,
   },
   "expression-sequence": {
     label: "Build expression evaluation",

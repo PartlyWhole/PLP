@@ -33,13 +33,14 @@ No build step exists anywhere — plain ES modules, vendored dependencies.
 | `app/question-ui.mjs` | shared question renderers (payload-shape router used by quiz panel + tutor cards) |
 | `app/quiz.mjs` | thin pilot UI over the question engine (floating panel; disposable) |
 | `app/tutor.mjs` + `app/tutor-ui.mjs` | guided tutor: lesson runtime + transcript-feed pane with beat popup — see **app/TUTOR.md**; plan in `design/tutor-plan.md` |
-| `app/drills.mjs` | drill bank: seeded corner-case program generators + round compiler (drill mode; see app/TUTOR.md) |
-| `curriculum/` | authored lesson scripts (data only, linted at start); `index.mjs` registry |
+| `app/kb-session.mjs` | KB-backed practice: compiles seeded, §6-weighted drill rounds from `kb/` exercises into lesson scripts; lesson↔concept binding helpers (`lintLessonConcepts`, `frontierTags`) — see design/lesson-kb-binding.md |
+| `kb/` | concept-DAG knowledge base (design in `design/knowledge-base-design.md`): append-only `tags.ledger.json`, concept + exercise data modules, footprint analyzer (`analyzer/`), `index.mjs` = `loadKB()` narrow interface. Standalone by contract: imports NOTHING from `app/` (loads in plain Node for the K-series) |
+| `curriculum/` | authored lesson scripts (data only, linted at start); `index.mjs` registry; **KB-REFERENCE.md** = the generated KB reference (build artifact — never hand-edit) |
 | `app/layout.mjs` | draggable gutters (CSS vars + localStorage), per-pane maximize (Esc restores) |
 | `app/stream-checks.mjs` | consumer-side trace-stream invariants (`traceStreamCheck`) |
 | `vendor/` | pinned third-party: Pyodide 314.0.2, PyTrace 0.1.0 (worker **patched** for sub-path — the ONLY upstream divergence, see `vendor/PATCHES.md`), CodeMirror 5.65.21, xterm.js 6.0.0 (+fit). Hashes in `vendor/PROVENANCE.md`; record any addition there |
 | `tools/dev-server.mjs` | zero-dep static server simulating the `/PLP/` prefix; `--coi` for header posture |
-| `tests/` | Playwright: `smoke.spec.mjs` (core flows), `emulator.spec.mjs` (X-series console), `collab.spec.mjs` (CO-series collaboration), `questions.spec.mjs` (Q-series question engine), `fastrun.spec.mjs` (F-series untraced execution), `tutor.spec.mjs` (T-series guided tutor) |
+| `tests/` | Playwright: `smoke.spec.mjs` (core flows), `emulator.spec.mjs` (X-series console), `collab.spec.mjs` (CO-series collaboration), `questions.spec.mjs` (Q-series question engine), `fastrun.spec.mjs` (F-series untraced execution), `tutor.spec.mjs` (T-series guided tutor), `kb.spec.mjs` (K-series knowledge base) |
 | `VALIDATION.md` | feature → best-evidence → coverage matrix; add a row when adding a feature |
 | `README.md` | user-facing doc incl. **Stepping model** and **Memory model display rules** |
 | `ONBOARDING.md` | engineer onboarding: architecture tour, invariants-with-incidents, design case studies, growth ladder |
@@ -112,6 +113,25 @@ source of the vendored assets and test machinery).
    checking `plp.checkErrors()` is empty. Suite runs under the `/PLP/`
    prefix with NO headers (service-worker posture = real GitHub Pages).
    First-visit COI shim reload: `waitForFunction(() => crossOriginIsolated)`.
+10. **Knowledge base**: `kb/` imports nothing from `app/` (it must load in
+   plain Node); `kb/tags.ledger.json` is APPEND-ONLY — tags are permanent,
+   never deleted, edited, or reused (splits/merges flip `status` and add
+   successors, per design/knowledge-base-design.md §2.5). Every exercise
+   obeys `footprint ⊆ assumed ∪ {focus} ∪ Structural` on every generated
+   program — the K-series enforces all of this; edits that trip it are
+   design changes, not test fixes. The ledger may run AHEAD of the loaded
+   concept set during breadth build-out (K-1 is directional: every loaded
+   concept must match its active ledger entry exactly; a ledger tag with no
+   loaded concept yet is expected). `curriculum/KB-REFERENCE.md` is a
+   build artifact — never hand-edit; regenerate with
+   `node tools/kb-docgen.mjs --write` (K-doc enforces byte-identity with
+   real-execution outputs).
+11. **Ledger permanence is CI-enforced**: `.github/workflows/kb-ledger.yml`
+   runs `node tools/check-ledger.mjs <base-ref>` (bare Node, no installs)
+   against the PR base / previous push commit, rejecting any deletion,
+   tag/kind/parents edit, or status flip without successors in
+   `kb/tags.ledger.json`; the K-series working-copy diff (K-2) is only the
+   local approximation.
 
 ## Engine facts that shape the UI (from the integration guide + source)
 
