@@ -314,4 +314,167 @@ export default [
       },
     },
   },
+
+  {
+    id: "slice-open-contrast",
+    topic: "strings",
+    focus: "0012", // slice-open-ended — contrasted against the two-end slice
+    assumed: ["0005", "0006", "0007", "000E", "0011"],
+    contrast: "0011", // slice-half-open — parent of the focus, in assumed (§2.8)
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["two-ends-vs-open"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const word = pick(rng, ["python", "planet", "yellow", "garden", "silver", "orange"]);
+        const a = int(rng, 1, 2), b = a + 2;
+        return {
+          code: `s = "${word}"\nprint(s[${a}:${b}])\n`,
+          aOutput: word.slice(a, b),
+          contrastCode: `s = "${word}"\nprint(s[${a}:])\n`,
+          shape: "two-ends-vs-open", variant: "plain",
+          variantCard: `Dropping the endpoint means "to the end": \`s[${a}:]\` runs from `
+            + `position ${a} all the way out — \`${word.slice(a)}\`, not just the `
+            + `${b - a} characters of \`s[${a}:${b}]\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "repeat-vs-concat",
+    topic: "strings",
+    focus: "000Z", // str-repeat — contrasted against gluing with +
+    assumed: ["0005", "0007", "0008", "000Y"],
+    contrast: "000Y", // str-concat — parent of the focus
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["concat-vs-repeat"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const w = pick(rng, ["hi", "cat", "sun", "ab"]);
+        const n = int(rng, 2, 3);
+        return {
+          code: `print("${w}" + "${w}")\n`,
+          aOutput: w + w,
+          contrastCode: `print("${w}" * ${n})\n`,
+          shape: "concat-vs-repeat", variant: "plain",
+          variantCard: `\`+\` glues the two copies you wrote; \`* ${n}\` repeats the text `
+            + `${n} times by itself: \`${w.repeat(n)}\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "get-vs-lookup",
+    topic: "structures",
+    focus: "001T", // dict-get-default — contrasted against plain lookup
+    assumed: ["0005", "0006", "0007", "000E", "001R"],
+    contrast: "001R", // dict-lookup-by-key — parent of the focus
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["lookup-vs-get"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const k = pick(rng, ["a", "b", "cat", "sun"]);
+        const v = int(rng, 1, 9), alt = int(rng, 10, 20);
+        return {
+          code: `d = {"${k}": ${v}}\nprint(d["${k}"])\n`,
+          aOutput: String(v),
+          contrastCode: `d = {"${k}": ${v}}\nprint(d.get("zz", ${alt}))\n`,
+          shape: "lookup-vs-get", variant: "plain",
+          variantCard: `\`d["${k}"]\` fetches a key that exists. \`.get("zz", ${alt})\` asks `
+            + `for a MISSING key — instead of an error it hands back the default: \`${alt}\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "tuple-comma-contrast",
+    topic: "structures",
+    focus: "001Y", // tuple-by-comma — contrasted against the ordinary pair
+    assumed: ["0005", "0006", "001W"],
+    contrast: "001W", // tuple-pack-print — parent of the focus
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["pair-vs-trailing-comma"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const a = int(rng, 1, 9), b = int(rng, 10, 20);
+        return {
+          code: `x = (${a}, ${b})\nprint(x)\n`,
+          aOutput: `(${a}, ${b})`,
+          contrastCode: `x = ${a},\nprint(x)\n`,
+          shape: "pair-vs-trailing-comma", variant: "plain",
+          variantCard: `The COMMA makes the tuple, not the parentheses: \`x = ${a},\` is a `
+            + `one-item tuple and prints as \`(${a},)\` — comma included.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "alias-chain",
+    topic: "lists",
+    focus: "000H", // names-share-list — braided: THREE names, one list
+    assumed: ["0005", "0006", "000A", "000C", "000D", "000G"],
+    role: "review",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["chain-read-first", "chain-read-middle"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const items = [int(rng, 1, 5), int(rng, 6, 9)];
+        const v = int(rng, 10, 99);
+        const shape = pick(rng, ["chain-read-first", "chain-read-middle"]);
+        const read = shape === "chain-read-first" ? "a" : "b";
+        return {
+          code: `a = [${items.join(", ")}]\nb = a\nc = b\nc.append(${v})\nprint(${read})\n`,
+          shape, variant: "plain",
+          variantCard: `\`b = a\` and \`c = b\` never copied anything — all three names hold `
+            + `ONE list. Appending ${v} through \`c\` changed it, so \`${read}\` shows `
+            + `[${[...items, v].join(", ")}] too.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "copy-latent-state",
+    topic: "lists",
+    focus: "0024", // slice-copies — the copy's independence as latent state
+    assumed: ["0005", "0006", "000D", "000G", "000H", "0011"],
+    role: "review",
+    form: "predict-state",
+    generator: {
+      shapes: ["probe-original", "probe-copy"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const items = [int(rng, 1, 5), int(rng, 6, 9)];
+        const v = int(rng, 10, 99);
+        const shape = pick(rng, ["probe-original", "probe-copy"]);
+        const probeName = shape === "probe-original" ? "a" : "b";
+        const held = shape === "probe-original" ? items : [...items, v];
+        return {
+          code: `a = [${items.join(", ")}]\nb = a[:]\nb.append(${v})\n`,
+          probeName,
+          shape, variant: "plain",
+          variantCard: `\`a[:]\` made a real copy, so the append changed only \`b\`. `
+            + `\`${probeName}\` holds [${held.join(", ")}].`,
+        };
+      },
+    },
+  },
 ];

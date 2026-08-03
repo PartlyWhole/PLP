@@ -9,7 +9,7 @@
 ## Overview
 
 - **69 concepts** — 4 structural / 47 core / 18 edge.
-- **76 exercises** across 7 topics.
+- **82 exercises** across 7 topics.
 - **Forms:** fill-one-blank, predict-exact-output, predict-state, spot-the-difference.
 
 ## Topics
@@ -185,7 +185,7 @@ b = a does not copy a list — one list, two names, so a change through either s
 - Children: 0023, 0024
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000A ← 000C ← 000D ← 000G
 - Characteristic wrong answer: the list as it was before the change
-- Exercises: alias-latent-state, alias-trap
+- Exercises: alias-chain, alias-latent-state, alias-trap
 
 ### 000J · print-multi-args — core
 
@@ -325,7 +325,7 @@ text * number repeats the text that many times.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 0008 ← 000Y
 - Characteristic wrong answer: multiplication of a number, or one copy only
-- Exercises: repeat-text
+- Exercises: repeat-text, repeat-vs-concat
 
 ### 0010 · index-from-end — edge
 
@@ -355,7 +355,7 @@ A missing endpoint means from the start or to the end: s[a:], s[:b].
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E ← 0011
 - Characteristic wrong answer: stops one short, or raises an error
-- Exercises: slice-open
+- Exercises: slice-open, slice-open-contrast
 
 ### 0013 · str-immutable-rebind — edge
 
@@ -595,7 +595,7 @@ d.get(k, alt) fetches like d[k] but hands back alt when the key is missing.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E ← 001R
 - Characteristic wrong answer: alt even when the key is present
-- Exercises: dict-get
+- Exercises: dict-get, get-vs-lookup
 
 ### 001V · in-dict-checks-keys — edge
 
@@ -635,7 +635,7 @@ The comma makes the tuple, not the parentheses: x = 3, is a one-item tuple.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 001W
 - Characteristic wrong answer: just the number, with no tuple
-- Exercises: tuple-comma
+- Exercises: tuple-comma, tuple-comma-contrast
 
 ### 001Z · aggregate-builtins — core
 
@@ -695,7 +695,7 @@ a[:] builds a real copy — mutating the copy leaves the original alone.
 - Children: 0025
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000A ← 000C ← 000D ← 000E ← 000G ← 000H ← 0011
 - Characteristic wrong answer: the original shows the change too
-- Exercises: slice-makes-copy
+- Exercises: copy-latent-state, slice-makes-copy
 
 ### 0025 · copy-is-shallow — edge
 
@@ -739,6 +739,25 @@ print(sum([3, 7, 9, 8]))
 prints:
 ```
 27
+```
+
+### alias-chain — focus 000H (names-share-list)
+
+- Form: `predict-exact-output` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000A, 000C, 000D, 000G
+- Shapes: chain-read-first, chain-read-middle · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+a = [2, 8]
+b = a
+c = b
+c.append(87)
+print(a)
+```
+prints:
+```
+[2, 8, 87]
 ```
 
 ### alias-latent-state — focus 000H (names-share-list)
@@ -1000,6 +1019,23 @@ for x in [5, 8]:
 prints:
 ```
 8
+```
+
+### copy-latent-state — focus 0024 (slice-copies)
+
+- Form: `predict-state` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D, 000G, 000H, 0011
+- Shapes: probe-original, probe-copy · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+a = [2, 7]
+b = a[:]
+b.append(69)
+```
+After it runs, `a` holds:
+```
+[2, 7]
 ```
 
 ### copy-then-rebind — focus 000C (name-from-name)
@@ -1286,6 +1322,34 @@ prints:
 20
 80
 40
+```
+
+### get-vs-lookup — focus 001T (dict-get-default)
+
+- Form: `spot-the-difference` · Role: review · Topic: structures
+- Assumed: 0005, 0006, 0007, 000E, 001R
+- Contrast: 001R
+- Shapes: lookup-vs-get · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+d = {"a": 1}
+print(d["a"])
+```
+prints:
+```
+1
+```
+
+Program B (predicted):
+```py
+d = {"a": 1}
+print(d.get("zz", 16))
+```
+prints:
+```
+16
 ```
 
 ### grid-lookup — focus 0022 (nested-lists)
@@ -1767,6 +1831,32 @@ prints:
 drumdrumdrum
 ```
 
+### repeat-vs-concat — focus 000Z (str-repeat)
+
+- Form: `spot-the-difference` · Role: review · Topic: strings
+- Assumed: 0005, 0007, 0008, 000Y
+- Contrast: 000Y
+- Shapes: concat-vs-repeat · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+print("hi" + "hi")
+```
+prints:
+```
+hihi
+```
+
+Program B (predicted):
+```py
+print("hi" * 2)
+```
+prints:
+```
+hihi
+```
+
 ### shallow-copy-shares-rows — focus 0025 (copy-is-shallow)
 
 - Form: `predict-exact-output` · Role: intro · Topic: lists
@@ -1816,6 +1906,34 @@ print("python"[:2])
 prints:
 ```
 py
+```
+
+### slice-open-contrast — focus 0012 (slice-open-ended)
+
+- Form: `spot-the-difference` · Role: review · Topic: strings
+- Assumed: 0005, 0006, 0007, 000E, 0011
+- Contrast: 0011
+- Shapes: two-ends-vs-open · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+s = "orange"
+print(s[1:3])
+```
+prints:
+```
+ra
+```
+
+Program B (predicted):
+```py
+s = "orange"
+print(s[1:])
+```
+prints:
+```
+range
 ```
 
 ### slice-two-ends — focus 0011 (slice-half-open)
@@ -1947,6 +2065,34 @@ print(x)
 prints:
 ```
 (2,)
+```
+
+### tuple-comma-contrast — focus 001Y (tuple-by-comma)
+
+- Form: `spot-the-difference` · Role: review · Topic: structures
+- Assumed: 0005, 0006, 001W
+- Contrast: 001W
+- Shapes: pair-vs-trailing-comma · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+x = (1, 19)
+print(x)
+```
+prints:
+```
+(1, 19)
+```
+
+Program B (predicted):
+```py
+x = 1,
+print(x)
+```
+prints:
+```
+(1,)
 ```
 
 ### tuple-pack — focus 001W (tuple-pack-print)

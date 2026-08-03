@@ -124,19 +124,20 @@ test.describe("PLP tutor (T-series)", () => {
   test("spot-the-difference: program A shown with its real output; predict program B", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
-    // Seed 36 of a lists round opens with the += vs + [x] contrast.
-    const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 36, count: 1 }));
-    expect(id).toBe("drill-lists-36");
+    // Seed 143 of a lists round opens with the += vs + [x] contrast (the
+    // seed is a fixture — re-derive it if the lists exercise pool changes).
+    const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 143, count: 1 }));
+    expect(id).toBe("drill-lists-143");
     // The contrast card shows program A (uses +=) WITH its real output.
     const feed = await page.evaluate(() => window.plp.tutor.feed().map((c) => c.md).filter(Boolean));
     const contrast = feed.find((md) => md.includes("Spot the difference"));
-    expect(contrast).toContain("b += [88]");   // program A mutates the shared list
-    expect(contrast).toContain("[5, 7, 88]");  // …and its real output is shown
+    expect(contrast).toContain("b += [54]");   // program A mutates the shared list
+    expect(contrast).toContain("[3, 8, 54]");  // …and its real output is shown
     // The editor holds program B (the one to predict — a is left untouched).
     expect((await page.evaluate(() => window.plp.editor.getValue())).trim())
-      .toBe("a = [5, 7]\nb = a\nb = b + [88]\nprint(a)");
+      .toBe("a = [3, 8]\nb = a\nb = b + [54]\nprint(a)");
     // Predicting B's output correctly grades right and records the focus tag.
-    await page.evaluate(() => window.plp.tutor.lockPrediction("[5, 7]"));
+    await page.evaluate(() => window.plp.tutor.lockPrediction("[3, 8]"));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
     expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0023": { seen: 1, missed: 0 } });
