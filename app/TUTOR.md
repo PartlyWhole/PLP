@@ -43,8 +43,11 @@ the session notes / commit message):
   points/gamification chrome.
 - **Buttons say what they do**: "Check my answer ▶", "Skip this one",
   "Give me a hint" — never terse adult UI verbs. Big targets.
-- **No concept leak**: drill prompts never name the rule being tested;
-  the rule arrives in the explain card after the attempt.
+- **Teach first, then no leaks**: a concept the student has never seen is
+  introduced by its rule card ("🌱 New idea!") in the same beat, right
+  above their first question on it — an intro instructs before it asks.
+  From then on prompts never name the rule; it returns only in the
+  after-miss explain card.
 
 ## Two reading surfaces, one history
 

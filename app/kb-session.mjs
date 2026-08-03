@@ -81,6 +81,7 @@ export function buildKBSession(topic, { count = 8, seed = 1, stats = {} } = {}) 
   }];
 
   let prevKey = null;
+  const taught = new Set();
   for (let i = 0; i < count; i++) {
     // Weighted, seeded exercise choice; no consecutive (form, shape) repeat
     // (design §5.3 / inv 14), so consecutive questions feel different.
@@ -97,8 +98,15 @@ export function buildKBSession(topic, { count = 8, seed = 1, stats = {} } = {}) 
     const concept = kb.concepts.get(ex.focus);
     const n = `(${i + 1}/${count})`;
 
-    // No concept title before the attempt: naming the rule spoils the
-    // question and leads with jargon. The rule arrives in the explain.
+    // FIRST ENCOUNTER teaches first: an exercise introduces exactly one new
+    // concept, so before a student's first-ever question on it, its rule
+    // card is presented as instruction (in the same beat as the question,
+    // right above it). Once the concept has been seen, later questions stay
+    // unspoiled — the rule returns only in the after-miss explain.
+    if (!stats[ex.focus]?.seen && !taught.has(ex.focus)) {
+      taught.add(ex.focus);
+      steps.push({ say: `🌱 **New idea!**\n\n${concept.card}\n\nNow you try one.` });
+    }
     let ask;
     if (ex.form === "spot-the-difference") {
       // Show program A WITH its real output, then predict program B — which

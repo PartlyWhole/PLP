@@ -233,6 +233,17 @@ uncommitted, so tags are not yet permanent; K-2 returns early.
   always non-empty ({print-text}), so the "drill what you just learned"
   entry is gated on `met.length > 0`, keeping the pinned 8-button
   fresh-visit menu; with mastery it becomes 9 buttons.
+- Teach-first (owner-directed refinement of §5.4 "no spoilers"): a
+  concept UNSEEN in the student's stats gets its rule card as an
+  instructional "🌱 New idea!" say-card in the same beat, directly above
+  their first question on it (one per concept per round; deterministic —
+  gated on the stats snapshot, so persisted rounds rebuild identically).
+  Seen concepts stay unspoiled: prompts never name the rule; it returns
+  only after a miss. Rationale: an intro exercise introduces exactly one
+  atomic concept (§2.8), so its first encounter should instruct before it
+  asks; the §2.8 met-rule is unaffected (the card teaches the rule, never
+  the specific program's answer, and the prediction is still the
+  student's own).
 
 ## Pending doc rows — MERGED (2026-07-30)
 

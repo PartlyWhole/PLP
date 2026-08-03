@@ -464,6 +464,46 @@ test.describe("PLP tutor (T-series)", () => {
   // explanation, and doc-fidelity guarantees live in the K-series
   // (tests/kb.spec.mjs). The round *behavior* tests below stayed.
 
+  test("first encounter teaches first: an unseen concept's rule card precedes its question; seen concepts stay unspoiled", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
+
+    // Compiled-script level (pure): fresh stats → one teach card per distinct
+    // concept, each BEFORE that concept's first ask; primed stats → none.
+    const r = await page.evaluate(async () => {
+      const { buildKBSession } = await import("./app/kb-session.mjs");
+      const fresh = buildKBSession("numbers", { seed: 7, count: 5, stats: {} });
+      const asks = fresh.steps.filter((s) => s.ask);
+      const focuses = [...new Set(asks.map((s) => s.ask.concept))];
+      const teach = fresh.steps.filter((s) => s.say?.includes("New idea!"));
+      const firstTeachIdx = fresh.steps.findIndex((s) => s.say?.includes("New idea!"));
+      const firstAskIdx = fresh.steps.findIndex((s) => s.ask);
+      const primed = buildKBSession("numbers", {
+        seed: 7, count: 5,
+        stats: Object.fromEntries(focuses.map((t) => [t, { seen: 2, missed: 0 }])),
+      });
+      return {
+        distinctConcepts: focuses.length,
+        teachCount: teach.length,
+        teachBeforeAsk: firstTeachIdx !== -1 && firstTeachIdx < firstAskIdx,
+        primedTeachCount: primed.steps.filter((s) => s.say?.includes("New idea!")).length,
+      };
+    });
+    expect(r.teachCount).toBe(r.distinctConcepts); // one lesson per new concept, no repeats
+    expect(r.teachBeforeAsk).toBe(true);
+    expect(r.primedTeachCount).toBe(0); // once seen, questions stay unspoiled
+
+    // UI level: the teach card lands in the feed and does NOT block — the
+    // round still opens waiting on the ask, with the rule card above it.
+    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 7, count: 2 }));
+    const s = await page.evaluate(() => window.plp.tutor.state());
+    expect(s.waiting).toBe("ask");
+    const feed = await page.evaluate(() => window.plp.tutor.feed().map((c) => c.md).filter(Boolean));
+    expect(feed.some((md) => md.includes("New idea!"))).toBe(true);
+    // (no checkErrors here: it validates the trace record stream, and this
+    // test intentionally stops before any trace runs)
+  });
+
   test("drill round: seeded session, miss stats, explain cards, reload-restores same round", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => localStorage.removeItem("plp.drills.v1"));
