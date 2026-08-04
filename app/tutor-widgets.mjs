@@ -243,5 +243,20 @@ export function buildControlButton(a) {
   }
   if (a.primary) btn.classList.add("primary");
   btn.addEventListener("click", a.onClick);
+  // A control can carry an endless companion: a small ∞ button that starts
+  // the same target in endless mode. Rendered as one visual split control.
+  if (a.onEndless) {
+    const wrap = document.createElement("span");
+    wrap.className = "t-control-split";
+    const inf = document.createElement("button");
+    inf.type = "button";
+    inf.className = "t-endless-mini";
+    inf.textContent = "∞";
+    inf.title = `Endless: ${a.label}`;
+    inf.setAttribute("aria-label", `Endless practice — ${a.label}`);
+    inf.addEventListener("click", a.onEndless);
+    wrap.append(btn, inf);
+    return wrap;
+  }
   return btn;
 }

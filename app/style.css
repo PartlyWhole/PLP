@@ -662,6 +662,14 @@ button.pr-quiet:hover { color: var(--t-ink); text-decoration: underline; }
 }
 .pr-controls:empty { display: none; }
 .pr-controls button { font-size: var(--fs-body); padding: 8px 16px; }
+/* split control: a topic button with its ∞ endless companion */
+.t-control-split { display: inline-flex; }
+.t-control-split button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.pr-controls .t-endless-mini, .t-endless-mini {
+  border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none;
+  padding: 8px 10px; color: var(--t-ink-dim);
+}
+.t-endless-mini:hover { color: var(--t-ink); }
 @media (prefers-reduced-motion: reduce) {
   .pr-dot { transition: none; }
   .pr-reveal { animation: none; }

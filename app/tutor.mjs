@@ -232,6 +232,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         label: t.title,
         progress: { met: byId.get(t.id)?.met ?? 0, total: byId.get(t.id)?.total ?? 0 },
         onClick: () => startDrill(t.id),
+        onEndless: () => startDrill(t.id, { endless: true }),
       })),
     ]);
   }

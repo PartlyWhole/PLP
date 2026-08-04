@@ -27,7 +27,8 @@ test.describe("PLP tutor (T-series)", () => {
     // units are debug-only via plp.tutor.start).
     await expect(page.locator("#practice .pr-static .tutor-card")).toHaveCount(1);
     await expect(page.locator("#practice [data-role=pr-controls] button").first()).toContainText("Everything");
-    await expect(page.locator("#practice [data-role=pr-controls] button")).toHaveCount(10); // all + endless + map + 7 topics
+    await expect(page.locator("#practice [data-role=pr-controls] button:not(.t-endless-mini)")).toHaveCount(10); // all + endless + map + 7 topics
+    await expect(page.locator("#practice [data-role=pr-controls] .t-endless-mini")).toHaveCount(7); // ∞ per topic
     await page.reload();
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
     await expect(page.locator("body")).toHaveClass(/practice/); // persisted
@@ -559,7 +560,7 @@ test.describe("PLP tutor (T-series)", () => {
     expect(frontier.length).toBeGreaterThan(0);
     await page.evaluate(() => window.plp.tutor.exit());
     await expect(page.locator("#practice [data-role=pr-controls] button").first()).toContainText("Drill what you just learned");
-    await expect(page.locator("#practice [data-role=pr-controls] button")).toHaveCount(11); // frontier entry + all + endless + map + 7 topics
+    await expect(page.locator("#practice [data-role=pr-controls] button:not(.t-endless-mini)")).toHaveCount(11); // frontier entry + all + endless + map + 7 topics
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
@@ -813,6 +814,16 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#practice .pr-static")).toContainText("All time:");
     expect(await page.evaluate(() =>
       [...document.querySelectorAll("#practice [data-role=pr-controls] button")].some((b) => b.textContent.includes("∞ Endless practice")))).toBe(true);
+    // Every topic has its own ∞ companion: clicking one starts an endless
+    // run scoped to THAT topic (the chunks chain within it).
+    await page.locator("#practice [data-role=pr-controls] .t-endless-mini").first().click();
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    const scoped = await page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
+      return { endless: s.endless, topic: s.drillTopic };
+    });
+    expect(scoped.endless).toBe(true);
+    expect(scoped.topic).toBe("state"); // first topic button
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
