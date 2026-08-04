@@ -4,6 +4,7 @@
 
 import { mulberry32, int, pick } from "../rng.mjs";
 import { words, listNames } from "../pools.mjs";
+import { orderPair } from "../contrast.mjs";
 
 export default [
   {
@@ -366,6 +367,153 @@ export default [
           variantCard: `\`a[:]\` copied only the OUTER list — \`a[${row}]\` and \`b[${row}]\` are `
             + `one shared inner list. Appending ${x} through \`${via}\` changed it, so `
             + `\`${read}\` shows ${show(after)}.`,
+        };
+      },
+    },
+  },
+
+  // --- order-matters variations (design §5, order discipline) -----------
+
+  {
+    id: "append-order",
+    topic: "lists",
+    focus: "000G", // append-mutates — printing before vs after the append
+    assumed: ["0005", "0006", "000D"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["one-append", "two-appends"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["one-append", "two-appends"]);
+        const nm = pick(rng, listNames);
+        const p = int(rng, 1, 5), q = int(rng, 6, 9), v = int(rng, 10, 99), w = int(rng, 10, 99);
+        const aOutput = `[${p}, ${q}]`;
+        if (shape === "two-appends") {
+          const { code, contrastCode } = orderPair(
+            [`${nm} = [${p}, ${q}]`, `print(${nm})`, `${nm}.append(${v})`, `${nm}.append(${w})`], 1, 3);
+          return {
+            code, aOutput, contrastCode,
+            shape, variant: "plain",
+            variantCard: `Only \`print(${nm})\` moved. Print FIRST and the list is still \`${aOutput}\`; `
+              + `print after both appends and it has grown to \`[${p}, ${q}, ${v}, ${w}]\`.`,
+          };
+        }
+        const { code, contrastCode } = orderPair(
+          [`${nm} = [${p}, ${q}]`, `print(${nm})`, `${nm}.append(${v})`], 1, 2);
+        return {
+          code, aOutput, contrastCode,
+          shape, variant: "plain",
+          variantCard: `The append changes the SAME list. Print before it and you see \`${aOutput}\`; `
+            + `print after and you see \`[${p}, ${q}, ${v}]\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "slot-write-order",
+    topic: "lists",
+    focus: "000F", // index-assign-mutates — which write lands last wins
+    assumed: ["0005", "0006", "000D", "000E"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["swap-writes", "read-between"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["swap-writes", "read-between"]);
+        const nm = pick(rng, listNames);
+        const base = int(rng, 1, 9);
+        const v1 = int(rng, 10, 40);
+        const v2 = v1 + int(rng, 1, 20); // v2 ≠ v1
+        if (shape === "read-between") {
+          const { code, contrastCode } = orderPair(
+            [`${nm} = [${v1}, ${base}]`, `${nm}[0] = ${v1}`, `print(${nm})`, `${nm}[0] = ${v2}`], 2, 3);
+          return {
+            code, aOutput: `[${v1}, ${base}]`, contrastCode,
+            shape, variant: "plain",
+            variantCard: `Only \`print(${nm})\` moved. Read between the two writes and slot 0 is ${v1}; `
+              + `read after both and slot 0 is ${v2} — the last write to a slot wins.`,
+          };
+        }
+        const { code, contrastCode } = orderPair(
+          [`${nm} = [${base}, ${base}]`, `${nm}[0] = ${v1}`, `${nm}[0] = ${v2}`, `print(${nm})`], 1, 2);
+        return {
+          code, aOutput: `[${v2}, ${base}]`, contrastCode,
+          shape, variant: "plain",
+          variantCard: `Both lines write slot 0; the SECOND one wins. As written slot 0 ends at ${v2}; `
+            + `swap the two writes and it ends at ${v1} instead.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "copy-timing",
+    topic: "lists",
+    focus: "0024", // slice-copies — a[:] copies the list AS IT IS right then
+    assumed: ["0005", "0006", "000D", "000G", "000H", "0011"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["one-append", "two-appends"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["one-append", "two-appends"]);
+        const p = int(rng, 1, 5), q = int(rng, 6, 9), v = int(rng, 10, 99), w = int(rng, 10, 99);
+        const aOutput = `[${p}, ${q}]`;
+        if (shape === "two-appends") {
+          const { code, contrastCode } = orderPair(
+            [`a = [${p}, ${q}]`, `b = a[:]`, `a.append(${v})`, `a.append(${w})`, `print(b)`], 1, 3);
+          return {
+            code, aOutput, contrastCode,
+            shape, variant: "plain",
+            variantCard: `\`b = a[:]\` copies the list exactly as it is at that moment. Copy first and \`b\` `
+              + `stays \`${aOutput}\`; copy after both appends and \`b\` is \`[${p}, ${q}, ${v}, ${w}]\`.`,
+          };
+        }
+        const { code, contrastCode } = orderPair(
+          [`a = [${p}, ${q}]`, `b = a[:]`, `a.append(${v})`, `print(b)`], 1, 2);
+        return {
+          code, aOutput, contrastCode,
+          shape, variant: "plain",
+          variantCard: `Only the \`b = a[:]\` copy moved. Copy BEFORE the append and \`b\` is \`${aOutput}\`; `
+            + `copy AFTER and \`b\` is \`[${p}, ${q}, ${v}]\` — the copy freezes the list as it stood.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Trace walkthrough (design §5.2 trace-table): aliasing in table form —
+    // one append changes BOTH columns in the same row, which is the whole
+    // point of names-share-list.
+    id: "trace-alias",
+    topic: "lists",
+    focus: "000H", // names-share-list
+    assumed: ["0005", "0006", "000A", "000C", "000D", "000G"],
+    role: "review",
+    form: "trace-table",
+    generator: {
+      shapes: ["append-through-alias", "append-through-original"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["append-through-alias", "append-through-original"]);
+        const items = Array.from({ length: 2 }, () => int(rng, 1, 9));
+        const extra = int(rng, 10, 99);
+        const code = shape === "append-through-alias"
+          ? `a = [${items.join(", ")}]\nb = a\nb.append(${extra})\nprint(a)\n`
+          : `a = [${items.join(", ")}]\nb = a\na.append(${extra})\nprint(b)\n`;
+        return {
+          code,
+          probeNames: ["a", "b"],
+          shape, variant: "plain",
+          variantCard: "`b = a` makes two names for ONE list — so the append step changes both columns at once. That shared row is aliasing.",
         };
       },
     },

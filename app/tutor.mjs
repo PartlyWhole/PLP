@@ -26,7 +26,7 @@
 // printed. The run IS the reveal.
 
 import { generateQuestion, questionGenerators } from "./questions.mjs";
-import { renderQuestionBody, createAnswerInput, appendExpected } from "./question-ui.mjs";
+import { renderQuestionBody, renderTraceTable, createAnswerInput, appendExpected } from "./question-ui.mjs";
 import { buildKBSession, kbTopics, migrateStats, spliceBlank, lintLessonConcepts, frontierTags, drillTopicFor, topicProgress, conceptTopics } from "./kb-session.mjs";
 import { summarizeRound } from "./progress.mjs";
 import { mapModel, renderConceptMap } from "./concept-map.mjs";
@@ -359,6 +359,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       // a real trace, then grading against what the engine actually did.
       if (step.ask.kind === "predict-output" || step.ask.kind === "predict-state") return execPredictOutput(step.ask);
       if (step.ask.kind === "fill-one-blank") return execFillBlank(step.ask);
+      if (step.ask.kind === "trace-table") return execTraceTable(step.ask);
       return execGeneratedAsk(step.ask);
     }
 
@@ -709,6 +710,115 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     return true;
   }
 
+  // trace-table: walk the program's execution step by step, filling in what
+  // each watched name holds after each line. The trace runs SILENTLY first —
+  // ground truth must exist before the table can even be built — then every
+  // blank is graded against the real trace. One shot (no retries): the table
+  // itself is the reveal, marked per cell.
+  function execTraceTable(ask) {
+    events.emit("quiz-question", { kind: "trace-table" });
+    const hints = [...(ask.hints ?? [])];
+    const totalHints = hints.length;
+    (async () => {
+      const ranCode = editor.getValue(); // grade-what-runs: snapshot for review
+      const summary = await actions.trace();
+      const q = summary
+        ? generateQuestion("trace-table", ctx(), { names: ask.probeNames, maxBlanks: ask.maxBlanks })
+        : null;
+      if (!q) {
+        const desc = {
+          type: "sys",
+          text: summary
+            ? "(couldn't build a trace-table question here — moving on)"
+            : "(the run couldn't start — moving on)",
+        };
+        record(desc);
+        ui.addCard(desc);
+        batch.push(desc);
+        store.lastAnswer = "skipped";
+        resume();
+        return;
+      }
+      const expectedById = Object.fromEntries(q.blanks.map((b) => [b.id, b.expected]));
+      const baseReview = () => ({
+        kind: "trace-table", form: ask.form,
+        opts: { names: ask.probeNames, maxBlanks: ask.maxBlanks },
+        code: ranCode,
+        table: { rows: q.rows, expectedById },
+        teach: ask.teach, context: ask.context,
+      });
+      let view = null;
+      const card = ui.addInteractiveCard({
+        teach: ask.teach, context: ask.context, form: ask.form ?? "trace-table",
+        prompt: ask.prompt ?? q.prompt,
+        render: (body) => { view = renderTraceTable(body, q); return view; },
+        actions: [],
+        prog: store.currentProg,
+      });
+      ui.popBatch(batch, card);
+      batch = [];
+      const doLock = (provided) => {
+        const answers = provided ?? view.collect();
+        if (q.blanks.some((b) => !String(answers[b.id] ?? "").trim())) {
+          card.setNote("Fill every box first");
+          return;
+        }
+        view.freeze?.();
+        card.setActions([]);
+        const result = q.grade(answers);
+        view.applyResult(result);
+        const nTotal = q.blanks.length;
+        const nRight = q.blanks.filter((b) => result.perBlank[b.id]).length;
+        card.reveal?.({ text: `${nRight} of ${nTotal} steps right`, correct: result.correct, kind: "trace-table" });
+        // Met grant (lesson-kb-binding §4): a clean first-attempt all-correct
+        // table — before the final hint — evidences the focused concept.
+        // trace-table has no retries, so the attempt is first by construction.
+        const metTag = ask.focus ?? ask.concept;
+        const beforeFinalHint = totalHints === 0 || hints.length > 0;
+        if (result.correct && metTag && beforeFinalHint) {
+          if (grantMet(metTag, ask.focus ? "lesson" : "drill")) {
+            (store.roundMet ??= []).push(metTag);
+            persist();
+          }
+        }
+        resolveAsk(card, {
+          prompt: ask.prompt ?? q.prompt, ok: result.correct,
+          verdict: result.correct
+            ? "✓ Every step right!"
+            : `✗ ${nRight} of ${nTotal} — check the marked steps`,
+          lastAnswer: result.correct ? "correct" : "wrong",
+          template: ask.template, concept: ask.concept, kind: "trace-table",
+          review: { ...baseReview(), table: { rows: q.rows, expectedById, perBlank: result.perBlank }, answersById: answers },
+        });
+      };
+      const doSkip = () => resolveAsk(card, {
+        prompt: ask.prompt ?? q.prompt, ok: false, verdict: "skipped",
+        lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: "trace-table",
+        review: baseReview(),
+      });
+      const armActions = () => card.setActions([
+        { label: "Check my answers ▶", primary: true, onClick: () => doLock() },
+        ...(hints.length ? [{
+          label: "Give me a hint",
+          onClick: () => {
+            const h = { type: "hint", md: hints.shift() };
+            record(h); ui.addCard(h); ui.appendToPopup(h);
+            if (!hints.length) armActions();
+          },
+        }] : []),
+        { label: "Skip this one", onClick: doSkip },
+      ]);
+      armActions();
+      setWaiting({
+        type: "ask",
+        kind: "trace-table",
+        submit: (answers) => doLock(answers),
+        skip: doSkip,
+      });
+    })();
+    return true;
+  }
+
   // ---- lifecycle ----------------------------------------------------------
   function restoreLearnerCode() {
     if (store.stash === undefined) return;
@@ -842,8 +952,11 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       prompt: rec.prompt, ok: rec.ok, verdict: rec.verdict,
       answerText: rec.answerText, retry: rec.retry,
       kind: r.kind, code: displayCode, expectedText: r.expectedText,
+      table: r.table, answersById: r.answersById,
       teach: r.teach, context: r.context,
-      onRetry: r.code ? (text) => retryAnswer(rec, text) : null,
+      // The single-input retry widget fits single-answer kinds only; a
+      // trace-table review is the completed table itself, read-only.
+      onRetry: r.code && r.kind !== "trace-table" ? (text) => retryAnswer(rec, text) : null,
       onBack: () => practiceUI.closeReview?.(),
     });
     return rec;

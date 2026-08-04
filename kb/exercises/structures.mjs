@@ -2,6 +2,7 @@
 
 import { mulberry32, int, pick } from "../rng.mjs";
 import { dictKeys } from "../pools.mjs";
+import { orderPair } from "../contrast.mjs";
 
 const twoKeys = (rng) => {
   const i = int(rng, 0, dictKeys.length - 1);
@@ -202,6 +203,47 @@ export default [
           code: `x = ${a},\nprint(x)\n`,
           shape: "trailing-comma", variant: "plain",
           variantCard: `The trailing comma makes \`x\` a one-item tuple, so it prints as \`(${a},)\`.`,
+        };
+      },
+    },
+  },
+
+  // --- order-matters variation (design §5, order discipline) ------------
+
+  {
+    id: "store-order",
+    topic: "structures",
+    focus: "001S", // dict-key-assign — the last store to a key wins
+    assumed: ["0005", "0006", "001R"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["swap-stores", "read-between"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["swap-stores", "read-between"]);
+        const k = pick(rng, dictKeys);
+        const i0 = int(rng, 1, 9);
+        const v1 = int(rng, 10, 40);
+        const v2 = v1 + int(rng, 1, 20); // v2 ≠ v1
+        if (shape === "read-between") {
+          const { code, contrastCode } = orderPair(
+            [`d = {"${k}": ${i0}}`, `d["${k}"] = ${v1}`, `print(d)`, `d["${k}"] = ${v2}`], 2, 3);
+          return {
+            code, aOutput: `{'${k}': ${v1}}`, contrastCode,
+            shape, variant: "plain",
+            variantCard: `Only \`print(d)\` moved. Read between the two stores and \`"${k}"\` maps to ${v1}; `
+              + `read after both and it maps to ${v2} — the last store to a key wins.`,
+          };
+        }
+        const { code, contrastCode } = orderPair(
+          [`d = {"${k}": ${i0}}`, `d["${k}"] = ${v1}`, `d["${k}"] = ${v2}`, `print(d)`], 1, 2);
+        return {
+          code, aOutput: `{'${k}': ${v2}}`, contrastCode,
+          shape, variant: "plain",
+          variantCard: `Both lines store under \`"${k}"\`; the SECOND wins. As written \`"${k}"\` ends at ${v2}; `
+            + `swap the two stores and it ends at ${v1}.`,
         };
       },
     },

@@ -4,6 +4,7 @@
 
 import { mulberry32, int, pick } from "../rng.mjs";
 import { words, longWords, strNames, capWords, lowWords } from "../pools.mjs";
+import { orderPair } from "../contrast.mjs";
 
 export default [
   {
@@ -168,6 +169,43 @@ export default [
           shape: "capital-vs-lower", variant: "plain",
           variantCard: `Capital \`${cap[0]}\` has a smaller code than lowercase \`${low[0]}\`, so `
             + `\`"${cap}"\` sorts before \`"${low}"\` and the answer is \`True\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "capture-order",
+    topic: "strings",
+    focus: "0013", // str-immutable-rebind — t = s captures the text it sees NOW
+    assumed: ["0005", "0006", "000A", "000C", "000Y"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["one-suffix", "two-suffix"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["one-suffix", "two-suffix"]);
+        const w = pick(rng, words), s1 = pick(rng, words), s2 = pick(rng, words);
+        if (shape === "two-suffix") {
+          const { code, contrastCode } = orderPair(
+            [`s = "${w}"`, `t = s`, `s = s + "${s1}"`, `s = s + "${s2}"`, `print(t)`], 1, 3);
+          return {
+            code, aOutput: w, contrastCode,
+            shape, variant: "plain",
+            variantCard: `\`t = s\` captures the text \`s\` holds when it runs. Capture first and \`t\` `
+              + `keeps \`${w}\`; capture after both rebuilds and \`t\` is \`${w + s1 + s2}\`. `
+              + `Building new text never changes the copy already taken.`,
+          };
+        }
+        const { code, contrastCode } = orderPair(
+          [`s = "${w}"`, `t = s`, `s = s + "${s1}"`, `print(t)`], 1, 2);
+        return {
+          code, aOutput: w, contrastCode,
+          shape, variant: "plain",
+          variantCard: `Only the \`t = s\` line moved. Take the copy BEFORE \`s\` is rebuilt and \`t\` `
+            + `is \`${w}\`; take it AFTER and \`t\` is \`${w + s1}\`.`,
         };
       },
     },

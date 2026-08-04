@@ -148,6 +148,18 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus } = {
         code: prog.code, blank: prog.blank, targetOutput: prog.targetOutput,
         prompt: `Fill the blank so it prints \`${prog.targetOutput}\`.`,
       };
+    } else if (ex.form === "trace-table") {
+      // Walk the trace: the student fills what each watched name holds at
+      // every step where it changes; the real trace is the answer key (the
+      // row/blank structure derives at runtime — kb stays trace-agnostic).
+      steps.push({ loadCode: prog.code });
+      ask = {
+        kind: "trace-table",
+        form: ex.form, shape: prog.shape,
+        concept: ex.focus, template: ex.id,
+        probeNames: prog.probeNames, maxBlanks: prog.maxBlanks,
+        prompt: "Walk it line by line — what does each name hold after each step?",
+      };
     } else if (ex.form === "predict-state") {
       steps.push({ loadCode: prog.code });
       ask = {

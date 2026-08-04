@@ -195,6 +195,65 @@ test.describe("PLP questions (Q-series)", () => {
     expect(r.wrong).toBe(false);
   });
 
+  test("trace-table: changed-only rows, givens vs blanks, elision, container-forgiving all-or-nothing grading", async ({ page }) => {
+    await page.goto(SITE);
+    await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
+    await page.waitForFunction(() => Boolean(window.plp));
+    await page.evaluate(() => window.plp.editor.setValue(
+      "a = 0\nb = [1, 2]\na = a + 1\na = a + 1\nprint(a)\n"));
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    const r = await page.evaluate((ctxSrc) => {
+      const ctx = eval(ctxSrc);
+      const q = window.plp.questions.generateQuestion("trace-table", ctx, { names: ["a", "b"] });
+      const right = Object.fromEntries(q.blanks.map((x) => [x.id, x.expected]));
+      const bBlank = q.blanks.find((x) => x.label.endsWith("· b"));
+      const tight = { ...right, [bBlank.id]: "[1,2]" }; // container display spacing forgiven
+      const oneWrong = { ...right, [q.blanks[0].id]: "999" };
+      const small = window.plp.questions.generateQuestion("trace-table", ctx, { names: ["a", "b"], maxBlanks: 3 });
+      return {
+        rows: q.rows.map((row) => ({
+          step: row.step, line: row.line, code: row.codeText,
+          cells: row.cells.map((c) => ({ name: c.name, blank: c.blank, value: c.blank ? undefined : c.value })),
+        })),
+        labels: q.blanks.map((x) => x.label),
+        expected: q.blanks.map((x) => x.expected),
+        right: q.grade(right),
+        tight: q.grade(tight).correct,
+        oneWrong: q.grade(oneWrong),
+        smallRows: small.rows.map((row) => (row.elided ? "…" : row.line)),
+        smallBlanks: small.blanks.map((x) => x.label),
+        none: window.plp.questions.generateQuestion("trace-table", ctx, { names: ["zzz"] }),
+      };
+    }, ctxExpr);
+    // The print line changes nothing watched → only 4 rows kept.
+    expect(r.rows.map((row) => row.line)).toEqual([1, 2, 3, 4]);
+    expect(r.rows[0].code).toBe("a = 0");
+    // Row 1: `a` is the change (blank); `b` is unbound → "—" given.
+    expect(r.rows[0].cells).toEqual([
+      { name: "a", blank: true, value: undefined },
+      { name: "b", blank: false, value: "—" },
+    ]);
+    // Row 2: `b` binds (blank); `a` carries its value as a given.
+    expect(r.rows[1].cells).toEqual([
+      { name: "a", blank: false, value: "0" },
+      { name: "b", blank: true, value: undefined },
+    ]);
+    // Rows 3–4: `a` changes each time; `b` carries.
+    expect(r.rows[2].cells[1]).toEqual({ name: "b", blank: false, value: "[1, 2]" });
+    expect(r.labels).toEqual(["step 1 · a", "step 2 · b", "step 3 · a", "step 4 · a"]);
+    expect(r.expected).toEqual(["0", "[1, 2]", "1", "2"]);
+    expect(r.right.correct).toBe(true);
+    expect(r.tight).toBe(true); // "[1,2]" ≡ "[1, 2]"
+    expect(r.oneWrong.correct).toBe(false); // all-or-nothing
+    expect(r.oneWrong.perBlank.b0).toBe(false);
+    expect(Object.values(r.oneWrong.perBlank).filter(Boolean).length).toBe(3);
+    // Elision under maxBlanks 3: first maxBlanks−2 rows' blanks, gap, final row.
+    expect(r.smallRows).toEqual([1, "…", 4]);
+    expect(r.smallBlanks).toEqual(["step 1 · a", "step 4 · a"]);
+    expect(r.none).toBeNull(); // no watched name ever binds
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
   test("quiz UI: constructs a memory answer and an evaluation sequence", async ({ page }) => {
     await page.goto(SITE);
     await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });

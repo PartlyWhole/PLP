@@ -9,8 +9,8 @@
 ## Overview
 
 - **69 concepts** — 4 structural / 47 core / 18 edge.
-- **87 exercises** across 7 topics.
-- **Forms:** fill-one-blank, predict-exact-output, predict-state, spot-the-difference.
+- **103 exercises** across 7 topics.
+- **Forms:** fill-one-blank, predict-exact-output, predict-state, spot-the-difference, trace-table.
 
 ## Topics
 
@@ -308,7 +308,7 @@ A second x = … replaces x's value; the old value is gone.
 - Children: 000B, 000C
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006
 - Characteristic wrong answer: the first value
-- Exercises: rebind-replaces
+- Exercises: read-before-rebind, rebind-replaces
 
 ### 000B · accumulate-rebind — core
 
@@ -318,7 +318,7 @@ x = x + 1 reads the old value, computes, then rebinds x to the result.
 - Children: 001J, 001M
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A
 - Characteristic wrong answer: the old value, or one step short
-- Exercises: accumulate-step
+- Exercises: accumulate-step, read-between-steps, trace-rebind
 
 ### 000C · name-from-name — core
 
@@ -328,7 +328,7 @@ b = a gives b the value a holds now; rebinding a later does not change b.
 - Children: 000H, 000M, 0013
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 000A
 - Characteristic wrong answer: a's new value
-- Exercises: copy-latent-value, copy-then-rebind
+- Exercises: copy-latent-value, copy-order, copy-then-rebind
 
 ### 000D · list-literal — core
 
@@ -358,7 +358,7 @@ xs[i] = v changes that one slot of the existing list.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000D ← 000E
 - Characteristic wrong answer: the old list, unchanged
-- Exercises: slot-assign
+- Exercises: slot-assign, slot-write-order
 
 ### 000G · append-mutates — core
 
@@ -368,7 +368,7 @@ xs.append(v) changes the existing list, adding v at the end.
 - Children: 000H, 001K, 0020
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D
 - Characteristic wrong answer: the list without the appended item
-- Exercises: append-grows
+- Exercises: append-grows, append-order
 
 ### 000H · names-share-list — edge
 
@@ -378,7 +378,7 @@ b = a does not copy a list — one list, two names, so a change through either s
 - Children: 0023, 0024
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000A ← 000C ← 000D ← 000G
 - Characteristic wrong answer: the list as it was before the change
-- Exercises: alias-chain, alias-latent-state, alias-trap
+- Exercises: alias-chain, alias-latent-state, alias-trap, trace-alias
 
 ### 000J · print-multi-args — core
 
@@ -408,7 +408,7 @@ In a, b = b, a the whole right side is evaluated before either name rebinds — 
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000C
 - Characteristic wrong answer: both names end up with the same value
-- Exercises: swap-latent-state, swap-two
+- Exercises: swap-latent-state, swap-two, swap-vs-sequential
 
 ### 000N · op-precedence — core
 
@@ -558,7 +558,7 @@ Text never changes in place; building new text and rebinding leaves earlier copi
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000A ← 000C ← 000Y
 - Characteristic wrong answer: the earlier copy shows the change too
-- Exercises: text-immutable
+- Exercises: capture-order, text-immutable
 
 ### 0014 · str-compare-code-points — edge
 
@@ -668,7 +668,7 @@ for x in xs: runs the body once per item, with x holding each item in turn.
 - Children: 001F, 001J, 001K, 001N, 001P
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D
 - Characteristic wrong answer: one run total, or the wrong number of runs
-- Exercises: for-visits
+- Exercises: for-visits, print-in-vs-after
 
 ### 001F · range-stop-excluded — core
 
@@ -708,7 +708,7 @@ A running total updates once per loop pass; its final value is there after the l
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000B ← 000D ← 001E
 - Characteristic wrong answer: an off-by-one total, or only the last value
-- Exercises: loop-total, loop-total-latent
+- Exercises: accumulate-then-read, loop-total, loop-total-latent, trace-sum
 
 ### 001K · loop-build-list — core
 
@@ -738,7 +738,7 @@ break leaves the whole loop immediately.
 - Children: 001Q
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 000D ← 0015 ← 0016 ← 0017 ← 001E
 - Characteristic wrong answer: the loop finishes the remaining items anyway
-- Exercises: break-stops
+- Exercises: break-order, break-stops
 
 ### 001P · continue-skips — core
 
@@ -748,7 +748,7 @@ continue skips the rest of this pass and goes on to the next one.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 000D ← 0015 ← 0016 ← 0017 ← 001E
 - Characteristic wrong answer: the loop exits instead of continuing
-- Exercises: continue-skips-one
+- Exercises: continue-order, continue-skips-one
 
 ### 001Q · for-else-no-break — edge
 
@@ -778,7 +778,7 @@ d[k] = v stores v under k — adding the key if it is new, replacing it if it ex
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E ← 001R
 - Characteristic wrong answer: the old value survives, or a new key is rejected
-- Exercises: dict-store
+- Exercises: dict-store, store-order
 
 ### 001T · dict-get-default — core
 
@@ -888,7 +888,7 @@ a[:] builds a real copy — mutating the copy leaves the original alone.
 - Children: 0025
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000A ← 000C ← 000D ← 000E ← 000G ← 000H ← 0011
 - Characteristic wrong answer: the original shows the change too
-- Exercises: copy-latent-state, slice-makes-copy
+- Exercises: copy-latent-state, copy-timing, slice-makes-copy
 
 ### 0025 · copy-is-shallow — edge
 
@@ -917,6 +917,39 @@ print(total)
 prints:
 ```
 14
+```
+
+### accumulate-then-read — focus 001J (loop-accumulate)
+
+- Form: `spot-the-difference` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 0009, 000A, 000B, 000D, 001E
+- Shapes: sum, count · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+count = 0
+for x in [3, 1, 2]:
+    count = count + 1
+    print(count)
+```
+prints:
+```
+1
+2
+3
+```
+
+Program B (predicted):
+```py
+count = 0
+for x in [3, 1, 2]:
+    count = count + 1
+print(count)
+```
+prints:
+```
+3
 ```
 
 ### aggregate-one-value — focus 001Z (aggregate-builtins)
@@ -1020,6 +1053,37 @@ prints:
 [36]
 ```
 
+### append-order — focus 000G (append-mutates)
+
+- Form: `spot-the-difference` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D
+- Shapes: one-append, two-appends · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+nums = [2, 7]
+print(nums)
+nums.append(42)
+nums.append(67)
+```
+prints:
+```
+[2, 7]
+```
+
+Program B (predicted):
+```py
+nums = [2, 7]
+nums.append(42)
+nums.append(67)
+print(nums)
+```
+prints:
+```
+[2, 7, 42, 67]
+```
+
 ### append-vs-extend — focus 0020 (extend-vs-append)
 
 - Form: `predict-exact-output` · Role: intro · Topic: lists
@@ -1116,6 +1180,38 @@ prints:
 False
 ```
 
+### break-order — focus 001N (break-exits)
+
+- Form: `spot-the-difference` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 000D, 0015, 0017, 001E
+- Shapes: threshold, equal · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+for x in [6, 7, 8]:
+    print(x)
+    if x > 6:
+        break
+```
+prints:
+```
+6
+7
+```
+
+Program B (predicted):
+```py
+for x in [6, 7, 8]:
+    if x > 6:
+        break
+    print(x)
+```
+prints:
+```
+6
+```
+
 ### break-stops — focus 001N (break-exits)
 
 - Form: `predict-exact-output` · Role: intro · Topic: loops
@@ -1132,6 +1228,37 @@ for x in [6, 7, 8]:
 prints:
 ```
 6
+```
+
+### capture-order — focus 0013 (str-immutable-rebind)
+
+- Form: `spot-the-difference` · Role: review · Topic: strings
+- Assumed: 0005, 0006, 000A, 000C, 000Y
+- Shapes: one-suffix, two-suffix · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+s = "drum"
+t = s
+s = s + "fish"
+print(t)
+```
+prints:
+```
+drum
+```
+
+Program B (predicted):
+```py
+s = "drum"
+s = s + "fish"
+t = s
+print(t)
+```
+prints:
+```
+drumfish
 ```
 
 ### chain-compare — focus 001D (chained-compare)
@@ -1196,6 +1323,38 @@ prints:
 drumdrumstar
 ```
 
+### continue-order — focus 001P (continue-skips)
+
+- Form: `spot-the-difference` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 000D, 0015, 0017, 001E
+- Shapes: skip-second, skip-first · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+for x in [2, 5]:
+    if x == 5:
+        continue
+    print(x)
+```
+prints:
+```
+2
+```
+
+Program B (predicted):
+```py
+for x in [2, 5]:
+    print(x)
+    if x == 5:
+        continue
+```
+prints:
+```
+2
+5
+```
+
 ### continue-skips-one — focus 001P (continue-skips)
 
 - Form: `predict-exact-output` · Role: intro · Topic: loops
@@ -1248,6 +1407,39 @@ After it runs, `b` holds:
 5
 ```
 
+### copy-order — focus 000C (name-from-name)
+
+- Form: `spot-the-difference` · Role: review · Topic: state
+- Assumed: 0005, 0006, 000A
+- Shapes: one-rebind, two-rebinds · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+a = 7
+b = a
+a = 20
+a = 30
+print(b)
+```
+prints:
+```
+7
+```
+
+Program B (predicted):
+```py
+a = 7
+a = 20
+a = 30
+b = a
+print(b)
+```
+prints:
+```
+30
+```
+
 ### copy-then-rebind — focus 000C (name-from-name)
 
 - Form: `predict-exact-output` · Role: intro · Topic: state
@@ -1265,6 +1457,39 @@ print(c)
 prints:
 ```
 2
+```
+
+### copy-timing — focus 0024 (slice-copies)
+
+- Form: `spot-the-difference` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D, 000G, 000H, 0011
+- Shapes: one-append, two-appends · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+a = [3, 7]
+b = a[:]
+a.append(18)
+a.append(97)
+print(b)
+```
+prints:
+```
+[3, 7]
+```
+
+Program B (predicted):
+```py
+a = [3, 7]
+a.append(18)
+a.append(97)
+b = a[:]
+print(b)
+```
+prints:
+```
+[3, 7, 18, 97]
 ```
 
 ### dict-get — focus 001T (dict-get-default)
@@ -1981,6 +2206,43 @@ prints:
 -25
 ```
 
+### print-in-vs-after — focus 001E (loop-for-visits-each)
+
+- Form: `spot-the-difference` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 000D
+- Shapes: bare-list, named-list · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+for x in [10, 90, 60]:
+    print("blue")
+    print(x)
+```
+prints:
+```
+blue
+10
+blue
+90
+blue
+60
+```
+
+Program B (predicted):
+```py
+for x in [10, 90, 60]:
+    print("blue")
+print(x)
+```
+prints:
+```
+blue
+blue
+blue
+60
+```
+
 ### print-two-values — focus 000J (print-multi-args)
 
 - Form: `predict-exact-output` · Role: intro · Topic: state
@@ -2112,6 +2374,68 @@ print(xs)
 prints:
 ```
 [2, 5, 8]
+```
+
+### read-before-rebind — focus 000A (rebind-updates-name)
+
+- Form: `spot-the-difference` · Role: review · Topic: state
+- Assumed: 0005, 0006
+- Shapes: two-binds, three-binds · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+x = 6
+print(x)
+x = 18
+```
+prints:
+```
+6
+```
+
+Program B (predicted):
+```py
+x = 6
+x = 18
+print(x)
+```
+prints:
+```
+18
+```
+
+### read-between-steps — focus 000B (accumulate-rebind)
+
+- Form: `spot-the-difference` · Role: review · Topic: state
+- Assumed: 0005, 0006, 0008, 0009, 000A
+- Shapes: two-steps, three-steps · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+x = 9
+x = x + 3
+x = x + 2
+x = x + 4
+print(x)
+```
+prints:
+```
+18
+```
+
+Program B (predicted):
+```py
+x = 9
+x = x + 3
+print(x)
+x = x + 2
+x = x + 4
+```
+prints:
+```
+12
 ```
 
 ### rebind-replaces — focus 000A (rebind-updates-name)
@@ -2283,6 +2607,68 @@ prints:
 9
 ```
 
+### slot-write-order — focus 000F (index-assign-mutates)
+
+- Form: `spot-the-difference` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D, 000E
+- Shapes: swap-writes, read-between · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+nums = [15, 1]
+nums[0] = 15
+print(nums)
+nums[0] = 21
+```
+prints:
+```
+[15, 1]
+```
+
+Program B (predicted):
+```py
+nums = [15, 1]
+nums[0] = 15
+nums[0] = 21
+print(nums)
+```
+prints:
+```
+[21, 1]
+```
+
+### store-order — focus 001S (dict-key-assign)
+
+- Form: `spot-the-difference` · Role: review · Topic: structures
+- Assumed: 0005, 0006, 001R
+- Shapes: swap-stores, read-between · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+d = {"b": 1}
+d["b"] = 29
+print(d)
+d["b"] = 35
+```
+prints:
+```
+{'b': 29}
+```
+
+Program B (predicted):
+```py
+d = {"b": 1}
+d["b"] = 29
+d["b"] = 35
+print(d)
+```
+prints:
+```
+{'b': 35}
+```
+
 ### swap-latent-state — focus 000M (swap-right-side-first)
 
 - Form: `predict-state` · Role: review · Topic: state
@@ -2316,6 +2702,40 @@ print(b)
 prints:
 ```
 8
+```
+
+### swap-vs-sequential — focus 000M (swap-right-side-first)
+
+- Form: `spot-the-difference` · Role: review · Topic: state
+- Assumed: 0005, 0006, 000A, 000C
+- Shapes: plain, lead-rebind · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+a = 27
+a = 9
+b = 6
+a, b = b, a
+print(b)
+```
+prints:
+```
+9
+```
+
+Program B (predicted):
+```py
+a = 27
+a = 9
+b = 6
+a = b
+b = a
+print(b)
+```
+prints:
+```
+6
 ```
 
 ### text-compare — focus 0014 (str-compare-code-points)
@@ -2364,6 +2784,65 @@ print(b)
 prints:
 ```
 blue
+```
+
+### trace-alias — focus 000H (names-share-list)
+
+- Form: `trace-table` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000A, 000C, 000D, 000G
+- Shapes: append-through-alias, append-through-original · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+a = [4, 8]
+b = a
+a.append(26)
+print(b)
+```
+Step-table walkthrough over `a`, `b` (blanks derive from the live trace); the watched names end holding:
+```
+[4, 8, 26]
+[4, 8, 26]
+[4, 8, 26]
+```
+
+### trace-rebind — focus 000B (accumulate-rebind)
+
+- Form: `trace-table` · Role: review · Topic: state
+- Assumed: 0005, 0006, 0008, 0009, 000A
+- Shapes: add-then-mul, mul-then-add, three-adds · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+x = 3
+x = x + 6
+x = x + 3
+print(x)
+```
+Step-table walkthrough over `x` (blanks derive from the live trace); the watched names end holding:
+```
+12
+12
+```
+
+### trace-sum — focus 001J (loop-accumulate)
+
+- Form: `trace-table` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 0009, 000A, 000B, 000D, 001E
+- Shapes: sum-steps, count-steps · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+total = 0
+for x in [6, 6, 1]:
+    total = total + x
+print(total)
+```
+Step-table walkthrough over `total`, `x` (blanks derive from the live trace); the watched names end holding:
+```
+13
+13
+1
 ```
 
 ### tuple-comma — focus 001Y (tuple-by-comma)

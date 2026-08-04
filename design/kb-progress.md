@@ -282,6 +282,25 @@ uncommitted, so tags are not yet permanent; K-2 returns early.
   this run" (the graded trace is already in the memory model); 📝 scratch
   notes drawer (plp.notes.v1, write-only); Esc dismisses progressively.
   T-24/T-25 cover it (correct-answer-holds + dots-review tests).
+- Order-matters + trace-table (owner-requested, subagent-planned and
+  -implemented, orchestrator-integrated): (1) 13 order-contrast
+  spot-the-difference siblings via kb/contrast.mjs orderPair — one moved
+  line changes the result; A≠B outputs verified under real python3 across
+  40 seeds each; no ledger change (order is a variation discipline, not a
+  concept; design §5.5). (2) FIFTH FORM `trace-table` (design §5.2.5):
+  exercise declares {code, probeNames, maxBlanks?}; rows/blanks/expected
+  derive from the REAL trace at runtime (traceTableQuestion in
+  questions.mjs over snapshotAt/diffSnapshots; changed-cells-only blanks,
+  givens carried, elision cap); execTraceTable traces silently first (the
+  trace is the answer key), one lock grades per-cell (container-forgiving)
+  all-or-nothing, met on clean first-attempt perfect table (binding §4
+  amended — stronger witness); review shows the graded table, retry
+  disabled for tables in v1. First wave: trace-rebind (000B), trace-sum
+  (001J), trace-alias (000H — one append changes BOTH columns in one row).
+  K-series extended (footprintSources probe appends, K-10 trace-table
+  branch: 2..maxBlanks, all names blanked, single-line expecteds); docgen
+  renders end-holdings; lists spot-diff fixture re-derived 143→199. Pool
+  87→103 exercises.
 - UI revamp (owner-approved plan, executed in 9 phases): focus mode — the
   beat panel promoted to a full-height stage in the code column, editor
   receded right, console a slim always-live strip that GROWS as the reveal

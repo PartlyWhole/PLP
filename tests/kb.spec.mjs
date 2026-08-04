@@ -89,6 +89,10 @@ const hasCompound = (source) => parse(source).some((s) => ["if", "for", "while"]
 function footprintSources(ex, prog) {
   if (ex.form === "predict-state" && prog.probeName) return [`${prog.code}print(${prog.probeName})\n`];
   if (ex.form === "spot-the-difference") return [prog.code, prog.contrastCode];
+  // trace-table probes every watched name (they survive to program end —
+  // Python loop variables outlive the loop), so the probed reads are visible
+  // to the analyzer exactly like predict-state's.
+  if (ex.form === "trace-table") return [`${prog.code}${prog.probeNames.map((n) => `print(${n})`).join("\n")}\n`];
   return [prog.code];
 }
 
@@ -409,15 +413,39 @@ test.describe("PLP knowledge base (K-series)", () => {
           code: prog.code,
           form: ex.form ?? "predict-exact-output",
           name: prog.probeName ?? null,
+          names: prog.probeNames ?? null,
+          maxBlanks: prog.maxBlanks ?? 8,
           target: prog.targetOutput ?? null,
         }];
       });
 
       const results = await page.evaluate(async (progs) => {
         const out = [];
-        for (const { code, form, name, target } of progs) {
+        for (const { code, form, name, names, maxBlanks, target } of progs) {
           window.plp.editor.setValue(code);
           const summary = await window.plp.trace();
+          const ctx = {
+            source: code,
+            steps: window.plp.memory.steps(),
+            positions: window.plp.memory.linePositions(),
+          };
+          if (form === "trace-table") {
+            // The trace-table contract: gradable, tight (2..maxBlanks
+            // blanks), every expected value single-line, every watched name
+            // actually blanked at least once.
+            const q = window.plp.questions.generateQuestion("trace-table", ctx, { names, maxBlanks });
+            const blanked = new Set((q?.blanks ?? []).map((b) => b.label.split(" · ").pop()));
+            out.push({
+              reason: summary?.terminal_reason,
+              gradable: Boolean(q),
+              oneLine: (q?.blanks ?? []).every((b) => !String(b.expected).includes("\n")),
+              tight: Boolean(q) && q.blanks.length >= 2 && q.blanks.length <= maxBlanks,
+              allNamesBlanked: Boolean(q) && names.every((n) => blanked.has(n)),
+              matchesTarget: true,
+              errors: window.plp.checkErrors(),
+            });
+            continue;
+          }
           const kind = form === "predict-state" ? "predict-state" : "predict-output";
           const q = window.plp.questions.generateQuestion(kind, {
             source: code,
@@ -445,6 +473,10 @@ test.describe("PLP knowledge base (K-series)", () => {
         // exception (design §5.2 — loop-for-visits-each, where several lines
         // ARE the concept).
         if (!ex.multiline) expect(r.oneLine, `${ex.id} program ${i} must ask one thing (one output line)`).toBe(true);
+        if (r.tight !== undefined) {
+          expect(r.tight, `${ex.id} program ${i}: trace-table must yield 2..maxBlanks blanks`).toBe(true);
+          expect(r.allNamesBlanked, `${ex.id} program ${i}: every watched name must be blanked at least once`).toBe(true);
+        }
         // The interpreter is the fill target's ground truth.
         expect(r.matchesTarget, `${ex.id} program ${i}: real output must equal the fill target`).toBe(true);
         expect(r.errors).toEqual([]);

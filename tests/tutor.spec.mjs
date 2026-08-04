@@ -161,25 +161,27 @@ test.describe("PLP tutor (T-series)", () => {
   test("spot-the-difference: program A shown with its real output; predict program B", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
-    // Seed 143 of a lists round opens with the += vs + [x] contrast (the
-    // seed is a fixture — re-derive it if the lists exercise pool changes).
-    const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 143, count: 1 }));
-    expect(id).toBe("drill-lists-143");
+    // Seed 199 of a lists round opens with the += vs + [x] contrast (the
+    // seed is a fixture — re-derive it if the lists exercise pool changes;
+    // derivation: scan buildKBSession("lists", {seed, count: 1}) for the
+    // first seed whose ask.context.code contains "+= [").
+    const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 199, count: 1 }));
+    expect(id).toBe("drill-lists-199");
     // The contrast rides ON the ask (ask.context): program A (uses +=) with
     // its real output — reload-safe — and the card renders it above B.
     const ctx = await page.evaluate(() => {
       const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
       return s.drillLesson.steps.find((x) => x.ask)?.ask.context;
     });
-    expect(ctx.code).toContain("b += [54]");   // program A mutates the shared list
-    expect(ctx.output).toBe("[3, 8, 54]");     // …and its real output is shown
-    await expect(page.locator("#practice .pr-context")).toContainText("b += [54]");
-    await expect(page.locator("#practice .pr-context .pr-out")).toContainText("[3, 8, 54]");
+    expect(ctx.code).toContain("b += [88]");   // program A mutates the shared list
+    expect(ctx.output).toBe("[4, 9, 88]");     // …and its real output is shown
+    await expect(page.locator("#practice .pr-context")).toContainText("b += [88]");
+    await expect(page.locator("#practice .pr-context .pr-out")).toContainText("[4, 9, 88]");
     // The editor holds program B (the one to predict — a is left untouched).
     expect((await page.evaluate(() => window.plp.editor.getValue())).trim())
-      .toBe("a = [3, 8]\nb = a\nb = b + [54]\nprint(a)");
+      .toBe("a = [4, 9]\nb = a\nb = b + [88]\nprint(a)");
     // Predicting B's output correctly grades right and records the focus tag.
-    await page.evaluate(() => window.plp.tutor.lockPrediction("[3, 8]"));
+    await page.evaluate(() => window.plp.tutor.lockPrediction("[4, 9]"));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
     expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0023": { seen: 1, missed: 0 } });
@@ -849,6 +851,102 @@ test.describe("PLP tutor (T-series)", () => {
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-role=pr-notes-drawer]")).toBeHidden();
     await expect(page.locator("body")).toHaveClass(/practice/);
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  // Ad-hoc trace-table lessons ride the drill-restore path: a hand-authored
+  // script persisted as store.drillLesson runs on the ordinary lesson
+  // machinery after a reload (the same mechanism that resumes real rounds).
+  async function startTraceTableRound(page) {
+    await page.evaluate(() => {
+      localStorage.removeItem("plp.kb.met.v1");
+      localStorage.removeItem("plp.kb.v1");
+      const lesson = {
+        id: "tt-inline",
+        title: "Trace table",
+        steps: [
+          { loadCode: "a = 0\nb = [1, 2]\na = a + 1\n" },
+          { ask: { kind: "trace-table", probeNames: ["a", "b"], maxBlanks: 8, prompt: "Fill in the table.", concept: "0009" } },
+          { pause: true }, // hold the graded card (drill cadence) for the DOM assertions
+          { done: "done" },
+        ],
+      };
+      localStorage.setItem("plp.tutor.v1", JSON.stringify({
+        lessonId: lesson.id, drillLesson: lesson, resumeIndex: 0, cards: [],
+      }));
+      location.reload();
+    });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    // The reload starts with the surface hidden — open it for the DOM checks.
+    await page.evaluate(() => {
+      if (!document.body.classList.contains("practice")) window.plp.tutor.toggleSurface();
+    });
+    // execTraceTable traces silently first; the ask arms once the table is up.
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    expect(await page.evaluate(() => window.plp.tutor.ask())).toEqual({ kind: "trace-table" });
+  }
+
+  test("trace-table ask: lint accepts the kind; silent trace; non-empty gate; per-cell marks; wrong grants nothing", async ({ page }) => {
+    await setup(page);
+    // lintLesson accepts the kind via the questionGenerators registry.
+    const lintErrors = await page.evaluate(() => window.plp.tutor.lintLesson({
+      id: "tt-lint", steps: [{ ask: { kind: "trace-table", probeNames: ["a"] } }],
+    }));
+    expect(lintErrors).toEqual([]);
+
+    await startTraceTableRound(page);
+    // The silent trace really ran: the record store is populated.
+    expect(await page.evaluate(() => window.plp.memory.steps().length)).toBeGreaterThan(0);
+    // The table rendered with one input per blank (a@1, b@2, a@3).
+    await expect(page.locator("#practice .tutor-trace-table input[data-blank-id]")).toHaveCount(3);
+
+    // Non-empty gate: a partial submit sets the note and stays waiting.
+    await page.evaluate(() => window.plp.tutor.submit({ b0: "0", b1: "", b2: "1" }));
+    expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
+    await expect(page.locator("#practice .pr-note")).toContainText("Fill every box first");
+
+    // One wrong cell: ok false, per-cell marks, the truth beside the miss.
+    await page.evaluate(() => window.plp.tutor.submit({ b0: "0", b1: "[1,2]", b2: "999" }));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
+    const s = await page.evaluate(() => window.plp.tutor.state());
+    expect(s.lastAnswer).toBe("wrong");
+    await expect(page.locator("#practice .tutor-trace-table input.ok")).toHaveCount(2); // container spacing forgiven on b1
+    await expect(page.locator("#practice .tutor-trace-table input.bad")).toHaveCount(1);
+    await expect(page.locator("#practice .tutor-trace-table .tutor-cell-truth")).toContainText("1");
+    await expect(page.locator("#practice .pr-reveal pre")).toContainText("2 of 3 steps right");
+    await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("2 of 3");
+    // The record froze with the review snapshot; the score counted a miss.
+    const rec = await page.evaluate(() =>
+      window.plp.tutor.feed().findLast((c) => c.type === "question-frozen"));
+    expect(rec.ok).toBe(false);
+    expect(rec.review.kind).toBe("trace-table");
+    expect(rec.review.table.rows.length).toBe(3);
+    expect(rec.review.answersById.b2).toBe("999");
+    expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0009": { seen: 1, missed: 1 } });
+    // A wrong table grants no met.
+    expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("trace-table ask: clean all-correct first attempt grants met; review shows the completed table with no retry widget", async ({ page }) => {
+    await setup(page);
+    await startTraceTableRound(page);
+    await page.evaluate(() => window.plp.tutor.submit({ b0: "0", b1: "[1, 2]", b2: "1" }));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
+    await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("✓ Every step right");
+    const met = await page.evaluate(() => window.plp.tutor.met());
+    expect(Object.keys(met)).toEqual(["0009"]);
+    expect(met["0009"].source).toBe("drill");
+    expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0009": { seen: 1, missed: 0 } });
+
+    // Review: the completed table rebuilds read-only — your answers marked
+    // per cell — and the single-input retry widget is NOT offered.
+    await page.evaluate(() => window.plp.tutor.review(0));
+    await expect(page.locator("#practice .pr-review .tutor-trace-table")).toBeVisible();
+    await expect(page.locator("#practice .pr-review .tutor-trace-table code.ok")).toHaveCount(3);
+    await expect(page.locator("#practice .pr-review .pr-retry")).toHaveCount(0);
+    await page.evaluate(() => window.plp.tutor.closeReview());
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 

@@ -72,6 +72,16 @@ example"), spot-the-difference's program A + output ride on
 `ask.context`, prompts are one line, and first-time-per-form mechanics
 are a single quiet line gated by `plp.practice.v1`.
 
+**Ask kinds on this surface**: predict-output (incl. spot-the-difference
+context), predict-state, fill-one-blank, and **trace-table** — the card
+renders a step table (one column per watched name, one row per executed
+line where a watched name changed; the runtime traces silently FIRST
+because the trace is both the answer key and the table skeleton), the
+student fills every cell, one lock grades them all per-cell against the
+real trace, and the reveal is "N of M steps right" plus the memory-model
+link. Score is all-or-nothing; a clean first-attempt perfect table
+grants met (see design/lesson-kb-binding.md §4).
+
 **Every graded answer holds.** After grading, the round pauses on both
 outcomes (kb-session emits a bare `{ pause: true }` step on the correct
 branch; the wrong branch already paused on its explain card): the card

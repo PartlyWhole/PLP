@@ -76,6 +76,86 @@ export function appendExpected(container, { label = "actual output:", text } = {
   container.appendChild(div);
 }
 
+// The trace-table renderer: one row per kept execution step, one column per
+// watched name; changed cells are inputs (data-blank-id), givens are text.
+// Returns the standard view surface plus freeze() (used by the tutor's lock).
+export function renderTraceTable(body, q) {
+  const table = document.createElement("table");
+  table.className = "mem-table quiz-mem tutor-trace-table";
+  const head = document.createElement("tr");
+  for (const h of ["step", "line", "code", ...q.names]) {
+    const th = document.createElement("th");
+    th.textContent = h;
+    head.appendChild(th);
+  }
+  table.appendChild(head);
+  for (const r of q.rows) {
+    const tr = document.createElement("tr");
+    if (r.elided) {
+      const td = document.createElement("td");
+      td.colSpan = 3 + q.names.length;
+      td.className = "hint";
+      td.textContent = "⋯ some steps skipped ⋯";
+      tr.appendChild(td);
+      table.appendChild(tr);
+      continue;
+    }
+    const step = document.createElement("td");
+    step.className = "uid";
+    step.textContent = String(r.step);
+    const line = document.createElement("td");
+    line.className = "uid";
+    line.textContent = String(r.line);
+    const codeTd = document.createElement("td");
+    const codeEl = document.createElement("code");
+    codeEl.textContent = r.codeText;
+    codeTd.appendChild(codeEl);
+    tr.append(step, line, codeTd);
+    for (const c of r.cells) {
+      const td = document.createElement("td");
+      if (c.blank) {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "tutor-output-input tutor-output-line";
+        input.dataset.blankId = c.blankId;
+        input.placeholder = "?";
+        input.spellcheck = false;
+        td.appendChild(input);
+      } else {
+        td.textContent = c.value;
+      }
+      tr.appendChild(td);
+    }
+    table.appendChild(tr);
+  }
+  body.appendChild(table);
+  const inputs = () => table.querySelectorAll("input[data-blank-id]");
+  return {
+    collect() {
+      const answers = {};
+      for (const inp of inputs()) answers[inp.dataset.blankId] = inp.value;
+      return answers;
+    },
+    applyResult(result) {
+      for (const inp of inputs()) {
+        const ok = result.perBlank?.[inp.dataset.blankId];
+        inp.classList.toggle("ok", ok === true);
+        inp.classList.toggle("bad", ok === false);
+        inp.parentElement.querySelector(".tutor-cell-truth")?.remove();
+        if (ok === false) {
+          const span = document.createElement("span");
+          span.className = "hint tutor-cell-truth";
+          span.textContent = ` → ${result.expected?.[inp.dataset.blankId] ?? ""}`;
+          inp.parentElement.appendChild(span);
+        }
+      }
+    },
+    freeze() { for (const inp of inputs()) inp.readOnly = true; },
+    line: null,
+    wide: true,
+  };
+}
+
 export function renderQuestionBody(body, q, { omitPrompt = false } = {}) {
   if (!omitPrompt) {
     const prompt = document.createElement("p");
@@ -159,6 +239,10 @@ export function renderQuestionBody(body, q, { omitPrompt = false } = {}) {
       line: q.wholeProgram ? null : q.line,
       wide: false,
     };
+  }
+
+  if (q.kind === "trace-table") {
+    return renderTraceTable(body, q);
   }
 
   if (q.kind === "code-order") {

@@ -715,7 +715,7 @@ question. Every form must satisfy the two form laws: **interpreter
 first** (the answer key is derived from really running the program) and
 **one question** (the student commits exactly one prediction).
 
-### 5.2 The four forms in scope
+### 5.2 The five forms in scope
 
 1. **predict-exact-output** (primary). The student types the program's
    one printed line, every character; grading compares against the real
@@ -740,6 +740,22 @@ first** (the answer key is derived from really running the program) and
    the student predicts program B's output, which may or may not equal
    A's. Still a single prediction; this is the presentation of the
    `contrast` flag (§2.8), and the pair differ by exactly one line.
+5. **trace-table.** The student walks the program's execution filling in
+   what each *watched name* holds at every step where it changes — the
+   "many steps in between" the final answer. The exercise declares only
+   `{ code, probeNames, maxBlanks? }`; the row/blank structure and every
+   expected value derive from the **real trace at runtime** (the
+   interpreter stays the only answer key; kb/ stays trace-agnostic and
+   Node-loadable). One program → one table → one lock (commit every cell
+   before any truth appears); grading is per-cell with the same
+   container-display forgiveness as predict-state, but the round score is
+   all-or-nothing. Rows where no watched name changes are omitted, so
+   every blank is a place the focus concept fires; `maxBlanks` (default
+   8) elides the middle of long tables, and the K-10 contract keeps
+   generated programs inside 2..maxBlanks blanks with every watched name
+   blanked at least once. A clean first-attempt all-correct table is a
+   strictly stronger met witness than one final prediction
+   (lesson-kb-binding §4).
 
 ### 5.3 Variety within a form
 
@@ -769,6 +785,44 @@ render the pair side by side with one sentence per program. The focus
 is never revealed before the attempt — prompts never name the rule —
 and is recorded after the attempt for mastery tracking. A miss shows
 exactly one card: the rule that was tested, never a survey.
+
+### 5.5 Order-matters variation discipline
+
+`kb/contrast.mjs` supplies a small `orderPair(lines, from, to)`
+combinator that emits program A and program B differing by exactly one
+statement having *moved* (every other line keeps its text and
+indentation). This drives an **order-matters** family of
+spot-the-difference reviews whose lesson is that statement ORDER changes
+the observable result — the same single concept in both programs, just
+reordered (as opposed to `contrast`, which juxtaposes two *different*
+concepts). These carry no `contrast` tag: the difference is timing, not
+a second node.
+
+The permutation classes worth an exercise:
+
+- **read/mutate order** — reading a name before vs after it is rebound
+  (`rebind-updates-name`), or before vs after an accumulate step
+  (`accumulate-rebind`).
+- **copy/capture timing** — `b = a` (or `b = a[:]`, `t = s`) taken
+  before vs after the source changes (`name-from-name`, `slice-copies`,
+  `str-immutable-rebind`).
+- **rebind timing / sequential-vs-simultaneous swap** — `a, b = b, a`
+  against the one-at-a-time `a = b; b = a` (`swap-right-side-first`).
+- **store order** — two writes to one list slot or one dict key, swapped
+  or read between (`index-assign-mutates`, `dict-key-assign`).
+- **accumulate/print interleave, in-loop vs after-loop print** — the
+  running total or the loop variable read on each pass vs once after the
+  loop (`loop-accumulate`, `loop-for-visits-each`); loop-exit-boundary
+  moves re-indent the moved line, so the generator builds them directly.
+- **loop-exit placement** — `break`/`continue` above vs below the body's
+  `print` (`break-exits`, `continue-skips`); thresholds are chosen so the
+  printed side always prints at least one line.
+
+**Appropriateness rule.** An order variant exists ONLY where moving the
+statement changes what is printed. Generators pick operand values so
+A-output ≠ B-output on every seed *by construction*; there is no
+in-module difference assertion (nothing in `kb/` runs Python), and the
+K-10 real-execution and discrimination oracles enforce the difference.
 
 ---
 

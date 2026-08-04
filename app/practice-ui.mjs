@@ -163,7 +163,8 @@ export function createPracticeUI({ layout, getCode }) {
     block.className = `pr-reveal ${correct ? "good" : "open"}`;
     const label = document.createElement("span");
     label.className = "pr-reveal-label";
-    label.textContent = kind === "predict-state" ? "it really holds" : "it printed";
+    label.textContent = kind === "predict-state" ? "it really holds"
+      : kind === "trace-table" ? "your table, graded" : "it printed";
     const pre = document.createElement("pre");
     pre.textContent = text ?? "";
     block.append(label, pre);
@@ -178,6 +179,7 @@ export function createPracticeUI({ layout, getCode }) {
     "predict-state": "type the value it holds, like 7 or [1, 2]",
     "fill-one-blank": "type just the missing piece — it runs with your fill",
     "spot-the-difference": "type what the changed program prints",
+    "trace-table": "fill every box, then check — the trace grades each step",
   };
   function mechanicsLineFor(form) {
     let seen;
@@ -385,6 +387,69 @@ export function createPracticeUI({ layout, getCode }) {
     body.querySelectorAll(".CodeMirror").forEach((el) => el.CodeMirror?.refresh());
   }
 
+  // A trace-table review: the completed table read-only — the learner's
+  // answer vs the truth per blank cell, ✓/✗ from the recorded grading.
+  function buildReviewTable(table, answersById = {}) {
+    const t = document.createElement("table");
+    t.className = "mem-table quiz-mem tutor-trace-table";
+    const first = table.rows.find((r) => !r.elided);
+    const names = first ? first.cells.map((c) => c.name) : [];
+    const head = document.createElement("tr");
+    for (const h of ["step", "line", "code", ...names]) {
+      const th = document.createElement("th");
+      th.textContent = h;
+      head.appendChild(th);
+    }
+    t.appendChild(head);
+    for (const r of table.rows) {
+      const tr = document.createElement("tr");
+      if (r.elided) {
+        const td = document.createElement("td");
+        td.colSpan = 3 + names.length;
+        td.className = "hint";
+        td.textContent = "⋯ some steps skipped ⋯";
+        tr.appendChild(td);
+        t.appendChild(tr);
+        continue;
+      }
+      const step = document.createElement("td");
+      step.className = "uid";
+      step.textContent = String(r.step);
+      const line = document.createElement("td");
+      line.className = "uid";
+      line.textContent = String(r.line);
+      const codeTd = document.createElement("td");
+      const codeEl = document.createElement("code");
+      codeEl.textContent = r.codeText;
+      codeTd.appendChild(codeEl);
+      tr.append(step, line, codeTd);
+      for (const c of r.cells) {
+        const td = document.createElement("td");
+        if (c.blankId && answersById[c.blankId] !== undefined) {
+          const ok = table.perBlank?.[c.blankId] === true;
+          const yours = document.createElement("code");
+          yours.className = ok ? "ok" : "bad";
+          yours.textContent = `${answersById[c.blankId]} ${ok ? "✓" : "✗"}`;
+          td.appendChild(yours);
+          if (!ok) {
+            const truth = document.createElement("span");
+            truth.className = "hint";
+            truth.textContent = ` → ${table.expectedById?.[c.blankId] ?? ""}`;
+            td.appendChild(truth);
+          }
+        } else if (c.blankId) {
+          // Skipped question: no answers recorded — show the truth plainly.
+          td.textContent = table.expectedById?.[c.blankId] ?? c.value;
+        } else {
+          td.textContent = c.value;
+        }
+        tr.appendChild(td);
+      }
+      t.appendChild(tr);
+    }
+    return t;
+  }
+
   function buildReviewCard(desc) {
     const el = document.createElement("div");
     el.className = "pr-question pr-review";
@@ -396,6 +461,7 @@ export function createPracticeUI({ layout, getCode }) {
 
     if (desc.context?.code) el.appendChild(buildContextBlock(desc.context));
     if (desc.code) mountProgram(el, desc.code);
+    if (desc.table?.rows) el.appendChild(buildReviewTable(desc.table, desc.answersById ?? {}));
     if (desc.prompt) {
       const p = document.createElement("p");
       p.className = "pr-prompt";

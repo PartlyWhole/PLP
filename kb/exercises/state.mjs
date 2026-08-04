@@ -5,6 +5,7 @@
 
 import { mulberry32, int, pick } from "../rng.mjs";
 import { words, phrases, names, strNames } from "../pools.mjs";
+import { orderPair } from "../contrast.mjs";
 
 export default [
   {
@@ -334,6 +335,179 @@ export default [
           variantCard: `\`b = a\` copied the value a held at that moment: ${a}. `
             + `Rebinding \`a\` to ${b} afterwards does not touch \`b\` — it still `
             + `holds ${a}.`,
+        };
+      },
+    },
+  },
+
+  // --- order-matters variations (design §5, order discipline) -----------
+  // Spot-the-difference over ONE concept: program A and program B differ by
+  // exactly one statement having moved, and that move changes the output.
+
+  {
+    id: "read-before-rebind",
+    topic: "state",
+    focus: "000A", // rebind-updates-name — WHEN you read decides what you read
+    assumed: ["0005", "0006"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["two-binds", "three-binds"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["two-binds", "three-binds"]);
+        const a = int(rng, 2, 9), b = int(rng, 10, 20), c = int(rng, 21, 30);
+        if (shape === "three-binds") {
+          const { code, contrastCode } = orderPair([`x = ${a}`, `print(x)`, `x = ${b}`, `x = ${c}`], 1, 3);
+          return {
+            code, aOutput: String(a), contrastCode,
+            shape, variant: "plain",
+            variantCard: `Only the \`print(x)\` moved. Read FIRST, \`x\` still holds ${a}. `
+              + `Read LAST — after both re-binds — and it holds ${c}. The old values are gone.`,
+          };
+        }
+        const { code, contrastCode } = orderPair([`x = ${a}`, `print(x)`, `x = ${b}`], 1, 2);
+        return {
+          code, aOutput: String(a), contrastCode,
+          shape, variant: "plain",
+          variantCard: `The only change is where \`print(x)\` sits. Print BEFORE the second `
+            + `bind and you see ${a}; print AFTER it and you see ${b} — the ${a} is gone.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "copy-order",
+    topic: "state",
+    focus: "000C", // name-from-name — b = a copies the value it sees AT THAT MOMENT
+    assumed: ["0005", "0006", "000A"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["one-rebind", "two-rebinds"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["one-rebind", "two-rebinds"]);
+        const p = int(rng, 2, 9), q = int(rng, 10, 20), r = int(rng, 21, 30);
+        if (shape === "two-rebinds") {
+          const { code, contrastCode } = orderPair([`a = ${p}`, `b = a`, `a = ${q}`, `a = ${r}`, `print(b)`], 1, 3);
+          return {
+            code, aOutput: String(p), contrastCode,
+            shape, variant: "plain",
+            variantCard: `\`b = a\` copies whatever \`a\` holds when it runs. Copy first and \`b\` `
+              + `keeps ${p}; copy last — after \`a\` becomes ${r} — and \`b\` is ${r}.`,
+          };
+        }
+        const { code, contrastCode } = orderPair([`a = ${p}`, `b = a`, `a = ${q}`, `print(b)`], 1, 2);
+        return {
+          code, aOutput: String(p), contrastCode,
+          shape, variant: "plain",
+          variantCard: `Only the \`b = a\` line moved. Copy BEFORE \`a = ${q}\` and \`b\` is ${p}; `
+            + `copy AFTER it and \`b\` is ${q}. \`b = a\` freezes \`a\`'s value at that instant.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "read-between-steps",
+    topic: "state",
+    focus: "000B", // accumulate-rebind — the running value depends on WHEN you look
+    assumed: ["0005", "0006", "0008", "0009", "000A"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["two-steps", "three-steps"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["two-steps", "three-steps"]);
+        const s = int(rng, 5, 12), d1 = int(rng, 2, 4), d2 = int(rng, 2, 4), d3 = int(rng, 2, 4);
+        if (shape === "three-steps") {
+          const { code, contrastCode } = orderPair(
+            [`x = ${s}`, `x = x + ${d1}`, `x = x + ${d2}`, `x = x + ${d3}`, `print(x)`], 4, 2);
+          return {
+            code, aOutput: String(s + d1 + d2 + d3), contrastCode,
+            shape, variant: "plain",
+            variantCard: `Print at the END and \`x\` has taken every step: ${s + d1 + d2 + d3}. `
+              + `Slide \`print(x)\` up after the first step and it shows the total SO FAR: ${s + d1}.`,
+          };
+        }
+        const { code, contrastCode } = orderPair(
+          [`x = ${s}`, `x = x + ${d1}`, `x = x + ${d2}`, `print(x)`], 3, 2);
+        return {
+          code, aOutput: String(s + d1 + d2), contrastCode,
+          shape, variant: "plain",
+          variantCard: `Only \`print(x)\` moved. After both steps \`x\` is ${s + d1 + d2}; `
+            + `read between the steps and it is only ${s + d1} — the second step hasn't happened yet.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "swap-vs-sequential",
+    topic: "state",
+    focus: "000M", // swap-right-side-first — simultaneous swap vs one-at-a-time
+    assumed: ["0005", "0006", "000A", "000C"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["plain", "lead-rebind"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["plain", "lead-rebind"]);
+        const p = int(rng, 2, 9);
+        const q = ((p - 2 + int(rng, 1, 7)) % 8) + 2; // in [2,9], ≠ p
+        const lead = shape === "lead-rebind" ? `a = ${int(rng, 21, 30)}\n` : "";
+        return {
+          // A: the simultaneous swap reads the whole right side first, so b gets old a.
+          code: `${lead}a = ${p}\nb = ${q}\na, b = b, a\nprint(b)\n`,
+          aOutput: String(p),
+          // B: one at a time — a = b clobbers a before b = a reads it, so b ends up q.
+          contrastCode: `${lead}a = ${p}\nb = ${q}\na = b\nb = a\nprint(b)\n`,
+          shape, variant: "plain",
+          variantCard: `\`a, b = b, a\` reads the OLD \`a\` and \`b\` together, so \`b\` becomes the `
+            + `old \`a\`: ${p}. Doing it in two steps, \`a = b\` overwrites \`a\` with ${q} first, so `
+            + `\`b = a\` then copies ${q} — both end at ${q}.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Trace walkthrough (design §5.2 trace-table): the student fills what
+    // `x` holds after every step of a rebind chain — the "many steps in
+    // between" the final answer, each graded against the real trace.
+    id: "trace-rebind",
+    topic: "state",
+    focus: "000B", // accumulate-rebind
+    assumed: ["0005", "0006", "0008", "0009", "000A"],
+    role: "review",
+    form: "trace-table",
+    generator: {
+      shapes: ["add-then-mul", "mul-then-add", "three-adds"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["add-then-mul", "mul-then-add", "three-adds"]);
+        const a = int(rng, 2, 5);
+        const b = int(rng, 2, 6);
+        const c = int(rng, 2, 4);
+        const body = shape === "add-then-mul"
+          ? `x = ${a}\nx = x + ${b}\nx = x * ${c}\n`
+          : shape === "mul-then-add"
+            ? `x = ${a}\nx = x * ${c}\nx = x + ${b}\n`
+            : `x = ${a}\nx = x + ${b}\nx = x + ${c}\n`;
+        return {
+          code: `${body}print(x)\n`,
+          probeNames: ["x"],
+          shape, variant: "plain",
+          variantCard: "Each line rebinds `x` using its CURRENT value — walk it one step at a time; the order of the steps is the whole story.",
         };
       },
     },

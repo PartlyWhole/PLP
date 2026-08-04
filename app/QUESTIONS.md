@@ -52,6 +52,7 @@ questions match what the student sees in the panes.
 | `code-order` | the program's lines, shuffled — put them in working order (indentation preserved as a cue) | `{seed}` |
 | `code-structure` | `mode: "structure"`: detail lines given, write the structural lines (def/for/if/return/…); `mode: "details"`: the reverse | `{mode}` |
 | `code-args` | one call expression with its arguments blanked | `{line}` 1-based, or `{seed}` |
+| `trace-table` | walk the program line by line, filling in what each watched name holds after each step; graded per blank against the real trace | `{names: [...], maxBlanks = 8}` |
 | `predict-output` | type the program's exact output — whole program, or "printed so far" at one executed line (`outputUpTo`, the pure twin of the console's `showUpTo`) | `{position}` linePositions index; default last. Grading forgives trailing whitespace/blank lines only |
 
 All generators are deterministic under explicit options (`seed` uses a
@@ -59,6 +60,36 @@ mulberry32 PRNG). A generator returns `null` when it can't build a sensible
 question here (e.g. no observable memory diff, no calls, no trace yet).
 
 Memory questions use graph construction by default.
+
+### trace-table payload + grading
+
+Rows are kept only where at least one watched name was added or changed
+(globals scope, same display filtering as `predict-state`); the changed
+cells are blanks, unchanged watched names show their carried value as
+givens, unbound names render `—`:
+
+```js
+{
+  kind: "trace-table", prompt,
+  names,                                     // the watched-name columns
+  rows: [{ step, line, codeText,
+           cells: [{ name, value, blank, blankId? }] },
+         { elided: true },                   // maxBlanks elision marker
+         …],
+  blanks: [{ id, label: "step N · name", expected }],
+  grade(answersById) => { correct, perBlank: {id: bool}, expected }
+}
+```
+
+If blanks would exceed `maxBlanks`, the leading rows whose blanks fit in
+`maxBlanks − 2` are kept, an `{elided: true}` row marks the gap, and the
+final row keeps its blanks. Per-blank grading forgives what predict-state
+forgives: `normalizeAnswer` equality, else `canonicalizeContainers`
+equality (the exact repr is still reported as `expected`). `correct` is
+all-or-nothing. The generator returns `null` when no watched name ever
+binds or changes. Rendered by `renderTraceTable` (question-ui.mjs); the
+tutor's `trace-table` ask (`{ kind, probeNames, maxBlanks, prompt }`)
+traces silently first, then builds and grades the table.
 
 ## Question object contract
 

@@ -97,7 +97,11 @@ no lesson-specific relaxation.**
 A lesson marks concept C met iff **all** hold:
 
 1. The step is an `ask` of kind `predict-output` whose `focus` is C.
-2. It is graded **exact-output** (the primary predict-exact-output form).
+2. It is graded **exact-output** (the primary predict-exact-output form)
+   — or it is a **trace-table** answered with every cell correct: a
+   student who predicts every intermediate value unaided has demonstrated
+   strictly more than one who predicts only the end state, so the
+   all-correct table is an accepted (stronger) witness.
 3. The student's answer is **correct on the first attempt** and arrives
    **before the final hint is shown**. §2.8 forbids crediting a shown
    answer or a lucky skip; a hint that states the output *is* a shown

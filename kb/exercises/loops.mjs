@@ -3,6 +3,8 @@
 // the flagged multi-line intro; the rest print a single summary line.
 
 import { mulberry32, int, pick } from "../rng.mjs";
+import { words } from "../pools.mjs";
+import { orderPair } from "../contrast.mjs";
 
 export default [
   {
@@ -331,6 +333,182 @@ export default [
           code: `for x in [${items.join(", ")}]:\n    if False:\n        break\nelse:\n    print("${word}")\n`,
           shape: "no-break", variant: "plain",
           variantCard: `No \`break\` happens, so the loop's \`else\` runs and prints \`${word}\`.`,
+        };
+      },
+    },
+  },
+
+  // --- order-matters variations (design §5, order discipline) -----------
+  // Multi-line: the printed side always prints at least one line — the
+  // thresholds guarantee the break/continue never fires before the first
+  // print.
+
+  {
+    id: "break-order",
+    topic: "loops",
+    focus: "001N", // break-exits — break before vs after the print in the body
+    assumed: ["0005", "0006", "000D", "0015", "0017", "001E"],
+    role: "review",
+    form: "spot-the-difference",
+    multiline: true,
+    generator: {
+      shapes: ["threshold", "equal"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["threshold", "equal"]);
+        const a = int(rng, 4, 6);
+        const test = shape === "equal" ? `x == ${a + 1}` : `x > ${a}`;
+        // A: print then test-break — the first two items print, then break.
+        const { code, contrastCode } = orderPair(
+          [`for x in [${a}, ${a + 1}, ${a + 2}]:`, `    print(x)`, `    if ${test}:\n        break`], 1, 2);
+        return {
+          code, aOutput: `${a}\n${a + 1}`, contrastCode,
+          shape, variant: "plain",
+          variantCard: `The only change is where the \`break\` test sits. With \`print(x)\` first, ${a} and `
+            + `${a + 1} both print before the break; move the test above the print and \`${a + 1}\` never `
+            + `prints — the break leaves the loop first, so only \`${a}\` shows.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "continue-order",
+    topic: "loops",
+    focus: "001P", // continue-skips — skip test before vs after the print
+    assumed: ["0005", "0006", "000D", "0015", "0017", "001E"],
+    role: "review",
+    form: "spot-the-difference",
+    multiline: true,
+    generator: {
+      shapes: ["skip-second", "skip-first"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["skip-second", "skip-first"]);
+        const a = int(rng, 2, 6), b = a + int(rng, 1, 3);
+        const skipped = shape === "skip-first" ? a : b;
+        const survivor = shape === "skip-first" ? b : a;
+        // A: test-continue THEN print — the skipped item prints nothing.
+        const { code, contrastCode } = orderPair(
+          [`for x in [${a}, ${b}]:`, `    if x == ${skipped}:\n        continue`, `    print(x)`], 1, 2);
+        return {
+          code, aOutput: String(survivor), contrastCode,
+          shape, variant: "plain",
+          variantCard: `With the \`continue\` test first, the pass for ${skipped} skips its print, so only `
+            + `\`${survivor}\` shows. Move the test BELOW \`print(x)\` and the print already ran — both `
+            + `${a} and ${b} print, and \`continue\` then does nothing.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "print-in-vs-after",
+    topic: "loops",
+    focus: "001E", // loop-for-visits-each — print each pass vs one line after the loop
+    assumed: ["0005", "0006", "000D"],
+    role: "review",
+    form: "spot-the-difference",
+    multiline: true,
+    generator: {
+      shapes: ["bare-list", "named-list"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["bare-list", "named-list"]);
+        const items = Array.from({ length: 3 }, () => int(rng, 1, 9) * 10);
+        const label = pick(rng, words);
+        const lit = `[${items.join(", ")}]`;
+        const header = shape === "named-list" ? `xs = ${lit}\nfor x in xs:` : `for x in ${lit}:`;
+        // A: print(x) INSIDE the body — one line per pass, interleaved with the marker.
+        const code = `${header}\n    print("${label}")\n    print(x)\n`;
+        // B: print(x) moved to AFTER the loop — it runs once, showing x's last value.
+        const contrastCode = `${header}\n    print("${label}")\nprint(x)\n`;
+        const aOutput = items.map((v) => `${label}\n${v}`).join("\n");
+        return {
+          code, aOutput, contrastCode,
+          shape, variant: "plain",
+          variantCard: `Inside the loop, \`print(x)\` runs every pass — one line per item. Move it AFTER `
+            + `the loop and it runs just once, on the value \`x\` was left holding: ${items[items.length - 1]}.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "accumulate-then-read",
+    topic: "loops",
+    focus: "001J", // loop-accumulate — read the running total inside vs after the loop
+    assumed: ["0005", "0006", "0008", "0009", "000A", "000B", "000D", "001E"],
+    role: "review",
+    form: "spot-the-difference",
+    multiline: true,
+    generator: {
+      shapes: ["sum", "count"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["sum", "count"]);
+        const items = Array.from({ length: 3 }, () => int(rng, 1, 6));
+        let running, header, step, finalLine;
+        if (shape === "count") {
+          let c = 0; running = items.map(() => (c += 1));
+          header = "count = 0";
+          step = "count = count + 1";
+          finalLine = "count";
+        } else {
+          let t = 0; running = items.map((x) => (t += x));
+          header = "total = 0";
+          step = "total = total + x";
+          finalLine = "total";
+        }
+        // A: print INSIDE the loop — the running value on every pass.
+        const code = `${header}\nfor x in [${items.join(", ")}]:\n    ${step}\n    print(${finalLine})\n`;
+        // B: print AFTER the loop — only the finished value.
+        const contrastCode = `${header}\nfor x in [${items.join(", ")}]:\n    ${step}\nprint(${finalLine})\n`;
+        return {
+          code, aOutput: running.join("\n"), contrastCode,
+          shape, variant: "plain",
+          variantCard: `Read \`${finalLine}\` INSIDE the loop and you see it grow: `
+            + `${running.join(", ")}. Move the print AFTER the loop and only the finished `
+            + `value prints: ${running[running.length - 1]}.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Trace walkthrough (design §5.2 trace-table): both loop names step by
+    // step — `x` takes each item, the accumulator grows — graded per cell
+    // against the real trace.
+    id: "trace-sum",
+    topic: "loops",
+    focus: "001J", // loop-accumulate
+    assumed: ["0005", "0006", "0008", "0009", "000A", "000B", "000D", "001E"],
+    role: "review",
+    form: "trace-table",
+    generator: {
+      shapes: ["sum-steps", "count-steps"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["sum-steps", "count-steps"]);
+        const items = Array.from({ length: 3 }, () => int(rng, 1, 6));
+        if (shape === "count-steps") {
+          return {
+            code: `count = 0\nfor x in [${items.join(", ")}]:\n    count = count + 1\nprint(count)\n`,
+            probeNames: ["count", "x"],
+            shape, variant: "plain",
+            variantCard: "One pass per item: `x` takes the item, then the counter adds 1 — the table IS the loop unrolled.",
+          };
+        }
+        return {
+          code: `total = 0\nfor x in [${items.join(", ")}]:\n    total = total + x\nprint(total)\n`,
+          probeNames: ["total", "x"],
+          shape: "sum-steps", variant: "plain",
+          variantCard: "Each pass: `x` takes the next item, then `total` grows by it. The final print is just the last row of the table.",
         };
       },
     },

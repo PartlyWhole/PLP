@@ -37,6 +37,10 @@ export function docSamples(kb) {
       specs.push({ key: `${ex.id}|B`, run: prog.contrastCode });
     } else if (ex.form === "predict-state") {
       specs.push({ key: `${ex.id}|state`, run: `${prog.code}print(${prog.probeName})\n` });
+    } else if (ex.form === "trace-table") {
+      // The blanks derive from the live trace at runtime; the reference can
+      // only show the watched names' END values (docgen is stdout-only).
+      specs.push({ key: `${ex.id}|names`, run: `${prog.code}${prog.probeNames.map((n) => `print(${n})`).join("\n")}\n` });
     } else {
       specs.push({ key: `${ex.id}|out`, run: prog.code });
     }
@@ -184,6 +188,10 @@ export function renderReference(kb, outputs, waivers = []) {
       L.push(fence(prog.code));
       L.push(`After it runs, \`${prog.probeName}\` holds:`);
       L.push(outBlock(get(`${ex.id}|state`)));
+    } else if (ex.form === "trace-table") {
+      L.push(fence(prog.code));
+      L.push(`Step-table walkthrough over \`${prog.probeNames.join("`, `")}\` (blanks derive from the live trace); the watched names end holding:`);
+      L.push(outBlock(get(`${ex.id}|names`)));
     } else if (ex.form === "fill-one-blank") {
       L.push(`Filled with the intended token \`${prog.blank.target}\`:`);
       L.push(fence(prog.code));

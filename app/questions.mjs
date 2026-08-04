@@ -366,6 +366,93 @@ function predictStateQuestion(ctx, opts = {}) {
   };
 }
 
+// ---- trace-table ------------------------------------------------------------
+// Walk the program's executed lines, filling in what each watched name holds
+// after each step. Rows are kept only where a watched name was ADDED or
+// CHANGED (globals scope, same display filtering as predict-state); within a
+// kept row only the changed cells are blanks — unchanged watched names show
+// their carried value as givens, unbound names render "—". Graded per blank
+// against the real trace with the same container forgiveness as
+// predict-state (normalizeAnswer, else canonicalizeContainers).
+function traceTableQuestion(ctx, opts = {}) {
+  const names = opts.names ?? [];
+  const maxBlanks = opts.maxBlanks ?? 8;
+  if (!names.length) return null;
+  const P = ctx.positions ?? [];
+  const sourceLines = (ctx.source ?? "").split("\n");
+  const filterSnap = (snap) => ({
+    entries: snap.entries.filter((e) => e.scope === "globals" && names.includes(e.name)),
+  });
+  let prev = { entries: [] };
+  const kept = [];
+  for (let i = 0; i < P.length; i++) {
+    const snap = filterSnap(snapshotAt(ctx.steps, P[i].stateIndex));
+    const diff = diffSnapshots(prev, snap);
+    if (diff.added.size || diff.changed.size) kept.push({ position: i, snap, diff });
+    prev = snap;
+  }
+  if (!kept.length) return null; // no watched name ever binds/changes
+  const allRows = kept.map((k, idx) => {
+    const byName = new Map(k.snap.entries.map((e) => [e.name, e.value]));
+    const cells = names.map((name) => {
+      const key = `globals|${name}`;
+      return {
+        name,
+        value: byName.has(name) ? byName.get(name) : "—",
+        blank: k.diff.added.has(key) || k.diff.changed.has(key),
+      };
+    });
+    return {
+      step: idx + 1,
+      line: P[k.position].line,
+      codeText: sourceLines[P[k.position].line - 1] ?? "",
+      cells,
+    };
+  });
+  // maxBlanks elision: keep the leading rows whose blanks fit in
+  // maxBlanks − 2, mark the gap, and keep the final row's blanks.
+  const blankCount = (r) => r.cells.filter((c) => c.blank).length;
+  let rows = allRows;
+  if (allRows.reduce((a, r) => a + blankCount(r), 0) > maxBlanks) {
+    const head = [];
+    let used = 0;
+    for (const r of allRows.slice(0, -1)) {
+      if (used + blankCount(r) > Math.max(0, maxBlanks - 2)) break;
+      head.push(r);
+      used += blankCount(r);
+    }
+    rows = [...head, { elided: true }, allRows[allRows.length - 1]];
+  }
+  const blanks = [];
+  for (const r of rows) {
+    if (r.elided) continue;
+    for (const c of r.cells) {
+      if (!c.blank) continue;
+      const id = `b${blanks.length}`;
+      c.blankId = id;
+      blanks.push({ id, label: `step ${r.step} · ${c.name}`, expected: c.value });
+    }
+  }
+  const eq = (got, want) => normalizeAnswer(got) === normalizeAnswer(want)
+    || canonicalizeContainers(got) === canonicalizeContainers(want);
+  return {
+    kind: "trace-table",
+    prompt: "Walk the program step by step: fill in what each name holds after each line runs.",
+    rows,
+    names,
+    blanks,
+    grade(answers = {}) {
+      const perBlank = {};
+      for (const b of blanks) perBlank[b.id] = eq(answers[b.id], b.expected);
+      return {
+        correct: blanks.length > 0 && blanks.every((b) => perBlank[b.id]),
+        perBlank,
+        expected: Object.fromEntries(blanks.map((b) => [b.id, b.expected])),
+      };
+    },
+  };
+}
+
 // ---- code-prediction questions --------------------------------------------
 const STRUCTURAL_RE = /^\s*(def |class |for |while |if |elif |else\b|return\b|import |from )/;
 
@@ -513,6 +600,11 @@ export const questionGenerators = {
     label: "Predict the final value of a name",
     needsTrace: true,
     generate: predictStateQuestion,
+  },
+  "trace-table": {
+    label: "Trace the table",
+    needsTrace: true,
+    generate: traceTableQuestion,
   },
   "fill-one-blank": {
     // Graded by the tutor's async substitute-and-run path (design §5.2); this
