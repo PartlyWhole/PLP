@@ -9,7 +9,7 @@
 ## Overview
 
 - **69 concepts** — 4 structural / 47 core / 18 edge.
-- **103 exercises** across 7 topics.
+- **105 exercises** across 7 topics.
 - **Forms:** fill-one-blank, predict-exact-output, predict-state, spot-the-difference, trace-table.
 
 ## Topics
@@ -558,7 +558,7 @@ Text never changes in place; building new text and rebinding leaves earlier copi
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000A ← 000C ← 000Y
 - Characteristic wrong answer: the earlier copy shows the change too
-- Exercises: capture-order, text-immutable
+- Exercises: capture-order, text-immutable, trace-str-capture
 
 ### 0014 · str-compare-code-points — edge
 
@@ -728,7 +728,7 @@ while re-tests before every pass and stops the moment the test is False.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000B ← 0015 ← 0016
 - Characteristic wrong answer: one pass too many or one too few
-- Exercises: while-counts-down
+- Exercises: trace-while, while-counts-down
 
 ### 001N · break-exits — core
 
@@ -2825,6 +2825,26 @@ Step-table walkthrough over `x` (blanks derive from the live trace); the watched
 12
 ```
 
+### trace-str-capture — focus 0013 (str-immutable-rebind)
+
+- Form: `trace-table` · Role: review · Topic: strings
+- Assumed: 0005, 0006, 000A, 000C, 000Y
+- Shapes: capture-then-grow, grow-then-capture · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+s = "yo"
+t = s
+s = s + "?"
+print(t)
+```
+Step-table walkthrough over `s`, `t` (blanks derive from the live trace); the watched names end holding:
+```
+yo
+yo?
+yo
+```
+
 ### trace-sum — focus 001J (loop-accumulate)
 
 - Form: `trace-table` · Role: review · Topic: loops
@@ -2843,6 +2863,25 @@ Step-table walkthrough over `total`, `x` (blanks derive from the live trace); th
 13
 13
 1
+```
+
+### trace-while — focus 001M (while-repeats-while-true)
+
+- Form: `trace-table` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 000A, 000B, 0015
+- Shapes: count-down, count-up · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+n = 7
+while n > 0:
+    n = n - 2
+print(n)
+```
+Step-table walkthrough over `n` (blanks derive from the live trace); the watched names end holding:
+```
+-1
+-1
 ```
 
 ### tuple-comma — focus 001Y (tuple-by-comma)

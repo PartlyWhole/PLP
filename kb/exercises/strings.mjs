@@ -210,4 +210,35 @@ export default [
       },
     },
   },
+
+  {
+    // Trace walkthrough (design §5.2 trace-table): the immutability
+    // contrast to trace-alias — `t = s` captures a value, so `t`'s column
+    // NEVER moves when `s` rebinds (lists share; strings don't).
+    id: "trace-str-capture",
+    topic: "strings",
+    focus: "0013", // str-immutable-rebind
+    assumed: ["0005", "0006", "000A", "000C", "000Y"],
+    role: "review",
+    form: "trace-table",
+    generator: {
+      shapes: ["capture-then-grow", "grow-then-capture"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["capture-then-grow", "grow-then-capture"]);
+        const word = pick(rng, ["hi", "go", "yo", "ok"]);
+        const tail = pick(rng, ["!", "?", "!!"]);
+        const code = shape === "capture-then-grow"
+          ? `s = "${word}"\nt = s\ns = s + "${tail}"\nprint(t)\n`
+          : `s = "${word}"\ns = s + "${tail}"\nt = s\nprint(t)\n`;
+        return {
+          code,
+          probeNames: ["s", "t"],
+          shape, variant: "plain",
+          variantCard: "Rebinding `s` makes a NEW string and points `s` at it — `t` keeps whatever it captured when `t = s` ran. Compare the two columns.",
+        };
+      },
+    },
+  },
 ];

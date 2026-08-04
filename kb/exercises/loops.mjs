@@ -480,6 +480,42 @@ export default [
   },
 
   {
+    // Trace walkthrough (design §5.2 trace-table): the while-loop's whole
+    // story is `n` stepping toward the exit — fill in each pass's value.
+    id: "trace-while",
+    topic: "loops",
+    focus: "001M", // while-repeats-while-true
+    assumed: ["0005", "0006", "0008", "000A", "000B", "0015"],
+    role: "review",
+    form: "trace-table",
+    generator: {
+      shapes: ["count-down", "count-up"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["count-down", "count-up"]);
+        if (shape === "count-up") {
+          const stop = int(rng, 5, 8);
+          return {
+            code: `n = 0\nwhile n < ${stop}:\n    n = n + 2\nprint(n)\n`,
+            probeNames: ["n"],
+            shape, variant: "plain",
+            variantCard: "Each pass adds 2, and the test runs BEFORE every pass — the last row is the first value that fails `n < " + stop + "`.",
+          };
+        }
+        const start = int(rng, 5, 9);
+        const step = int(rng, 2, 3);
+        return {
+          code: `n = ${start}\nwhile n > 0:\n    n = n - ${step}\nprint(n)\n`,
+          probeNames: ["n"],
+          shape: "count-down", variant: "plain",
+          variantCard: "Subtract per pass until the test fails — the printed value is whatever `n` held when `n > 0` first turned False.",
+        };
+      },
+    },
+  },
+
+  {
     // Trace walkthrough (design §5.2 trace-table): both loop names step by
     // step — `x` takes each item, the accumulator grows — graded per cell
     // against the real trace.
