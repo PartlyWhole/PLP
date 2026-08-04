@@ -672,6 +672,10 @@ button.pr-quiet:hover { color: var(--t-ink); text-decoration: underline; }
 }
 .cm-rows { position: relative; display: flex; flex-direction: column; gap: var(--sp-4); }
 .cm-edge-lines { position: absolute; inset: 0; pointer-events: none; }
+/* The edge underlay is absolutely positioned, which paints ABOVE in-flow
+   siblings by default — lift the chip rows (and detail cards) over it so
+   the arrows run behind the pills. */
+.cm-row, .cm-detail { position: relative; z-index: 1; }
 .cm-edge { fill: none; stroke: var(--t-border-strong); stroke-width: 1.5; }
 .cm-edge.into-frontier { stroke: var(--t-accent); stroke-opacity: 0.5; }
 .cm-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); position: relative; }
