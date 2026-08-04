@@ -25,10 +25,15 @@ export function createPracticeUI({ layout, getCode }) {
       <span class="pr-title" data-role="pr-title">Exercises</span>
       <span class="pr-dots" data-role="pr-dots"></span>
       <span class="spacer"></span>
+      <button type="button" data-role="pr-notes" title="Scratch notes">📝</button>
       <button type="button" data-role="pr-exit-lesson" hidden>✕ End round</button>
     </div>
     <div class="pr-body" data-role="pr-body"></div>
-    <div class="pr-controls" data-role="pr-controls"></div>`;
+    <div class="pr-controls" data-role="pr-controls"></div>
+    <div class="pr-notes-drawer" data-role="pr-notes-drawer" hidden>
+      <div class="pr-notes-head">Scratch notes <span class="hint">— saved automatically</span></div>
+      <textarea data-role="pr-notes-text" placeholder="work things out here…"></textarea>
+    </div>`;
   document.body.appendChild(root);
   const body = root.querySelector("[data-role=pr-body]");
   const controlsHost = root.querySelector("[data-role=pr-controls]");
@@ -36,12 +41,44 @@ export function createPracticeUI({ layout, getCode }) {
   const dotsEl = root.querySelector("[data-role=pr-dots]");
   const exitBtn = root.querySelector("[data-role=pr-exit-lesson]");
 
+  // Scratch notes: pure presentation state, one pad for all rounds. The
+  // learner's thinking space — nothing in the app ever reads it.
+  const NOTES_KEY = "plp.notes.v1";
+  const notesDrawer = root.querySelector("[data-role=pr-notes-drawer]");
+  const notesText = root.querySelector("[data-role=pr-notes-text]");
+  const notesBtn = root.querySelector("[data-role=pr-notes]");
+  try { notesText.value = localStorage.getItem(NOTES_KEY) ?? ""; } catch { /* ephemeral */ }
+  notesText.addEventListener("input", () => {
+    try { localStorage.setItem(NOTES_KEY, notesText.value); } catch { /* ephemeral */ }
+  });
+  function toggleNotes(open = notesDrawer.hidden) {
+    notesDrawer.hidden = !open;
+    notesBtn.classList.toggle("on", open);
+    if (open) notesText.focus();
+  }
+  notesBtn.addEventListener("click", () => toggleNotes());
+
   root.querySelector("[data-role=pr-leave]").addEventListener("click", () => hide());
   exitBtn.addEventListener("click", () => onExit?.());
   // Esc leaves practice back to the IDE (symmetric with the 🎓 toggle);
   // the round stays resumable from the persisted store.
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && document.body.classList.contains("practice")) hide();
+    if (!document.body.classList.contains("practice")) return;
+    if (e.key === "Escape") {
+      // Progressive dismissal: notes drawer, then a review, then the surface.
+      if (!notesDrawer.hidden) { toggleNotes(false); return; }
+      if (reviewState) { closeReview(); return; }
+      hide();
+      return;
+    }
+    // Drill cadence: after grading the card freezes and its input goes
+    // readOnly, so Enter bubbles here — let it press the primary control
+    // ("Continue →") without reaching for the mouse. Never while typing
+    // notes or inside a review (the retry input has its own Enter).
+    if (e.key === "Enter" && !reviewState && !notesDrawer.contains(e.target)
+        && current?.type === "question" && current.handle.el.classList.contains("frozen")) {
+      controlsHost.querySelector("button.primary")?.click();
+    }
   });
 
   // current = { type: "question", handle } | { type: "static" } | null
@@ -96,6 +133,43 @@ export function createPracticeUI({ layout, getCode }) {
     return block;
   }
 
+  // Spot-the-difference context: program A with its real output, above the
+  // changed program (shared by the live card and its review rebuild).
+  function buildContextBlock(context) {
+    const ctx = document.createElement("div");
+    ctx.className = "pr-context";
+    const label = document.createElement("p");
+    label.className = "pr-reveal-label";
+    label.textContent = "this program";
+    ctx.appendChild(label);
+    mountProgram(ctx, context.code);
+    const out = document.createElement("p");
+    out.className = "pr-out";
+    out.append("prints ");
+    const codeEl = document.createElement("code");
+    codeEl.textContent = context.output ?? "";
+    out.appendChild(codeEl);
+    ctx.appendChild(out);
+    const divider = document.createElement("p");
+    divider.className = "pr-divider hint";
+    divider.textContent = "one line changed ↓";
+    ctx.appendChild(divider);
+    return ctx;
+  }
+
+  // The proof block: what the program really did (live reveals and reviews).
+  function buildRevealBlock({ kind, text, correct }) {
+    const block = document.createElement("div");
+    block.className = `pr-reveal ${correct ? "good" : "open"}`;
+    const label = document.createElement("span");
+    label.className = "pr-reveal-label";
+    label.textContent = kind === "predict-state" ? "it really holds" : "it printed";
+    const pre = document.createElement("pre");
+    pre.textContent = text ?? "";
+    block.append(label, pre);
+    return block;
+  }
+
   // First-time mechanics: one quiet line under the input, shown once per
   // form ever (presentation state, not pedagogy — lives in plp.practice.v1).
   const MECHANICS = {
@@ -125,27 +199,7 @@ export function createPracticeUI({ layout, getCode }) {
     el.appendChild(intro);
 
     // Spot-the-difference: program A with its real output, above program B.
-    if (context?.code) {
-      const ctx = document.createElement("div");
-      ctx.className = "pr-context";
-      const label = document.createElement("p");
-      label.className = "pr-reveal-label";
-      label.textContent = "this program";
-      ctx.appendChild(label);
-      mountProgram(ctx, context.code);
-      const out = document.createElement("p");
-      out.className = "pr-out";
-      out.append("prints ");
-      const codeEl = document.createElement("code");
-      codeEl.textContent = context.output ?? "";
-      out.appendChild(codeEl);
-      ctx.appendChild(out);
-      const divider = document.createElement("p");
-      divider.className = "pr-divider hint";
-      divider.textContent = "one line changed ↓";
-      ctx.appendChild(divider);
-      el.appendChild(ctx);
-    }
+    if (context?.code) el.appendChild(buildContextBlock(context));
 
     const programBlock = mountProgram(el, code);
     // Escape hatch: the real IDE is one tap away, program loaded. If the
@@ -218,6 +272,12 @@ export function createPracticeUI({ layout, getCode }) {
       el.appendChild(m);
     }
 
+    // Verdict above the reveal: the first thing the eye lands on after
+    // grading is "did I get it?", then the proof right under it.
+    const verdictSlot = document.createElement("div");
+    verdictSlot.className = "pr-verdict-slot";
+    el.appendChild(verdictSlot);
+
     const revealSlot = document.createElement("div");
     revealSlot.className = "pr-reveal-slot";
     el.appendChild(revealSlot);
@@ -259,7 +319,8 @@ export function createPracticeUI({ layout, getCode }) {
         }
       },
       verdict(ok, text) {
-        el.appendChild(verdictSpan(ok, text));
+        verdictSlot.textContent = "";
+        verdictSlot.appendChild(verdictSpan(ok, text));
         if (ok) {
           el.classList.add("t-bloom");
           el.addEventListener("animationend", () => el.classList.remove("t-bloom"), { once: true });
@@ -270,19 +331,18 @@ export function createPracticeUI({ layout, getCode }) {
       reveal({ text, correct, kind }) {
         el.classList.remove("is-running");
         revealSlot.textContent = "";
-        const block = document.createElement("div");
-        block.className = `pr-reveal ${correct ? "good" : "open"}`;
-        const label = document.createElement("span");
-        label.className = "pr-reveal-label";
-        label.textContent = kind === "predict-state" ? "it really holds" : "it printed";
-        const pre = document.createElement("pre");
-        pre.textContent = text ?? "";
-        block.append(label, pre);
-        if (kind === "predict-state") {
+        const block = buildRevealBlock({ kind, text, correct });
+        // Reflect on it: the graded run's trace is already in the memory
+        // model, so the IDE is one tap from scrubbing what really happened —
+        // always for predict-state (the state IS the answer), and on any
+        // miss (the learner just found out their model was wrong).
+        if (kind === "predict-state" || !correct) {
           const link = document.createElement("button");
           link.type = "button";
           link.className = "pr-quiet pr-see-memory";
-          link.textContent = "🔬 see it in the memory model";
+          link.textContent = kind === "predict-state"
+            ? "🔬 see it in the memory model"
+            : "🔬 step through this run";
           link.addEventListener("click", () => hide());
           block.appendChild(link);
         }
@@ -293,8 +353,132 @@ export function createPracticeUI({ layout, getCode }) {
     return handle;
   }
 
+  // ---- review: go back to an answered question -----------------------------
+  // Reviewing swaps the surface to a rebuilt snapshot card; the live view
+  // (an in-flight ask, the summary, the menu) is stashed as DOM and comes
+  // back untouched on close. New runtime content supersedes a review.
+  let reviewState = null; // { saved: Node[], savedControls: Node[] }
+  let onReview = null;
+
+  function discardReview() {
+    if (!reviewState) return;
+    reviewState = null;
+    root.classList.remove("reviewing");
+  }
+  function showReview(desc) {
+    if (!reviewState) reviewState = { saved: [...body.children], savedControls: [...controlsHost.children] };
+    body.textContent = "";
+    controlsHost.textContent = "";
+    root.classList.add("reviewing");
+    body.appendChild(buildReviewCard(desc));
+    body.scrollTop = 0;
+  }
+  function closeReview() {
+    if (!reviewState) return;
+    const { saved, savedControls } = reviewState;
+    reviewState = null;
+    root.classList.remove("reviewing");
+    body.textContent = "";
+    for (const el of saved) body.appendChild(el);
+    controlsHost.textContent = "";
+    for (const el of savedControls) controlsHost.appendChild(el);
+    body.querySelectorAll(".CodeMirror").forEach((el) => el.CodeMirror?.refresh());
+  }
+
+  function buildReviewCard(desc) {
+    const el = document.createElement("div");
+    el.className = "pr-question pr-review";
+
+    const head = document.createElement("p");
+    head.className = "pr-review-head";
+    head.textContent = `Question ${desc.index + 1} — looking back`;
+    el.appendChild(head);
+
+    if (desc.context?.code) el.appendChild(buildContextBlock(desc.context));
+    if (desc.code) mountProgram(el, desc.code);
+    if (desc.prompt) {
+      const p = document.createElement("p");
+      p.className = "pr-prompt";
+      renderInline(p, desc.prompt);
+      el.appendChild(p);
+    }
+
+    const you = document.createElement("p");
+    you.className = "pr-review-answer";
+    if (desc.answerText !== undefined) {
+      you.append("you answered ");
+      const c = document.createElement("code");
+      c.textContent = desc.answerText;
+      you.appendChild(c);
+      you.append(" ");
+    }
+    you.appendChild(verdictSpan(desc.ok, desc.verdict ?? (desc.ok ? "✓" : "✗")));
+    if (desc.retry?.ok && !desc.ok) {
+      const badge = document.createElement("span");
+      badge.className = "pr-retry-badge";
+      badge.textContent = "solved on retry ✓";
+      you.appendChild(badge);
+    }
+    el.appendChild(you);
+
+    const revealSlot = document.createElement("div");
+    revealSlot.className = "pr-reveal-slot";
+    el.appendChild(revealSlot);
+    if (desc.expectedText !== undefined) {
+      revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: desc.expectedText, correct: desc.ok }));
+    }
+
+    if (desc.onRetry) {
+      const wrap = document.createElement("div");
+      wrap.className = "pr-retry";
+      const input = document.createElement("input");
+      input.className = "tutor-output-input";
+      input.placeholder = "have another go…";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "primary";
+      btn.textContent = "Try it again ▶";
+      const verdictOut = document.createElement("p");
+      verdictOut.className = "pr-retry-verdict";
+      const note = document.createElement("p");
+      note.className = "hint pr-retry-note";
+      note.textContent = "retries are for you — your score keeps the first try";
+      const go = async () => {
+        if (!input.value.trim() || btn.disabled) return;
+        btn.disabled = true;
+        input.readOnly = true;
+        verdictOut.textContent = "running it for real…";
+        const res = await desc.onRetry(input.value);
+        btn.disabled = false;
+        input.readOnly = false;
+        verdictOut.textContent = "";
+        if (!res) { verdictOut.textContent = "couldn't run just now — try again in a moment"; return; }
+        verdictOut.appendChild(verdictSpan(res.ok, res.ok ? "✓ that's it!" : "✗ not yet — the real answer is above"));
+        if (res.expectedText !== undefined) {
+          revealSlot.textContent = "";
+          revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: res.expectedText, correct: res.ok }));
+        }
+      };
+      btn.addEventListener("click", go);
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !input.readOnly) go(); });
+      wrap.append(input, btn, verdictOut, note);
+      el.appendChild(wrap);
+    }
+
+    const actionRow = document.createElement("div");
+    actionRow.className = "pr-actions";
+    const back = document.createElement("button");
+    back.type = "button";
+    back.textContent = "↩ Back to the round";
+    back.addEventListener("click", () => desc.onBack?.());
+    actionRow.appendChild(back);
+    el.appendChild(actionRow);
+    return el;
+  }
+
   // ---- beat interpretation -------------------------------------------------
   function renderStatics(descs) {
+    discardReview();
     body.textContent = "";
     const wrap = document.createElement("div");
     wrap.className = "pr-static";
@@ -306,6 +490,7 @@ export function createPracticeUI({ layout, getCode }) {
   function popBatch(descs = [], liveHandle = null) {
     if (liveHandle) {
       // A new question takes the whole surface.
+      discardReview();
       body.textContent = "";
       for (const d of descs) {
         if (d.type === "sys") continue; // plumbing, never shown here
@@ -338,6 +523,7 @@ export function createPracticeUI({ layout, getCode }) {
     hide,
     isVisible: () => !root.hidden,
     clear() {
+      discardReview();
       body.textContent = "";
       current = null;
     },
@@ -356,6 +542,7 @@ export function createPracticeUI({ layout, getCode }) {
       }
     },
     showCustom(el) {
+      discardReview();
       body.textContent = "";
       body.appendChild(el);
       current = { type: "static" };
@@ -367,10 +554,24 @@ export function createPracticeUI({ layout, getCode }) {
     setProgress(text, q) {
       titleEl.textContent = text ? String(text).split(" · ")[0] : "Exercises";
       dotsEl.textContent = "";
-      if (q?.qTotal) {
-        for (let i = 0; i < q.qTotal; i++) {
+      if (!q?.qTotal) return;
+      // Answered dots read their outcome (green hit / red miss, a green
+      // ring for missed-then-solved-on-retry) and click back into a review
+      // of that question. Unanswered dots are inert; the next one is live.
+      const results = q.results ?? [];
+      for (let i = 0; i < q.qTotal; i++) {
+        const r = results[i];
+        if (r) {
+          const dot = document.createElement("button");
+          dot.type = "button";
+          dot.className = "pr-dot " + (r.ok ? "hit" : "miss") + (!r.ok && r.retryOk ? " retried" : "");
+          dot.title = (r.ok ? "right" : r.retryOk ? "missed, then solved on retry" : "missed")
+            + ` — look back at question ${i + 1}`;
+          dot.addEventListener("click", () => onReview?.(i));
+          dotsEl.appendChild(dot);
+        } else {
           const dot = document.createElement("span");
-          dot.className = "pr-dot" + (i < q.qDone ? " done" : "");
+          dot.className = "pr-dot" + (i === results.length ? " active" : "");
           dotsEl.appendChild(dot);
         }
       }
@@ -378,6 +579,9 @@ export function createPracticeUI({ layout, getCode }) {
     setExitVisible(v) { exitBtn.hidden = !v; },
     setOnExit(fn) { onExit = fn; },
     setOnTryIt(fn) { onTryIt = fn; },
+    setOnReview(fn) { onReview = fn; },
+    showReview,
+    closeReview,
     setReviewContext() {}, // no history UI in practice
     setStageMemory() {},
     scrollToEnd() { body.scrollTop = body.scrollHeight; },

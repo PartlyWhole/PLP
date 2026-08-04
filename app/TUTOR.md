@@ -72,13 +72,39 @@ example"), spot-the-difference's program A + output ride on
 `ask.context`, prompts are one line, and first-time-per-form mechanics
 are a single quiet line gated by `plp.practice.v1`.
 
+**Every graded answer holds.** After grading, the round pauses on both
+outcomes (kb-session emits a bare `{ pause: true }` step on the correct
+branch; the wrong branch already paused on its explain card): the card
+freezes with the verdict big in `.pr-verdict-slot`, the reveal under it,
+and **Continue →** (Enter works — the frozen card's input is readOnly,
+so the keystroke falls through to the surface). Without this beat the
+one-card surface would wipe the "✓ Exactly right!" before it was read.
+
+**Dots are the round's scoreboard and its back button.** Answered dots
+color green (hit) / red (miss; a green ring = missed, then solved on
+retry) and click into a **review**: the recorded snapshot (every
+`question-frozen` record carries `review` — program, kind, opts/blank,
+expected, teach/context) rebuilt as a read-only card — program, your
+answer, verdict, the real output. Reviewing stashes the live view as DOM
+and restores it untouched on "↩ Back to the round"; new runtime content
+supersedes a stale review. **Try it again** re-runs and re-grades for
+real (`retryAnswer` in tutor.mjs — the editor is snapshotted and
+restored around the retry run), but the score of record never moves:
+`rec.ok`, the kb seen/missed stats, and met grants all keep the first
+attempt; the retry outcome only decorates the record (`rec.retry`) and
+its dot. A skipped question's retry teaches the record its answer.
+
 Escape hatches: **←**/Esc hide the surface back to the IDE (the round
 stays resumable — collab go-live uses the same hide-not-end path);
 "open in editor" on every program block; a "put the question's program
 back" chip appears if the code was edited outside; predict-state reveals
-link to the memory model. A **surface router** in tutor.mjs dispatches
-every ui call: drills/menu/map → practice; guided lessons → the stage
-below (the IDE is *their* content).
+link to the memory model, and any **miss** links "🔬 step through this
+run" — the graded trace is already scrubbable in the IDE. A **📝 scratch
+notes** drawer (persisted in `plp.notes.v1`, nothing reads it) rides the
+top bar; Esc dismisses progressively (notes → review → surface). A
+**surface router** in tutor.mjs dispatches every ui call: drills/menu/map
+→ practice; guided lessons → the stage below (the IDE is *their*
+content).
 
 ## The stage, the history rail, and focus mode (guided lessons)
 

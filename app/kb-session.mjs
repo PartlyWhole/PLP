@@ -174,6 +174,10 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus } = {
     // values just asked), else the concept's canonical rule card.
     const explain = prog.variantCard ?? concept.card;
     steps.push({ if: { lastAnswer: ["wrong", "skipped"] }, say: explain, pause: true });
+    // A correct answer holds too: on the one-card practice surface the next
+    // ask replaces the card, so without this beat the "✓" verdict and the
+    // reveal would vanish before the learner reads them.
+    steps.push({ if: { lastAnswer: "correct" }, pause: true });
   }
 
   steps.push({

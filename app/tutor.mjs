@@ -6,6 +6,7 @@
 //   { loadCode: source }                stash learner code once, set editor
 //   { action: md, await: {event, count?} }  learner performs; events bus completes
 //   { ask: { kind, opts?, hints?: [md], attempts? } }  question card
+//   { pause: true }                     bare beat: hold the surface on Continue
 //   { done: md }                        closing card (implicit at array end)
 // Any step may carry { if: { lastAnswer: value | [values] } }.
 //
@@ -53,7 +54,9 @@ export function lintLesson(lesson) {
   if (!Array.isArray(lesson?.steps) || !lesson.steps.length) errors.push("lesson has no steps");
   for (const [i, step] of (lesson?.steps ?? []).entries()) {
     const keys = ["say", "loadCode", "action", "ask", "done"].filter((k) => step[k] !== undefined);
-    if (keys.length !== 1) errors.push(`step ${i}: needs exactly one of say/loadCode/action/ask/done`);
+    if (keys.length !== 1 && !(keys.length === 0 && step.pause === true)) {
+      errors.push(`step ${i}: needs exactly one of say/loadCode/action/ask/done (or a bare pause)`);
+    }
     if (step.action !== undefined) {
       const ev = step.await?.event;
       if (!ev) errors.push(`step ${i}: action needs await.event`);
@@ -254,20 +257,29 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     persist();
   }
 
+  // Per-question results for the dot bar: first-attempt ok is the score of
+  // record; a later retry only decorates the dot (rec.retry), never edits it.
+  const frozenRecords = () => (store.cards ?? []).filter((c) => c.type === "question-frozen");
+  function pushProgress() {
+    if (!lesson) return;
+    // The second argument carries QUESTION progress for the practice
+    // surface's dot bar (stage ignores it): questions completed / total,
+    // plus per-question outcomes so the dots read right/wrong at a glance.
+    const qTotal = lesson.steps.filter((s) => s.ask).length;
+    const qDone = lesson.steps.slice(0, Math.max(stepIndex, 0)).filter((s) => s.ask).length;
+    ui.setProgress(
+      `${lesson.title} · ${Math.min(stepIndex + 1, lesson.steps.length)}/${lesson.steps.length}`,
+      { qDone, qTotal, results: frozenRecords().map((c) => ({ ok: c.ok, retryOk: c.retry?.ok })) },
+    );
+  }
+
   function advance() {
     while (lesson) {
       stepIndex += 1;
       const step = lesson.steps[stepIndex];
       if (!step) return finish();
       events.emit("lesson-step", { lessonId: lesson.id, index: stepIndex });
-      // The second argument carries QUESTION progress for the practice
-      // surface's dot bar (stage ignores it): questions completed / total.
-      const qTotal = lesson.steps.filter((s) => s.ask).length;
-      const qDone = lesson.steps.slice(0, stepIndex).filter((s) => s.ask).length;
-      ui.setProgress(
-        `${lesson.title} · ${Math.min(stepIndex + 1, lesson.steps.length)}/${lesson.steps.length}`,
-        { qDone, qTotal },
-      );
+      pushProgress();
       if (!condMatches(step.if)) { store.resumeIndex = stepIndex + 1; continue; }
       if (execStep(step)) return; // blocked; resume via callbacks
       store.resumeIndex = stepIndex + 1;
@@ -370,15 +382,30 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       return false;
     }
 
+    if (step.pause === true) {
+      // Bare beat: nothing new to say — hold whatever the surface shows
+      // (a just-graded card with its verdict and reveal) until the learner
+      // continues. Reload during it resumes past it, same as a say-pause.
+      store.resumeIndex = stepIndex + 1;
+      persist();
+      setWaiting({ type: "pause" });
+      ui.setControls([{ label: "Continue →", primary: true, onClick: resume }]);
+      if (batch.length) { ui.popBatch([...batch]); batch = []; }
+      return true;
+    }
+
     return false; // unknown step (lint catches this at start)
   }
 
   // ---- asks ---------------------------------------------------------------
-  function resolveAsk(card, { prompt, ok, verdict, answerText, lastAnswer, kind, template, concept }) {
+  function resolveAsk(card, { prompt, ok, verdict, answerText, lastAnswer, kind, template, concept, review }) {
     card.freeze();
     card.setNote("");
     card.verdict(ok, verdict);
-    record({ type: "question-frozen", prompt, ok, verdict, answerText, concept });
+    // `review` is the reviewable snapshot (program, kind, opts, expected):
+    // enough to rebuild this question later from the store alone — the dot
+    // bar's "go back to it" and the retry flow both feed on it.
+    record({ type: "question-frozen", prompt, ok, verdict, answerText, concept, ...(review ? { review } : {}) });
     store.lastAnswer = lastAnswer;
     if (concept) bumpDrillStats(concept, lastAnswer === "correct");
     events.emit("quiz-graded", { kind, correct: ok, template, concept });
@@ -486,6 +513,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     const doLock = async () => {
       const text = ta.value;
       if (!text.trim()) { card.setNote("Type what you think it prints first"); return; }
+      const ranCode = editor.getValue(); // grade-what-runs: snapshot for review/retry
       ta.readOnly = true;
       card.setActions([]);
       card.setNote("Running it for real…");
@@ -541,6 +569,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         answerText: text,
         lastAnswer: result.correct ? "correct" : "wrong",
         template: ask.template, concept: ask.concept, kind: ask.kind,
+        review: {
+          kind: ask.kind, form: ask.form, opts: ask.opts, code: ranCode,
+          expectedText: result.expected.text, teach: ask.teach, context: ask.context,
+        },
       });
     };
     const armLockActions = () => card.setActions([
@@ -558,6 +590,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       { label: "Skip this one", onClick: () => resolveAsk(card, {
         prompt: ask.prompt, ok: false, verdict: "skipped",
         lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: ask.kind,
+        review: { kind: ask.kind, form: ask.form, opts: ask.opts, code: editor.getValue(), teach: ask.teach, context: ask.context },
       }) },
     ]);
     // Enter submits on single-line asks — drill cadence.
@@ -574,6 +607,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       skip: () => resolveAsk(card, {
         prompt: ask.prompt, ok: false, verdict: "skipped",
         lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: ask.kind,
+        review: { kind: ask.kind, form: ask.form, opts: ask.opts, code: editor.getValue(), teach: ask.teach, context: ask.context },
       }),
     });
     return true;
@@ -586,6 +620,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
   // non-parsing fill just grades wrong (no traceback shown).
   function execFillBlank(ask) {
     events.emit("quiz-question", { kind: "fill-one-blank" });
+    const fillReview = () => ({
+      kind: "fill-one-blank", form: ask.form, code: ask.code, blank: ask.blank,
+      targetOutput: ask.targetOutput, teach: ask.teach, context: ask.context,
+    });
     const hints = [...(ask.hints ?? [])];
     let input = null;
     const card = ui.addInteractiveCard({
@@ -633,6 +671,12 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         answerText: token,
         lastAnswer: correct ? "correct" : "wrong",
         template: ask.template, concept: ask.concept, kind: "fill-one-blank",
+        review: {
+          kind: "fill-one-blank", form: ask.form, code: ask.code, blank: ask.blank,
+          targetOutput: ask.targetOutput,
+          expectedText: q ? q.grade({ text: "" }).expected.text : undefined,
+          teach: ask.teach, context: ask.context,
+        },
       });
     };
     const armActions = () => card.setActions([
@@ -648,6 +692,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       { label: "Skip this one", onClick: () => resolveAsk(card, {
         prompt: ask.prompt, ok: false, verdict: "skipped",
         lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: "fill-one-blank",
+        review: fillReview(),
       }) },
     ]);
     armActions();
@@ -658,6 +703,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       skip: () => resolveAsk(card, {
         prompt: ask.prompt, ok: false, verdict: "skipped",
         lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: "fill-one-blank",
+        review: fillReview(),
       }),
     });
     return true;
@@ -779,10 +825,70 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     return true;
   }
 
+  // ---- review & retry (practice surface) ----------------------------------
+  // Going back to an answered question: the dot bar hands an index here and
+  // the practice surface renders the recorded snapshot. A retry re-runs and
+  // re-grades for real, but NEVER touches the score of record: rec.ok, the
+  // kb seen/missed stats, and met grants all keep the first attempt — the
+  // retry outcome only decorates the record (rec.retry) and its dot.
+  function reviewQuestion(i) {
+    const rec = frozenRecords()[i];
+    if (!rec) return null;
+    const r = rec.review ?? {};
+    const displayCode = r.kind === "fill-one-blank" && r.blank
+      ? spliceBlank(r.code, r.blank, "___") : r.code;
+    practiceUI.showReview?.({
+      index: i,
+      prompt: rec.prompt, ok: rec.ok, verdict: rec.verdict,
+      answerText: rec.answerText, retry: rec.retry,
+      kind: r.kind, code: displayCode, expectedText: r.expectedText,
+      teach: r.teach, context: r.context,
+      onRetry: r.code ? (text) => retryAnswer(rec, text) : null,
+      onBack: () => practiceUI.closeReview?.(),
+    });
+    return rec;
+  }
+
+  async function retryAnswer(rec, text) {
+    const r = rec.review;
+    if (!r?.code || !text?.trim()) return null;
+    const before = editor.getValue(); // the live round's program — must survive
+    try {
+      let ok, expectedText;
+      if (r.kind === "fill-one-blank") {
+        editor.setValue(spliceBlank(r.code, r.blank, text));
+        const summary = await actions.trace();
+        if (!summary) return null; // a run is live — the retry never happened
+        const q = summary.terminal_reason === "completed" ? generateQuestion("predict-output", ctx(), {}) : null;
+        ok = Boolean(q && q.grade({ text: r.targetOutput }).correct);
+        expectedText = q ? q.grade({ text: "" }).expected.text : r.expectedText;
+      } else {
+        editor.setValue(r.code);
+        const summary = await actions.trace();
+        if (!summary) return null;
+        const q = generateQuestion(r.kind, ctx(), r.opts ?? {});
+        if (!q) return null;
+        const res = q.grade({ text });
+        ok = res.correct;
+        expectedText = res.expected.text;
+      }
+      rec.retry = { ok, tries: (rec.retry?.tries ?? 0) + 1 };
+      // A skipped question never ran, so its record had no answer to show —
+      // the retry's real run fills it in for future reviews.
+      if (r.expectedText === undefined && expectedText !== undefined) r.expectedText = expectedText;
+      persist();
+      pushProgress(); // the dot picks up its missed-then-solved state
+      return { ok, expectedText };
+    } finally {
+      editor.setValue(before);
+    }
+  }
+
   // Config hooks register on BOTH surfaces (whichever is active later must
   // have its exit/try-it/review wiring in place).
   for (const s of new Set(Object.values(surfaces))) {
     s.setOnExit(() => endLesson("exited"));
+    s.setOnReview?.((i) => reviewQuestion(i));
     s.setOnTryIt((code) => {
       if (store.stash === undefined) store.stash = editor.getValue();
       editor.setValue(code);
@@ -836,6 +942,9 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     // Test/debug drivers (invariant 9: tests assert through window.plp).
     continue: () => { if (waiting?.type === "pause") resume(); },
     ask: () => (waiting?.type === "ask" ? { kind: waiting.kind } : null),
+    review: (i) => reviewQuestion(i),
+    retry: (i, text) => { const rec = frozenRecords()[i]; return rec ? retryAnswer(rec, text) : null; },
+    closeReview: () => practiceUI.closeReview?.(),
     submit: (answers) => waiting?.submit?.(answers),
     lockPrediction: (text) => waiting?.lock?.(text),
     skip: () => waiting?.skip?.(),

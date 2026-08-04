@@ -770,6 +770,82 @@ test.describe("PLP tutor (T-series)", () => {
     expect(Object.values(finalStats).reduce((a, x) => a + x.seen, 0)).toBe(2);
   });
 
+  test("a correct answer holds the card: verdict + reveal stay up until Continue (Enter works)", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
+    // Fixture: numbers seed 2 count 1 is `print(14 ___ 8)` target 6 → "-".
+    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 2, count: 1 }));
+    await page.evaluate(() => window.plp.tutor.lockPrediction("-"));
+    // The round PAUSES on a correct answer too — the one-card surface would
+    // otherwise wipe the verdict before the learner reads it.
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 30_000 });
+    await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("✓");
+    await expect(page.locator("#practice .pr-reveal.good")).toBeVisible();
+    await expect(page.locator("#practice [data-role=pr-controls] button.primary")).toContainText("Continue");
+    // The answered dot reads green.
+    await expect(page.locator("#practice .pr-dot.hit")).toHaveCount(1);
+    // Enter presses Continue (the frozen card's input is readOnly, so the
+    // keystroke falls through to the surface).
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === null, null, { timeout: 15_000 });
+    await expect(page.locator("#practice .tutor-summary .t-summary-head")).toContainText("1 of 1");
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("dots review + retry: go back to any answered question; a retry re-runs for real but the score keeps the first attempt", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
+    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 42, count: 2 }));
+
+    // Q1 wrong: the reveal carries the reflect link (the graded trace is
+    // already scrubbable in the memory model), and its dot reads red.
+    await page.evaluate(() => window.plp.tutor.lockPrediction("definitely wrong"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 30_000 });
+    await expect(page.locator("#practice .pr-reveal .pr-see-memory")).toContainText("step through this run");
+    const expected1 = (await page.evaluate(() => document.querySelector("#practice .pr-reveal pre").textContent)).replace(/\n$/, "");
+    await page.evaluate(() => window.plp.tutor.continue());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 15_000 });
+    await expect(page.locator("#practice .pr-dot.miss")).toHaveCount(1);
+    const q2code = await page.evaluate(() => window.plp.editor.getValue());
+
+    // Click the red dot: the review card rebuilds Q1 from the store.
+    await page.locator("#practice button.pr-dot").click();
+    await expect(page.locator("#practice .pr-review .pr-program")).toBeVisible();
+    await expect(page.locator("#practice .pr-review .pr-review-answer")).toContainText("definitely wrong");
+    await expect(page.locator("#practice .pr-retry-note")).toContainText("keeps the first try");
+
+    // Retry wrong, then retry right: the record decorates (retry.ok), but
+    // ok, the kb stats, and the round score never move off the first attempt.
+    const bad = await page.evaluate(() => window.plp.tutor.retry(0, "still wrong"));
+    expect(bad.ok).toBe(false);
+    const good = await page.evaluate((t) => window.plp.tutor.retry(0, t), expected1);
+    expect(good.ok).toBe(true);
+    const after = await page.evaluate(() => ({
+      rec: (() => { const r = window.plp.tutor.feed().filter((c) => c.type === "question-frozen")[0]; return { ok: r.ok, retryOk: r.retry.ok }; })(),
+      stats: Object.values(window.plp.tutor.drillStats()),
+      editor: window.plp.editor.getValue(),
+    }));
+    expect(after.rec).toEqual({ ok: false, retryOk: true });   // miss of record, solved on retry
+    expect(after.stats).toEqual([{ seen: 1, missed: 1 }]);      // score untouched
+    expect(after.editor).toBe(q2code);                          // the live round's program survived the retry runs
+    // The dot now shows missed-then-solved (red with the green ring).
+    await expect(page.locator("#practice .pr-dot.miss.retried")).toHaveCount(1);
+
+    // Back to the round: the live Q2 card returns intact.
+    await page.locator("#practice .pr-review .pr-actions button").click();
+    await expect(page.locator("#practice .pr-question:not(.pr-review) .tutor-output-input")).toBeVisible();
+    expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
+
+    // Scratch notes: persist as typed; Esc closes the drawer, not practice.
+    await page.locator("[data-role=pr-notes]").click();
+    await page.locator("[data-role=pr-notes-text]").fill("aliases share one list");
+    expect(await page.evaluate(() => localStorage.getItem("plp.notes.v1"))).toBe("aliases share one list");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[data-role=pr-notes-drawer]")).toBeHidden();
+    await expect(page.locator("body")).toHaveClass(/practice/);
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
   test("generated ask retries: wrong first try keeps the card live, second resolves", async ({ page }) => {
     await setup(page);
     // Drive an ask directly through a tiny inline lesson via the quiz-less

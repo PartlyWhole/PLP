@@ -265,6 +265,23 @@ uncommitted, so tags are not yet permanent; K-2 returns early.
   (round resumable — collab go-live shares the path), open-in-editor +
   restore chip, predict-state → memory model. Shared widgets extracted to
   app/tutor-widgets.mjs so both surfaces render identical cards/meters.
+- Graded-beat feedback loop (owner report: "it doesn't tell me if I got it
+  right"): the one-card surface wiped the verdict when a CORRECT answer
+  advanced straight to the next ask. Fix at the data level, not a timer:
+  kb-session emits a bare `{pause: true}` step on the correct branch (new
+  step type, linted; wrong/skip already paused on the explain), so every
+  graded card HOLDS — verdict prominent (`.pr-verdict-slot` above the
+  reveal), Continue →, Enter falls through the frozen card. Rode along
+  (owner-requested): question-frozen records carry a `review` snapshot
+  (program/kind/opts/blank/expected/teach/context) → dots become the
+  scoreboard AND back-buttons (green hit / red miss / green ring =
+  solved-on-retry) opening a review card; "Try it again" re-runs and
+  re-grades for real around an editor snapshot/restore, but rec.ok, kb
+  seen/missed, met grants, and the summary all keep the FIRST attempt
+  (retry only decorates rec.retry); wrong reveals link "🔬 step through
+  this run" (the graded trace is already in the memory model); 📝 scratch
+  notes drawer (plp.notes.v1, write-only); Esc dismisses progressively.
+  T-24/T-25 cover it (correct-answer-holds + dots-review tests).
 - UI revamp (owner-approved plan, executed in 9 phases): focus mode — the
   beat panel promoted to a full-height stage in the code column, editor
   receded right, console a slim always-live strip that GROWS as the reveal
