@@ -409,6 +409,12 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#practice .cm-node.frontier")).toHaveCount(1);
     expect(await page.evaluate(() => document.querySelectorAll("#practice .cm-node.met").length)).toBe(0);
 
+    // Locked chips are recommendations, not walls: the detail keeps its
+    // "First: …" prerequisite links but still offers a jump-ahead.
+    await page.locator("#practice .cm-node.locked").first().click();
+    await expect(page.locator("#practice .cm-detail")).toContainText("First:");
+    await expect(page.locator("#practice .cm-detail button", { hasText: "Try it anyway" })).toBeVisible();
+
     // Clicking the frontier chip opens its detail; "Practice this ▶" starts
     // a targeted round whose every ask is that concept.
     await page.locator("#practice .cm-node.frontier").click();

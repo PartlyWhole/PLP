@@ -195,11 +195,15 @@ function buildDetail(node, { onPractice, jump }) {
     });
   }
   card.appendChild(status);
-  if (node.state !== "locked" && onPractice) {
+  if (onPractice) {
+    // The map recommends, it never forbids: a locked chip keeps its
+    // "First: …" guidance but still lets the learner jump ahead — its
+    // first ask teaches the rule (introStyle), and met is still only
+    // EARNED, so the map stays honest about what's been demonstrated.
     const go = document.createElement("button");
     go.type = "button";
-    go.className = "primary";
-    go.textContent = "Practice this ▶";
+    if (node.state !== "locked") go.className = "primary";
+    go.textContent = node.state === "locked" ? "Try it anyway ▶" : "Practice this ▶";
     go.addEventListener("click", () => onPractice(node.tag));
     card.appendChild(go);
   }
