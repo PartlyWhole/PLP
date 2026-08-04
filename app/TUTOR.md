@@ -82,6 +82,20 @@ real trace, and the reveal is "N of M steps right" plus the memory-model
 link. Score is all-or-nothing; a clean first-attempt perfect table
 grants met (see design/lesson-kb-binding.md §4).
 
+**Endless mode and the score tracker.** "∞ Endless practice" on the menu
+runs auto-chaining chunks: when a chunk's questions are exhausted,
+`finish()` compiles the next seeded round into the SAME store (no summary
+card between chunks), so the score, the question records (reviews reach
+back across chunk boundaries via absolute indices), newly-met tags, and
+the code stash all carry; the dot bar windows to the current chunk
+(`store.chunkBase`). Every drill round tracks a session score on the
+first-attempt basis (`store.score`: answered/right/streak/best, shown as
+the `✓ R/N · 🔥 S` chip in the top bar; retries never move it); the
+all-time best streak persists in `plp.score.v1`, and the menu's welcome
+line shows the lifetime tally derived from the kb seen/missed stats.
+Ending an endless run (✕) earns the whole run's summary card — dots,
+newly-met chips, misses — with "∞ Go again".
+
 **Every graded answer holds.** After grading, the round pauses on both
 outcomes (kb-session emits a bare `{ pause: true }` step on the correct
 branch; the wrong branch already paused on its explain card): the card

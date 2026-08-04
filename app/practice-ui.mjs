@@ -24,6 +24,7 @@ export function createPracticeUI({ layout, getCode }) {
       <button type="button" data-role="pr-leave" title="Back to the editor (your round is saved)">←</button>
       <span class="pr-title" data-role="pr-title">Exercises</span>
       <span class="pr-dots" data-role="pr-dots"></span>
+      <span class="pr-score" data-role="pr-score" hidden></span>
       <span class="spacer"></span>
       <button type="button" data-role="pr-notes" title="Scratch notes">📝</button>
       <button type="button" data-role="pr-exit-lesson" hidden>✕ End round</button>
@@ -792,9 +793,10 @@ export function createPracticeUI({ layout, getCode }) {
           const dot = document.createElement("button");
           dot.type = "button";
           dot.className = "pr-dot " + (r.ok ? "hit" : "miss") + (!r.ok && r.retryOk ? " retried" : "");
+          const abs = r.index ?? i; // endless chunks slice the window; reviews reach the whole run
           dot.title = (r.ok ? "right" : r.retryOk ? "missed, then solved on retry" : "missed")
-            + ` — look back at question ${i + 1}`;
-          dot.addEventListener("click", () => onReview?.(i));
+            + ` — look back at question ${abs + 1}`;
+          dot.addEventListener("click", () => onReview?.(abs));
           dotsEl.appendChild(dot);
         } else {
           const dot = document.createElement("span");
@@ -804,6 +806,14 @@ export function createPracticeUI({ layout, getCode }) {
       }
     },
     setExitVisible(v) { exitBtn.hidden = !v; },
+    setScore(s) {
+      // Session score chip: right-count plus the streak once it's alive.
+      const el = root.querySelector("[data-role=pr-score]");
+      if (!s || !s.answered) { el.hidden = true; return; }
+      el.hidden = false;
+      el.textContent = `✓ ${s.right}/${s.answered}` + (s.streak >= 2 ? ` · 🔥 ${s.streak}` : "");
+      el.title = `this run: ${s.right} right of ${s.answered} · best streak ${s.best}`;
+    },
     setOnExit(fn) { onExit = fn; },
     setOnTryIt(fn) { onTryIt = fn; },
     setOnReview(fn) { onReview = fn; },

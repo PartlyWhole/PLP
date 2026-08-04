@@ -97,7 +97,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
   const UI_METHODS = [
     "clear", "setProgress", "setExitVisible", "addCard", "addInteractiveCard",
     "popBatch", "appendToPopup", "showCustom", "setControls", "scrollToEnd",
-    "show", "hide", "beginReveal", "setStageMemory",
+    "show", "hide", "beginReveal", "setStageMemory", "setScore",
   ];
   const ui = Object.fromEntries(UI_METHODS.map((m) => [m, (...a) => cur()[m]?.(...a)]));
   function setSurface(next) {
@@ -186,10 +186,17 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     ui.clear();
     ui.setProgress("");
     ui.setExitVisible(false);
+    ui.setScore(null);
     const met = Object.keys(loadMetStore());
     const progress = topicProgress(met);
     const known = progress.reduce((a, r) => a + r.met, 0);
     const totalAll = progress.reduce((a, r) => a + r.total, 0);
+    // Lifetime score line: derived from the same seen/missed stats that
+    // weight selection; the all-time best streak is the one extra number.
+    const stats = Object.values(loadDrillStats());
+    const answeredEver = stats.reduce((a, s) => a + s.seen, 0);
+    const rightEver = stats.reduce((a, s) => a + (s.seen - s.missed), 0);
+    const bestEver = loadLifetimeScore().bestStreak ?? 0;
     const welcome = {
       type: "say",
       md: "Pick a topic and try some questions. You'll read a tiny "
@@ -198,7 +205,8 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         + "Getting one wrong is part of the plan: you'll see **why**, and "
         + "that idea will come back until it's easy. Every round has fresh "
         + "questions. Your own code is kept safe."
-        + (known > 0 ? `\n\nYou know **${known}** of ${totalAll} ideas so far.` : ""),
+        + (known > 0 ? `\n\nYou know **${known}** of ${totalAll} ideas so far.` : "")
+        + (answeredEver > 0 ? `\n\nAll time: **${answeredEver}** answered, **${rightEver}** right${bestEver >= 3 ? `, best streak **${bestEver}**` : ""}.` : ""),
     };
     ui.addCard(welcome);
     // The menu is a beat too: in focus mode it renders on the stage (the
@@ -218,6 +226,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         onClick: () => startDrill(drillTopicFor(frontier)),
       }] : []),
       { label: "⚡ Everything", onClick: () => startDrill("all") },
+      { label: "∞ Endless practice", onClick: () => startDrill("all", { endless: true }) },
       { label: "🗺 My map", onClick: showMap },
       ...kbTopics.map((t) => ({
         label: t.title,
@@ -265,12 +274,17 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     // The second argument carries QUESTION progress for the practice
     // surface's dot bar (stage ignores it): questions completed / total,
     // plus per-question outcomes so the dots read right/wrong at a glance.
+    // Endless runs chain chunks in ONE store: the dots show the current
+    // chunk (results sliced from chunkBase) but each carries its ABSOLUTE
+    // record index so reviews reach back across the whole run.
     const qTotal = lesson.steps.filter((s) => s.ask).length;
     const qDone = lesson.steps.slice(0, Math.max(stepIndex, 0)).filter((s) => s.ask).length;
+    const all = frozenRecords().map((c, i) => ({ ok: c.ok, retryOk: c.retry?.ok, index: i }));
     ui.setProgress(
       `${lesson.title} · ${Math.min(stepIndex + 1, lesson.steps.length)}/${lesson.steps.length}`,
-      { qDone, qTotal, results: frozenRecords().map((c) => ({ ok: c.ok, retryOk: c.retry?.ok })) },
+      { qDone, qTotal, results: all.slice(store.chunkBase ?? 0) },
     );
+    ui.setScore(store.drillLesson ? (store.score ?? null) : null);
   }
 
   function advance() {
@@ -364,6 +378,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     }
 
     if (step.done !== undefined) {
+      // Endless runs never see a chunk's closing beat: no summary card, no
+      // done card — finish() deals the next chunk instead. The run's real
+      // summary renders when the learner ends it (endLesson).
+      if (store.endless) return false;
       // Practice rounds get a session summary first: per-question results,
       // newly-met concepts, and the next-step suggestion (pure over the
       // transcript store — reload rebuilds it like any recorded card).
@@ -409,8 +427,35 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     record({ type: "question-frozen", prompt, ok, verdict, answerText, concept, ...(review ? { review } : {}) });
     store.lastAnswer = lastAnswer;
     if (concept) bumpDrillStats(concept, lastAnswer === "correct");
+    // The score tracker (drills only): session right-count and streak on a
+    // first-attempt basis — the same basis as everything else. The all-time
+    // best streak persists separately (plp.score.v1).
+    if (store.drillLesson) {
+      const s = store.score ??= { answered: 0, right: 0, streak: 0, best: 0 };
+      s.answered += 1;
+      if (ok) {
+        s.right += 1;
+        s.streak += 1;
+        s.best = Math.max(s.best, s.streak);
+        bumpLifetimeBest(s.streak);
+      } else {
+        s.streak = 0;
+      }
+      ui.setScore(s);
+    }
     events.emit("quiz-graded", { kind, correct: ok, template, concept });
     resume();
+  }
+
+  function loadLifetimeScore() {
+    try { return JSON.parse(localStorage.getItem("plp.score.v1")) ?? {}; } catch { return {}; }
+  }
+  function bumpLifetimeBest(streak) {
+    const lt = loadLifetimeScore();
+    if (streak > (lt.bestStreak ?? 0)) {
+      lt.bestStreak = streak;
+      try { localStorage.setItem("plp.score.v1", JSON.stringify(lt)); } catch { /* ephemeral */ }
+    }
   }
 
   function execGeneratedAsk(ask) {
@@ -830,6 +875,18 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
   }
 
   function endLesson(reason) {
+    // Ending an endless run earns its summary: the whole run's records in
+    // one card (dots, newly-met, misses), computed before the store resets.
+    const endlessSummary = reason === "exited" && store.endless && frozenRecords().length
+      ? {
+        desc: {
+          type: "summary",
+          ...summarizeRound(store.cards ?? [], store.roundMet ?? [], Object.keys(loadMetStore())),
+        },
+        topic: store.drillTopic ?? "all",
+        score: store.score,
+      }
+      : null;
     waiting?.off?.();
     waiting = null;
     restoreLearnerCode();
@@ -839,10 +896,45 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     batch = [];
     store = {};
     persist();
+    if (endlessSummary) {
+      setSurface("practice");
+      ui.clear();
+      ui.setProgress("Endless run");
+      ui.setExitVisible(false);
+      ui.setScore(endlessSummary.score ?? null);
+      ui.addCard(endlessSummary.desc); // the practice surface renders summary descs
+      ui.setControls([
+        { label: "∞ Go again", primary: true, onClick: () => startDrill(endlessSummary.topic, { endless: true }) },
+        { label: "← Back to topics", onClick: showMenu },
+      ]);
+      return;
+    }
     showMenu();
   }
 
   function finish() {
+    // Endless mode: a finished chunk deals the next one in the SAME store —
+    // score, records (review dots), roundMet, and the code stash all carry;
+    // only the compiled lesson and the dot-bar window (chunkBase) reset.
+    if (store.endless && store.drillLesson) {
+      const built = buildKBSession(store.drillTopic ?? "all", {
+        seed: Date.now() >>> 0,
+        count: store.endlessCount,
+        stats: loadDrillStats(),
+      });
+      if (built && !lintLesson(built).length) {
+        lesson = built;
+        stepIndex = -1;
+        batch = [];
+        store.lessonId = built.id;
+        store.drillLesson = built;
+        store.resumeIndex = 0;
+        store.chunkBase = frozenRecords().length;
+        persist();
+        events.emit("lesson-started", { lessonId: built.id });
+        return advance();
+      }
+    }
     // Practice rounds end with a next-step suggestion drawn from the round's
     // recorded summary (the frontier-thickest topic).
     const next = (store.cards ?? []).findLast?.((c) => c.type === "summary")?.next;
@@ -902,7 +994,11 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     lesson = built;
     stepIndex = -1;
     batch = [];
-    store = { lessonId: built.id, drillLesson: built, resumeIndex: 0, cards: [] };
+    store = {
+      lessonId: built.id, drillLesson: built, resumeIndex: 0, cards: [],
+      score: { answered: 0, right: 0, streak: 0, best: 0 },
+      ...(opts.endless ? { endless: true, drillTopic: topic, endlessCount: opts.count, chunkBase: 0 } : {}),
+    };
     persist();
     ui.clear();
     ui.setControls([]);
@@ -1079,6 +1175,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       lastAnswer: store.lastAnswer ?? null,
     }),
     feed: () => (store.cards ?? []).slice(),
+    score: () => (store.score ? { ...store.score } : null),
     // Test/debug drivers (invariant 9: tests assert through window.plp).
     continue: () => { if (waiting?.type === "pause") resume(); },
     ask: () => (waiting?.type === "ask" ? { kind: waiting.kind } : null),

@@ -27,7 +27,7 @@ test.describe("PLP tutor (T-series)", () => {
     // units are debug-only via plp.tutor.start).
     await expect(page.locator("#practice .pr-static .tutor-card")).toHaveCount(1);
     await expect(page.locator("#practice [data-role=pr-controls] button").first()).toContainText("Everything");
-    await expect(page.locator("#practice [data-role=pr-controls] button")).toHaveCount(9); // all + map + 7 topics
+    await expect(page.locator("#practice [data-role=pr-controls] button")).toHaveCount(10); // all + endless + map + 7 topics
     await page.reload();
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
     await expect(page.locator("body")).toHaveClass(/practice/); // persisted
@@ -559,7 +559,7 @@ test.describe("PLP tutor (T-series)", () => {
     expect(frontier.length).toBeGreaterThan(0);
     await page.evaluate(() => window.plp.tutor.exit());
     await expect(page.locator("#practice [data-role=pr-controls] button").first()).toContainText("Drill what you just learned");
-    await expect(page.locator("#practice [data-role=pr-controls] button")).toHaveCount(10); // frontier entry + all + map + 7 topics
+    await expect(page.locator("#practice [data-role=pr-controls] button")).toHaveCount(11); // frontier entry + all + endless + map + 7 topics
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
@@ -776,6 +776,44 @@ test.describe("PLP tutor (T-series)", () => {
     expect(feed[feed.length - 1].md).toContain("Round complete");
     const finalStats = await page.evaluate(() => window.plp.tutor.drillStats());
     expect(Object.values(finalStats).reduce((a, x) => a + x.seen, 0)).toBe(2);
+  });
+
+  test("endless mode + score tracker: chunks chain with no summary, score and reviews carry, exit earns the run summary, menu shows the lifetime line", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); localStorage.removeItem("plp.score.v1"); });
+    // Endless numbers with chunk size 1; seed 2 is the fill fixture ("-").
+    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 2, count: 1, endless: true }));
+    const first = (await page.evaluate(() => window.plp.tutor.state())).lessonId;
+    await page.evaluate(() => window.plp.tutor.lockPrediction("-"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 30_000 });
+    // Score chip: right-count on a first-attempt basis, streak alive.
+    expect(await page.evaluate(() => window.plp.tutor.score())).toEqual({ answered: 1, right: 1, streak: 1, best: 1 });
+    await expect(page.locator("[data-role=pr-score]")).toHaveText("✓ 1/1");
+    // Chunk boundary: no summary card, no menu — a fresh ask deals directly.
+    await page.evaluate(() => window.plp.tutor.continue());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    const s2 = await page.evaluate(() => window.plp.tutor.state());
+    expect(s2.lessonId).not.toBe(first);
+    await expect(page.locator("#practice .tutor-summary")).toHaveCount(0);
+    // Score carries; a skip breaks the streak but keeps the run alive.
+    await page.evaluate(() => window.plp.tutor.skip());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 15_000 });
+    expect(await page.evaluate(() => window.plp.tutor.score())).toEqual({ answered: 2, right: 1, streak: 0, best: 1 });
+    // Reviews reach back across the chunk boundary (absolute indices).
+    await page.evaluate(() => window.plp.tutor.review(0));
+    await expect(page.locator("#practice .pr-review")).toBeVisible();
+    await page.evaluate(() => window.plp.tutor.closeReview());
+    // Ending the run earns the WHOLE run's summary, with a go-again.
+    await page.evaluate(() => window.plp.tutor.exit());
+    await expect(page.locator("#practice .tutor-summary .t-summary-head")).toContainText("1 of 2");
+    await expect(page.locator("[data-role=pr-title]")).toHaveText("Endless run");
+    await expect(page.locator("#practice [data-role=pr-controls] button.primary")).toContainText("∞ Go again");
+    // Back to topics: the menu offers ∞ and the lifetime line counts this run.
+    await page.locator("#practice [data-role=pr-controls] button", { hasText: "Back to topics" }).click();
+    await expect(page.locator("#practice .pr-static")).toContainText("All time:");
+    expect(await page.evaluate(() =>
+      [...document.querySelectorAll("#practice [data-role=pr-controls] button")].some((b) => b.textContent.includes("∞ Endless practice")))).toBe(true);
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
   test("a correct answer holds the card: verdict + reveal stay up until Continue (Enter works)", async ({ page }) => {
