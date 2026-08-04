@@ -517,6 +517,111 @@ button.has-meter {
 .t-summary-new { margin-top: var(--sp-2); }
 .t-summary-missed { font-size: var(--fs-meta); }
 
+/* ---- practice card surface --------------------------------------------
+   Full-viewport, one card at a time: program, question, input, proof —
+   and nothing else. The IDE (header + #layout) hides while body.practice
+   is set; the engine keeps running underneath. */
+body.practice > header, body.practice > #layout { display: none; }
+#practice {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--t-surface-0); color: var(--t-ink);
+}
+#practice[hidden] { display: none; }
+.pr-top {
+  flex: none; display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+}
+.pr-top button { font-size: var(--fs-body); }
+.pr-title { font-size: var(--fs-meta); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t-ink-dim); }
+.pr-dots { display: flex; gap: 6px; align-items: center; }
+.pr-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--t-surface-3); flex: none;
+  transition: background-color var(--dur-2) var(--ease-out);
+}
+.pr-dot.done { background: var(--t-success); }
+.pr-body {
+  flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; align-items: center;
+  padding: var(--sp-5) var(--sp-4);
+}
+.pr-question, .pr-static {
+  width: min(680px, 100%);
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  font-size: 17px; line-height: var(--lh-body);
+}
+.pr-static { gap: var(--sp-4); }
+.pr-static .tutor-card { font-size: inherit; }
+.pr-question > *:empty { display: none; }
+.pr-program {
+  border: 1px solid var(--t-border); border-radius: var(--r-m);
+  background: var(--t-code-bg); overflow: hidden;
+}
+.pr-program .CodeMirror {
+  height: auto; background: var(--t-code-bg);
+  font-size: 16px; line-height: 1.7; padding: var(--sp-2) var(--sp-2);
+}
+.pr-program pre { margin: 0; padding: var(--sp-3); font: 16px/1.7 ui-monospace, monospace; }
+.pr-prompt { margin: 0; font-weight: 600; }
+.pr-answer .tutor-output-input { font-size: 16px; }
+.pr-actions { display: flex; gap: var(--sp-2); align-items: center; }
+button.pr-quiet {
+  background: none; border: none; color: var(--t-ink-dim);
+  padding: 4px 6px; font-size: var(--fs-meta);
+}
+button.pr-quiet:hover { color: var(--t-ink); text-decoration: underline; }
+.pr-reveal {
+  border: 1px solid var(--t-border-strong); border-left: 3px solid var(--t-success);
+  border-radius: var(--r-m); padding: var(--sp-2) var(--sp-3);
+  background: var(--t-surface-1);
+  animation: t-reveal-in var(--dur-2) var(--ease-out);
+}
+.pr-reveal.open { border-left-color: var(--t-miss); }
+.pr-reveal-label {
+  display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--t-ink-dim);
+}
+.pr-reveal pre { margin: 4px 0 0; font: 16px/1.6 ui-monospace, monospace; }
+.pr-question.is-running .pr-reveal-slot::before {
+  content: "running it for real…"; display: block;
+  color: var(--t-ink-dim); font-size: var(--fs-meta);
+  animation: cm-breathe 1.2s var(--ease-in-out) infinite;
+}
+.pr-question .tutor-verdict { font-size: var(--fs-read); }
+.pr-explain .tutor-card { font-size: inherit; }
+.pr-hints .tutor-card { font-size: var(--fs-body); }
+.pr-note:empty { display: none; }
+.pr-teach-line { margin: 0; }
+.pr-teach-example summary {
+  cursor: pointer; color: var(--t-ink-dim); font-size: var(--fs-meta);
+  list-style-position: inside;
+}
+.pr-teach-example summary:hover { color: var(--t-ink); }
+.pr-teach-example .tutor-card { margin-top: var(--sp-2); font-size: var(--fs-body); }
+.pr-context { display: flex; flex-direction: column; gap: var(--sp-2); }
+.pr-context .pr-reveal-label { margin: 0; }
+.pr-out { margin: 0; }
+.pr-divider { margin: 0; text-align: center; font-size: var(--fs-meta); }
+.pr-mechanics { font-size: var(--fs-meta); margin: 0; }
+.pr-open-editor { align-self: flex-start; margin-top: -6px; }
+.pr-restore-chip {
+  align-self: flex-start;
+  font-size: var(--fs-meta); padding: 3px 12px; border-radius: var(--r-pill);
+  border-color: var(--t-miss); background: var(--t-miss-soft); color: var(--t-ink);
+}
+.pr-controls {
+  flex: none; display: flex; flex-wrap: wrap; gap: var(--sp-2);
+  justify-content: center; padding: var(--sp-3) var(--sp-4) var(--sp-4);
+}
+.pr-controls:empty { display: none; }
+.pr-controls button { font-size: var(--fs-body); padding: 8px 16px; }
+@media (prefers-reduced-motion: reduce) {
+  .pr-dot { transition: none; }
+  .pr-reveal { animation: none; }
+  .pr-question.is-running .pr-reveal-slot::before { animation: none; }
+}
+
 /* concept map ("My map"): topic lanes of chips over an SVG edge underlay */
 .cm-map { display: flex; flex-direction: column; gap: var(--sp-5); }
 .cm-lane-title {

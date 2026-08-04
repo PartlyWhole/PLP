@@ -18,13 +18,11 @@ export function initLayout({ onResize }) {
   if (saved.rowConsole) layout.style.setProperty("--row-console", saved.rowConsole);
   if (saved.colTutor) layout.style.setProperty("--col-tutor", saved.colTutor);
   // The tutor column starts hidden (index.html ships class="tutor-hidden");
-  // an explicit saved visibility wins. Exercises-visible now means FOCUS
-  // mode (the stage layout); the focus sub-flags (reveal/memory/history)
-  // are never persisted — the runtime re-derives them per beat.
-  if (saved.tutorVisible) {
-    layout.classList.remove("tutor-hidden");
-    layout.classList.add("focus");
-  }
+  // an explicit saved visibility wins. Which SURFACE Exercises opens on
+  // (the practice card view for drills/menu, the focus stage for guided
+  // lessons) is the tutor runtime's restore() decision — only the
+  // visibility bit persists here; no mode class is applied at boot.
+  if (saved.tutorVisible) layout.classList.remove("tutor-hidden");
 
   function persist() {
     try {
@@ -106,12 +104,21 @@ export function initLayout({ onResize }) {
     onResize?.();
   }
 
-  // Tutor visibility (the header 🎓 toggle and the collab hook): showing
-  // Exercises IS entering focus mode; hiding leaves it entirely.
+  // Tutor visibility for the STAGE surface (guided lessons): showing
+  // Exercises there IS entering focus mode; hiding leaves it entirely.
   function setTutorVisible(visible) {
     if (visible) enterFocus(); else exitFocus();
     persist();
     onResize?.();
+  }
+
+  // Visibility bookkeeping for the PRACTICE surface: it owns its own DOM
+  // (body.practice) — this only records the shared "Exercises visible" bit
+  // so persistence and isTutorVisible() stay truthful across surfaces.
+  function setExercisesVisible(visible) {
+    layout.classList.toggle("tutor-hidden", !visible);
+    layout.classList.remove("focus", ...FOCUS_FLAGS);
+    persist();
   }
 
   // Maximize toggles.
@@ -138,6 +145,7 @@ export function initLayout({ onResize }) {
   return {
     toggleMax,
     setTutorVisible,
+    setExercisesVisible,
     isTutorVisible: () => !layout.classList.contains("tutor-hidden"),
     enterFocus,
     exitFocus,

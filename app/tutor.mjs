@@ -73,13 +73,39 @@ export function lintLesson(lesson) {
   return errors;
 }
 
-export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum, isCollabActive }) {
+export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI, actions, curriculum, isCollabActive }) {
   let lesson = null;
   let stepIndex = -1;
   let waiting = null;   // { type: "pause"|"action"|"ask", off? }
   let batch = [];       // static descs of the current beat, shown together
                         // in the popup when a blocking step arrives
   let store = loadStore();
+
+  // ---- surface router ------------------------------------------------------
+  // Two presentation surfaces, one runtime: guided lessons render on the
+  // STAGE (the IDE-centric focus layout — the IDE is their content);
+  // drills, the menu, the map, and summaries render on the PRACTICE card
+  // surface (full-viewport, no IDE chrome). Every ui.* call dispatches to
+  // the active surface at call time; switching tears the outgoing surface
+  // down first so no stale popup/focus classes survive.
+  let surface = "practice";
+  const surfaces = practiceUI ? { stage: stageUI, practice: practiceUI } : { stage: stageUI, practice: stageUI };
+  const cur = () => surfaces[surface];
+  const UI_METHODS = [
+    "clear", "setProgress", "setExitVisible", "addCard", "addInteractiveCard",
+    "popBatch", "appendToPopup", "showCustom", "setControls", "scrollToEnd",
+    "show", "hide", "beginReveal", "setStageMemory",
+  ];
+  const ui = Object.fromEntries(UI_METHODS.map((m) => [m, (...a) => cur()[m]?.(...a)]));
+  function setSurface(next) {
+    if (next === surface || surfaces[next] === surfaces[surface]) { surface = next; return; }
+    const wasVisible = layoutVisible();
+    cur().clear();
+    cur().hide?.();
+    surface = next;
+    if (wasVisible) cur().show?.();
+  }
+  const layoutVisible = () => Boolean(actions.isExercisesVisible?.());
 
   function loadStore() {
     try { return JSON.parse(localStorage.getItem(STORE_KEY)) ?? {}; } catch { return {}; }
@@ -153,6 +179,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
 
   // ---- idle state: unit menu ---------------------------------------------
   function showMenu() {
+    setSurface("practice");
     ui.clear();
     ui.setProgress("");
     ui.setExitVisible(false);
@@ -201,6 +228,8 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
   // locked chips; a frontier chip's "Practice this ▶" starts a targeted
   // round on that one concept.
   function showMap() {
+    setSurface("practice");
+    ui.show(); // callable from anywhere (debug API included) — the map implies visibility
     ui.clear();
     ui.setProgress("My map");
     ui.setExitVisible(false);
@@ -231,7 +260,14 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
       const step = lesson.steps[stepIndex];
       if (!step) return finish();
       events.emit("lesson-step", { lessonId: lesson.id, index: stepIndex });
-      ui.setProgress(`${lesson.title} · ${Math.min(stepIndex + 1, lesson.steps.length)}/${lesson.steps.length}`);
+      // The second argument carries QUESTION progress for the practice
+      // surface's dot bar (stage ignores it): questions completed / total.
+      const qTotal = lesson.steps.filter((s) => s.ask).length;
+      const qDone = lesson.steps.slice(0, stepIndex).filter((s) => s.ask).length;
+      ui.setProgress(
+        `${lesson.title} · ${Math.min(stepIndex + 1, lesson.steps.length)}/${lesson.steps.length}`,
+        { qDone, qTotal },
+      );
       if (!condMatches(step.if)) { store.resumeIndex = stepIndex + 1; continue; }
       if (execStep(step)) return; // blocked; resume via callbacks
       store.resumeIndex = stepIndex + 1;
@@ -428,6 +464,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     const totalHints = hints.length;
     let ta = null;
     const card = ui.addInteractiveCard({
+      teach: ask.teach, context: ask.context, form: ask.form ?? ask.kind,
       prompt: ask.prompt
         ?? "Before you run it: what will this program print? Type the exact output.",
       render: (body) => {
@@ -473,7 +510,12 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
       const result = q.grade({ text });
       ta.classList.toggle("ok", result.correct);
       ta.classList.toggle("bad", !result.correct);
-      if (!result.correct) {
+      // The in-card reveal (practice surface): the grade's expected text IS
+      // the real run's output (predict-output) / the probed value
+      // (predict-state). Stage handles have no reveal method — they keep the
+      // classic wrong-only expected block below, byte-identical.
+      card.reveal?.({ text: result.expected.text, correct: result.correct, kind: ask.kind });
+      if (!result.correct && !card.reveal) {
         appendExpected(card.body, {
           label: isState ? "What it really held:" : "What it really printed:",
           text: result.expected.text,
@@ -547,6 +589,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     const hints = [...(ask.hints ?? [])];
     let input = null;
     const card = ui.addInteractiveCard({
+      teach: ask.teach, context: ask.context, form: ask.form ?? "fill-one-blank",
       prompt: ask.prompt ?? "Fill in the blank so the program prints the target.",
       render: (body) => {
         input = createAnswerInput({ singleLine: true, placeholder: "the missing piece…" });
@@ -577,6 +620,10 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
       const correct = Boolean(q && q.grade({ text: ask.targetOutput }).correct);
       input.classList.toggle("ok", correct);
       input.classList.toggle("bad", !correct);
+      // In-card reveal: what the FILLED program really printed. The
+      // "fill that works" block below is the answer token, not a duplicate —
+      // it renders on every surface.
+      if (q) card.reveal?.({ text: q.grade({ text: "" }).expected.text, correct, kind: "fill-one-blank" });
       if (!correct) {
         appendExpected(card.body, { label: "A fill that works:", text: ask.blank.target });
       }
@@ -658,7 +705,8 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
   }
 
   function start(unitId) {
-    if (isCollabActive?.()) return null; // v1 is solo-only (tutor-plan §9)
+    if (isCollabActive?.()) return null;
+    setSurface("stage"); // v1 is solo-only (tutor-plan §9)
     const unit = curriculum.units.find((u) => u.id === unitId);
     if (!unit) throw new Error(`unknown unit: ${unitId}`);
     const errors = lintLesson(unit.lesson);
@@ -684,6 +732,7 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
   // resumes the identical round.
   function startDrill(topic = "all", opts = {}) {
     if (isCollabActive?.()) return null;
+    setSurface("practice");
     const built = buildKBSession(topic, {
       seed: opts.seed ?? (Date.now() >>> 0),
       count: opts.count, // unset lets the compiler pick (8, or 4 for a focus round)
@@ -710,10 +759,16 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
 
   // Resume a persisted session (page reload mid-lesson).
   function restore() {
-    if (!store.lessonId) { showMenu(); return false; }
+    // Boot re-show: the layout persists only the "Exercises visible" bit;
+    // WHICH surface comes up is this routing decision (practice for drills
+    // and the menu, the focus stage for a mid-guided-lesson resume).
+    const showIfVisible = () => { if (layoutVisible()) cur().show?.(); };
+    if (!store.lessonId) { showMenu(); showIfVisible(); return false; }
     const restored = store.drillLesson
       ?? curriculum.units.find((u) => u.id === store.lessonId)?.lesson;
-    if (!restored || lintLesson(restored).length) { store = {}; persist(); showMenu(); return false; }
+    if (!restored || lintLesson(restored).length) { store = {}; persist(); showMenu(); showIfVisible(); return false; }
+    setSurface(store.drillLesson ? "practice" : "stage");
+    showIfVisible();
     lesson = restored;
     batch = [];
     ui.clear();
@@ -724,26 +779,30 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     return true;
   }
 
-  ui.setOnExit(() => endLesson("exited"));
-  ui.setOnTryIt((code) => {
-    if (store.stash === undefined) store.stash = editor.getValue();
-    editor.setValue(code);
-    store.lastLoadedCode = code;
-    registerProgram(code);
-    persist();
-  });
-
-  // Reviewing an old bubble: if it was about a different program than the
-  // editor currently holds, the popup gets a context card first — the
-  // student may not notice the code has changed since (and line numbers or
-  // names in the card would silently mislead).
-  ui.setReviewContext((descs) => {
-    const prog = descs.find((d) => d.prog !== undefined)?.prog;
-    if (prog == null) return null;
-    const code = (store.programs ?? [])[prog];
-    if (code == null || code === editor.getValue()) return null;
-    return { type: "context", code };
-  });
+  // Config hooks register on BOTH surfaces (whichever is active later must
+  // have its exit/try-it/review wiring in place).
+  for (const s of new Set(Object.values(surfaces))) {
+    s.setOnExit(() => endLesson("exited"));
+    s.setOnTryIt((code) => {
+      if (store.stash === undefined) store.stash = editor.getValue();
+      editor.setValue(code);
+      store.lastLoadedCode = code;
+      registerProgram(code);
+      persist();
+    });
+    // Reviewing an old bubble: if it was about a different program than the
+    // editor currently holds, the popup gets a context card first — the
+    // student may not notice the code has changed since (and line numbers
+    // or names in the card would silently mislead). (Stage only; practice
+    // has no history UI and registers a no-op.)
+    s.setReviewContext((descs) => {
+      const prog = descs.find((d) => d.prog !== undefined)?.prog;
+      if (prog == null) return null;
+      const code = (store.programs ?? [])[prog];
+      if (code == null || code === editor.getValue()) return null;
+      return { type: "context", code };
+    });
+  }
 
   restore();
 
@@ -757,6 +816,16 @@ export function createTutor({ editor, memory, consoleUI, ui, actions, curriculum
     mapModel: () => mapModel(Object.keys(loadMetStore())),
     showMap,
     exit: () => { if (lesson) endLesson("exited"); },
+    // Surface visibility (the header 🎓 toggle and the collab go-live hook).
+    // Hiding never ends a round — it stays resumable from the store.
+    hideSurface: () => cur().hide?.(),
+    toggleSurface() {
+      if (layoutVisible()) { cur().hide?.(); return false; }
+      cur().show?.();
+      // Re-entering the stage surface must restore its focus layout.
+      if (surface === "stage") actions.enterFocus?.();
+      return true;
+    },
     state: () => ({
       lessonId: lesson?.id ?? null,
       stepIndex,

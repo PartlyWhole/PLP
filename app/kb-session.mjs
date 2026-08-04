@@ -82,15 +82,11 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus } = {
   const topicTitle = topic === "all" ? "everything" : (TITLE_BY_TOPIC.get(topic) ?? topic);
   const focusLabel = focus ? (kb.concepts.get(focus)?.slug.replaceAll("-", " ") ?? focus) : null;
 
-  const steps = [{
-    say: (focus
-      ? `**${focusLabel}** — ${count} quick questions on this one idea. `
-      : `**${topicTitle} — let's go!** ${count} tiny programs, one question each. `)
-      + "Read the code, type exactly what it prints, and press Enter "
-      + "to see the real answer. Every character counts — spaces too. "
-      + "If one tricks you, you'll see why, and it will come back later "
-      + "so you can beat it.",
-  }];
+  // No round banner: the surface header shows topic + progress dots, and
+  // every instruction the banner used to front-load now appears at the
+  // moment it applies (first-time mechanics lines, just-in-time feedback,
+  // the summary's come-back promise). The question is the interface.
+  const steps = [];
 
   let prevKey = null;
   const taught = new Set();
@@ -110,30 +106,36 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus } = {
     const concept = kb.concepts.get(ex.focus);
     const n = `(${i + 1}/${count})`;
 
-    // FIRST ENCOUNTER of a CORE concept teaches first: an exercise
-    // introduces exactly one new concept, and a fundamental deserves
-    // instruction before its first question (the card lands in the same
-    // beat, right above the ask). EDGE concepts stay discovery-first: they
-    // are the corner-case traps whose pedagogy IS the surprise — the miss
-    // creates the felt need the rule card then answers (design §10.3).
-    // A concept may override with introStyle: "teach-first"/"discover-first".
-    // Once seen, every concept stays unspoiled either way.
+    // FIRST ENCOUNTER of a CORE concept teaches first: the one-sentence
+    // rule statement rides ON the ask (rendered in-card, right above the
+    // question; the full worked-example card sits behind a tap). EDGE
+    // concepts stay discovery-first: they are the corner-case traps whose
+    // pedagogy IS the surprise — the miss creates the felt need the rule
+    // card then answers (design §10.3). A concept may override with
+    // introStyle: "teach-first"/"discover-first". Once seen, every concept
+    // stays unspoiled either way. Living on the ask (not a transient say
+    // step) also makes mid-round reloads rebuild the teach line correctly.
     const introStyle = concept.introStyle ?? (concept.kind === "core" ? "teach-first" : "discover-first");
+    let teach;
     if (introStyle === "teach-first" && !stats[ex.focus]?.seen && !taught.has(ex.focus)) {
       taught.add(ex.focus);
-      steps.push({ say: `🌱 **New idea!**\n\n${concept.card}\n\nNow you try one.` });
+      teach = { statement: concept.statement, card: concept.card };
     }
+    // Prompts are ONE short line: no numbering (the surface shows progress
+    // dots), no repeated form instructions (first-time mechanics are the
+    // surface's one-quiet-line job).
     let ask;
     if (ex.form === "spot-the-difference") {
-      // Show program A WITH its real output, then predict program B — which
-      // differs by exactly one line (design §5.2).
-      steps.push({ say: `**Spot the difference.** This program:\n\n\`\`\`py\n${prog.code}\`\`\`\n\nprints \`${prog.aOutput}\`. The next one changes just one line — predict what IT prints.` });
+      // Program A + its real output ride on the ask (ask.context) so the
+      // card — and any reload of it — can show the pair; program B is what
+      // the editor holds (design §5.2: the pair differ by one line).
       steps.push({ loadCode: prog.contrastCode });
       ask = {
         kind: "predict-output",
         form: ex.form, shape: prog.shape,
         concept: ex.focus, template: ex.id, singleLine: true,
-        prompt: `${n} Predict what this program prints. Type the one line.`,
+        context: { code: prog.code, output: prog.aOutput },
+        prompt: "One line changed. What does it print now?",
       };
     } else if (ex.form === "fill-one-blank") {
       // The learner sees the program with a hole; grading substitutes the
@@ -144,7 +146,7 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus } = {
         form: ex.form, shape: prog.shape,
         concept: ex.focus, template: ex.id, singleLine: true,
         code: prog.code, blank: prog.blank, targetOutput: prog.targetOutput,
-        prompt: `${n} Fill in the blank (___) so this program prints \`${prog.targetOutput}\`.`,
+        prompt: `Fill the blank so it prints \`${prog.targetOutput}\`.`,
       };
     } else if (ex.form === "predict-state") {
       steps.push({ loadCode: prog.code });
@@ -153,7 +155,7 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus } = {
         form: ex.form, shape: prog.shape,
         concept: ex.focus, template: ex.id, singleLine: true,
         opts: { name: prog.probeName },
-        prompt: `${n} After this program runs, what does \`${prog.probeName}\` hold? Type the value.`,
+        prompt: `After it runs, what does \`${prog.probeName}\` hold?`,
       };
     } else {
       steps.push({ loadCode: prog.code });
@@ -163,9 +165,10 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus } = {
         concept: ex.focus,       // tag — weights future selection, keyed in plp.kb.v1
         template: ex.id,         // exercise id — kept for events/review context
         singleLine: !ex.multiline,
-        prompt: `${n} What will this program print?` + (ex.multiline ? "" : " Type the one line."),
+        prompt: "What does this print?",
       };
     }
+    if (teach) ask.teach = teach;
     steps.push({ ask });
     // After a miss: the program's variant card if it has one (the specific
     // values just asked), else the concept's canonical rule card.

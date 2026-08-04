@@ -13,31 +13,31 @@ async function setup(page) {
 }
 
 test.describe("PLP tutor (T-series)", () => {
-  test("Exercises starts hidden; the header button enters focus mode (stage up, transcript tucked away); visibility persists", async ({ page }) => {
+  test("Exercises starts hidden; the header button opens the full-viewport practice surface; visibility persists", async ({ page }) => {
     await setup(page);
-    await expect(page.locator(".tutor-stage")).not.toBeVisible();
-    await expect(page.locator("#layout")).not.toHaveClass(/focus/);
+    await expect(page.locator("#practice")).not.toBeVisible();
+    await expect(page.locator("body")).not.toHaveClass(/practice/);
     await page.locator("#btn-tutor").click();
-    // Focus mode: the stage carries the menu beat; the transcript pane stays
-    // tucked behind the 📜 History toggle.
-    await expect(page.locator("#layout")).toHaveClass(/focus/);
-    await expect(page.locator(".tutor-stage")).toBeVisible();
-    await expect(page.locator("#tutor-pane")).not.toBeVisible();
-    await page.locator("[data-role=stage-history]").click();
-    await expect(page.locator("#tutor-pane")).toBeVisible();
+    // The practice surface owns the whole viewport: header + IDE hidden.
+    await expect(page.locator("body")).toHaveClass(/practice/);
+    await expect(page.locator("#practice")).toBeVisible();
+    await expect(page.locator("header")).not.toBeVisible();
+    await expect(page.locator("#layout")).not.toBeVisible();
     // Idle state: welcome card + exercises-only menu (drill topics; guided
     // units are debug-only via plp.tutor.start).
-    await expect(page.locator(".tutor-feed .tutor-card")).toHaveCount(1);
-    await expect(page.locator(".tutor-controls button").first()).toContainText("Everything");
-    await expect(page.locator(".tutor-controls button")).toHaveCount(9); // all + map + 7 topics
+    await expect(page.locator("#practice .pr-static .tutor-card")).toHaveCount(1);
+    await expect(page.locator("#practice [data-role=pr-controls] button").first()).toContainText("Everything");
+    await expect(page.locator("#practice [data-role=pr-controls] button")).toHaveCount(9); // all + map + 7 topics
     await page.reload();
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
-    await expect(page.locator("#layout")).toHaveClass(/focus/); // persisted (flags reset)
-    await expect(page.locator(".tutor-stage")).toBeVisible();
-    await expect(page.locator("#tutor-pane")).not.toBeVisible(); // history flag never persists
-    await page.locator("#btn-tutor").click(); // toggle off: leaves Exercises entirely
-    await expect(page.locator("#layout")).not.toHaveClass(/focus/);
-    await expect(page.locator(".tutor-stage")).not.toBeVisible();
+    await expect(page.locator("body")).toHaveClass(/practice/); // persisted
+    await expect(page.locator("#practice")).toBeVisible();
+    // The header is hidden while practicing — the surface's own ← leaves.
+    await page.locator("#practice [data-role=pr-leave]").click();
+    await expect(page.locator("body")).not.toHaveClass(/practice/);
+    await expect(page.locator("#practice")).not.toBeVisible();
+    await expect(page.locator("header")).toBeVisible();
+    await expect(page.locator("#layout")).toBeVisible();
   });
 
   test("predict-output: trace-grounded, position-aware; forgives trailing whitespace + container display spacing, never content", async ({ page }) => {
@@ -165,11 +165,16 @@ test.describe("PLP tutor (T-series)", () => {
     // seed is a fixture — re-derive it if the lists exercise pool changes).
     const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 143, count: 1 }));
     expect(id).toBe("drill-lists-143");
-    // The contrast card shows program A (uses +=) WITH its real output.
-    const feed = await page.evaluate(() => window.plp.tutor.feed().map((c) => c.md).filter(Boolean));
-    const contrast = feed.find((md) => md.includes("Spot the difference"));
-    expect(contrast).toContain("b += [54]");   // program A mutates the shared list
-    expect(contrast).toContain("[3, 8, 54]");  // …and its real output is shown
+    // The contrast rides ON the ask (ask.context): program A (uses +=) with
+    // its real output — reload-safe — and the card renders it above B.
+    const ctx = await page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
+      return s.drillLesson.steps.find((x) => x.ask)?.ask.context;
+    });
+    expect(ctx.code).toContain("b += [54]");   // program A mutates the shared list
+    expect(ctx.output).toBe("[3, 8, 54]");     // …and its real output is shown
+    await expect(page.locator("#practice .pr-context")).toContainText("b += [54]");
+    await expect(page.locator("#practice .pr-context .pr-out")).toContainText("[3, 8, 54]");
     // The editor holds program B (the one to predict — a is left untouched).
     expect((await page.evaluate(() => window.plp.editor.getValue())).trim())
       .toBe("a = [3, 8]\nb = a\nb = b + [54]\nprint(a)");
@@ -262,38 +267,43 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
-  test("reveal choreography: locking grows the console, the explain keeps it, the next question resets; predict-state opens memory", async ({ page }) => {
+  test("reveal-in-card: locking shows the real output in the card, the explain keeps it, the next question resets; predict-state shows the value + memory escape", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
     await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 7, count: 2 }));
-    await expect(page.locator("#layout")).toHaveClass(/focus/);
-    await expect(page.locator("#layout")).not.toHaveClass(/focus-reveal/);
-    const slim = await page.evaluate(() => document.getElementById("console-pane").getBoundingClientRect().height);
+    await expect(page.locator("body")).toHaveClass(/practice/);
+    await expect(page.locator("#practice .pr-question")).toBeVisible();
+    await expect(page.locator("#practice .pr-reveal")).toHaveCount(0);
 
-    // Lock a (wrong) prediction: the console growing IS the reveal cue.
+    // Lock a (wrong) prediction: the real run's output appears IN the card.
     await page.evaluate(() => window.plp.tutor.lockPrediction("definitely wrong"));
-    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 15_000 });
-    await expect(page.locator("#layout")).toHaveClass(/focus-reveal/);
-    const grown = await page.evaluate(() => document.getElementById("console-pane").getBoundingClientRect().height);
-    expect(grown).toBeGreaterThan(slim * 1.5);
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 30_000 });
+    await expect(page.locator("#practice .pr-reveal")).toBeVisible();
+    await expect(page.locator("#practice .pr-reveal .pr-reveal-label")).toContainText("it printed");
+    const revealed = await page.evaluate(() => document.querySelector("#practice .pr-reveal pre").textContent.trim());
+    expect(revealed.length).toBeGreaterThan(0);
+    // …and the explain face renders in the SAME card, reveal still visible.
+    await expect(page.locator("#practice .pr-question .pr-explain .tutor-card")).toHaveCount(1);
 
-    // The explain beat (static) keeps the grown console — the learner reads
-    // the card with the real output still on screen. The NEXT question resets.
+    // Continue → the next question is a fresh card with no reveal.
     await page.evaluate(() => window.plp.tutor.continue());
     await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 15_000 });
-    await expect(page.locator("#layout")).not.toHaveClass(/focus-reveal/);
-    const slimAgain = await page.evaluate(() => document.getElementById("console-pane").getBoundingClientRect().height);
-    expect(Math.abs(slimAgain - slim)).toBeLessThan(4);
+    await expect(page.locator("#practice .pr-reveal")).toHaveCount(0);
+    await expect(page.locator("#practice .pr-question")).toBeVisible();
 
-    // predict-state reveal opens the memory pane (the state IS the answer).
+    // predict-state: the reveal is the probed value, with the memory escape.
     await page.evaluate(() => window.plp.tutor.exit());
     await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 4, count: 1 }));
     expect((await page.evaluate(() => window.plp.tutor.ask())).kind).toBe("predict-state");
-    await expect(page.locator("#memory-pane")).not.toBeVisible();
     await page.evaluate(() => window.plp.tutor.lockPrediction("[1]"));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
-    await expect(page.locator("#layout")).toHaveClass(/focus-memory/);
+    await expect(page.locator("#practice .pr-reveal .pr-reveal-label")).toContainText("it really holds");
+    // The escape hatch drops to the IDE, where the trace already filled the
+    // memory model.
+    await page.locator("#practice .pr-see-memory").click();
+    await expect(page.locator("body")).not.toHaveClass(/practice/);
     await expect(page.locator("#memory-pane")).toBeVisible();
+    expect(await page.evaluate(() => window.plp.memory.steps().length)).toBeGreaterThan(0);
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
@@ -316,9 +326,9 @@ test.describe("PLP tutor (T-series)", () => {
     expect(totals.met0).toBe(true);
 
     // Fresh menu: meters render empty (no count text at 0).
-    await page.evaluate(() => window.plp.layout.setTutorVisible(true));
-    await expect(page.locator(".tutor-controls .t-meter").first()).toBeAttached();
-    expect(await page.evaluate(() => document.querySelectorAll(".tutor-controls .t-meter-count").length)).toBe(0);
+    await page.locator("#btn-tutor").click();
+    await expect(page.locator("#practice [data-role=pr-controls] .t-meter").first()).toBeAttached();
+    expect(await page.evaluate(() => document.querySelectorAll("#practice [data-role=pr-controls] .t-meter-count").length)).toBe(0);
 
     // A 2-question round: one right (grants met), one skipped.
     await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 7, count: 2 }));
@@ -338,7 +348,7 @@ test.describe("PLP tutor (T-series)", () => {
     // Summary card: headline 0 of 2, two open dots, missed line; no
     // newly-met chips (nothing was answered correctly).
     const sum = await page.evaluate(() => {
-      const card = document.querySelector(".tutor-stage .tutor-summary") ?? document.querySelector(".tutor-feed .tutor-summary");
+      const card = document.querySelector("#practice .tutor-summary");
       return {
         head: card?.querySelector(".t-summary-head")?.textContent,
         hits: card?.querySelectorAll(".t-dot.hit").length,
@@ -355,14 +365,14 @@ test.describe("PLP tutor (T-series)", () => {
     // The frontier is non-empty even from zero (print-text), so the round
     // ends with a "Keep going" suggestion.
     const keepGoing = await page.evaluate(() =>
-      [...document.querySelectorAll(".tutor-controls button")].map((b) => b.textContent).find((t) => t.includes("Keep going")));
+      [...document.querySelectorAll("#practice [data-role=pr-controls] button")].map((b) => b.textContent).find((t) => t.includes("Keep going")));
     expect(keepGoing).toBeTruthy();
 
     // Reload after the round: the summary card restores from the store.
     // (no checkErrors after reload — no trace has run in the fresh page)
     await page.reload();
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
-    await expect(page.locator(".tutor-feed .tutor-summary")).toBeAttached();
+    await expect(page.locator("#practice .tutor-summary")).toBeAttached();
   });
 
   test("concept map: lanes with met/frontier/locked chips; a frontier chip starts a targeted round on that concept", async ({ page }) => {
@@ -394,16 +404,16 @@ test.describe("PLP tutor (T-series)", () => {
     expect(m.deterministic).toBe(true);
 
     // The map view renders on the stage with matching chip states.
-    await page.evaluate(() => { window.plp.layout.setTutorVisible(true); window.plp.tutor.showMap(); });
-    await expect(page.locator(".tutor-stage .cm-lane")).toHaveCount(7);
-    await expect(page.locator(".tutor-stage .cm-node.frontier")).toHaveCount(1);
-    expect(await page.evaluate(() => document.querySelectorAll(".tutor-stage .cm-node.met").length)).toBe(0);
+    await page.evaluate(() => { window.plp.tutor.showMap(); });
+    await expect(page.locator("#practice .cm-lane")).toHaveCount(7);
+    await expect(page.locator("#practice .cm-node.frontier")).toHaveCount(1);
+    expect(await page.evaluate(() => document.querySelectorAll("#practice .cm-node.met").length)).toBe(0);
 
     // Clicking the frontier chip opens its detail; "Practice this ▶" starts
     // a targeted round whose every ask is that concept.
-    await page.locator(".tutor-stage .cm-node.frontier").click();
-    await expect(page.locator(".tutor-stage .cm-detail")).toContainText("Ready to try");
-    await page.locator(".tutor-stage .cm-detail button.primary").click();
+    await page.locator("#practice .cm-node.frontier").click();
+    await expect(page.locator("#practice .cm-detail")).toContainText("Ready to try");
+    await page.locator("#practice .cm-detail button.primary").click();
     await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask");
     const round = await page.evaluate(() => {
       const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
@@ -413,6 +423,44 @@ test.describe("PLP tutor (T-series)", () => {
     expect(round.id).toMatch(/^drill-state-0005-\d+$/);
     expect(round.asks.every((t) => t === "0005")).toBe(true);
     expect(round.asks.length).toBe(4); // focused rounds default shorter
+  });
+
+  test("practice edge flows: open-in-editor round trip, changed-program chip, reload rebuilds the card, hide keeps the round", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.clear(); location.reload(); });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 7, count: 2 }));
+    await expect(page.locator("body")).toHaveClass(/practice/);
+    const program = await page.evaluate(() => window.plp.editor.getValue());
+
+    // Open in editor: the IDE returns with the program loaded.
+    await page.locator("#practice .pr-open-editor").click();
+    await expect(page.locator("body")).not.toHaveClass(/practice/);
+    await expect(page.locator("#layout")).toBeVisible();
+    expect(await page.evaluate(() => window.plp.editor.getValue())).toBe(program);
+
+    // Edit the program, come back: the card offers to restore — and does.
+    await page.evaluate(() => window.plp.editor.setValue("print('changed')\n"));
+    await page.locator("#btn-tutor").click();
+    await expect(page.locator("#practice .pr-restore-chip")).toBeVisible();
+    await page.locator("#practice .pr-restore-chip").click();
+    expect(await page.evaluate(() => window.plp.editor.getValue())).toBe(program);
+
+    // Reload mid-ask: the practice card rebuilds (program + input) and the
+    // driver still grades.
+    await page.reload();
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await expect(page.locator("body")).toHaveClass(/practice/);
+    await expect(page.locator("#practice .pr-question .pr-program")).toContainText(program.trim().slice(0, 8));
+    await expect(page.locator("#practice .tutor-output-input")).toBeVisible();
+    expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
+
+    // Hiding the surface (Esc / collab go-live path) never ends the round.
+    await page.evaluate(() => window.plp.tutor.hideSurface());
+    await expect(page.locator("body")).not.toHaveClass(/practice/);
+    const st = await page.evaluate(() => window.plp.tutor.state());
+    expect(st.lessonId).toMatch(/^drill-numbers-7$/);
+    expect(st.waiting).toBe("ask");
   });
 
   test("lesson lint rejects malformed steps", async ({ page }) => {
@@ -502,8 +550,8 @@ test.describe("PLP tutor (T-series)", () => {
     const frontier = await page.evaluate(() => window.plp.tutor.frontier());
     expect(frontier.length).toBeGreaterThan(0);
     await page.evaluate(() => window.plp.tutor.exit());
-    await expect(page.locator(".tutor-controls button").first()).toContainText("Drill what you just learned");
-    await expect(page.locator(".tutor-controls button")).toHaveCount(10); // frontier entry + all + map + 7 topics
+    await expect(page.locator("#practice [data-role=pr-controls] button").first()).toContainText("Drill what you just learned");
+    await expect(page.locator("#practice [data-role=pr-controls] button")).toHaveCount(10); // frontier entry + all + map + 7 topics
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
@@ -644,10 +692,10 @@ test.describe("PLP tutor (T-series)", () => {
     await setup(page);
     await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
 
-    // Compiled-script level (pure): fresh stats → one teach card per distinct
-    // CORE concept (edge concepts stay discovery-first — the trap's surprise
-    // is the pedagogy), each BEFORE that concept's first ask; primed stats →
-    // none at all.
+    // Compiled-script level (pure): fresh stats → the FIRST ask on each
+    // distinct CORE concept carries ask.teach (edge concepts stay
+    // discovery-first — the trap's surprise is the pedagogy); primed stats →
+    // no teach at all; no standalone teach say-steps exist (prose diet).
     const r = await page.evaluate(async () => {
       const { buildKBSession } = await import("./app/kb-session.mjs");
       const { loadKB } = await import("./kb/index.mjs");
@@ -656,32 +704,32 @@ test.describe("PLP tutor (T-series)", () => {
       const asks = fresh.steps.filter((s) => s.ask);
       const focuses = [...new Set(asks.map((s) => s.ask.concept))];
       const coreFocuses = focuses.filter((t) => kinds.get(t).kind === "core");
-      const teach = fresh.steps.filter((s) => s.say?.includes("New idea!"));
-      const firstTeachIdx = fresh.steps.findIndex((s) => s.say?.includes("New idea!"));
-      const firstAskIdx = fresh.steps.findIndex((s) => s.ask);
+      const taught = asks.filter((s) => s.ask.teach);
       const primed = buildKBSession("numbers", {
         seed: 7, count: 5,
         stats: Object.fromEntries(focuses.map((t) => [t, { seen: 2, missed: 0 }])),
       });
       return {
         coreConcepts: coreFocuses.length,
-        teachCount: teach.length,
-        teachBeforeAsk: firstTeachIdx !== -1 && firstTeachIdx < firstAskIdx,
-        primedTeachCount: primed.steps.filter((s) => s.say?.includes("New idea!")).length,
+        teachCount: taught.length,
+        teachHasStatement: taught.every((s) => s.ask.teach.statement?.length > 0 && s.ask.teach.card?.length > 0),
+        noTeachSays: fresh.steps.every((s) => !s.say?.includes("New idea!")),
+        primedTeachCount: primed.steps.filter((s) => s.ask?.teach).length,
       };
     });
     expect(r.coreConcepts).toBeGreaterThan(0); // the fixture round must exercise the rule
-    expect(r.teachCount).toBe(r.coreConcepts); // one lesson per new CORE concept, no repeats
-    expect(r.teachBeforeAsk).toBe(true);
+    expect(r.teachCount).toBe(r.coreConcepts); // one teach per new CORE concept, no repeats
+    expect(r.teachHasStatement).toBe(true);
+    expect(r.noTeachSays).toBe(true);
     expect(r.primedTeachCount).toBe(0); // once seen, questions stay unspoiled
 
-    // UI level: the teach card lands in the feed and does NOT block — the
-    // round still opens waiting on the ask, with the rule card above it.
+    // UI level: the 🌱 teach line renders IN the question card, non-blocking,
+    // with the worked example collapsed behind a tap.
     await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 7, count: 2 }));
     const s = await page.evaluate(() => window.plp.tutor.state());
     expect(s.waiting).toBe("ask");
-    const feed = await page.evaluate(() => window.plp.tutor.feed().map((c) => c.md).filter(Boolean));
-    expect(feed.some((md) => md.includes("New idea!"))).toBe(true);
+    await expect(page.locator("#practice .pr-question .pr-teach")).toBeVisible();
+    await expect(page.locator("#practice .pr-teach-example summary")).toContainText("show me an example");
     // (no checkErrors here: it validates the trace record stream, and this
     // test intentionally stops before any trace runs)
   });

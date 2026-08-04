@@ -13,6 +13,7 @@ import { createQuiz } from "./quiz.mjs";
 import * as questions from "./questions.mjs";
 import { events } from "./events.mjs";
 import { createTutorUI } from "./tutor-ui.mjs";
+import { createPracticeUI } from "./practice-ui.mjs";
 import { createTutor } from "./tutor.mjs";
 import { curriculum } from "../curriculum/index.mjs";
 
@@ -89,6 +90,7 @@ const leaveBtn = document.getElementById("btn-leave");
 const collabBadge = document.getElementById("collab-badge");
 const collabPeers = document.getElementById("collab-peers");
 
+let tutorRef = null; // assigned after createTutor; collab events fire later
 const collab = createCollab({
   editor, memory, consoleUI,
   onUiState(s) {
@@ -96,7 +98,7 @@ const collab = createCollab({
       const live = s.state === "live";
       // v1 tutoring is solo-only: the transcript is local state, so hide
       // the pane rather than leak a one-sided conversation into a room.
-      if (live) layoutApi.setTutorVisible(false);
+      if (live) tutorRef?.hideSurface();
       shareBtn.textContent = live ? "🔗 Copy link" : s.state === "connecting" ? "⏳ Connecting…" : "Share session";
       shareBtn.disabled = s.state === "connecting";
       leaveBtn.hidden = !live;
@@ -180,16 +182,28 @@ const tutorUI = createTutorUI({
   root: document.getElementById("tutor-pane"),
   layout: layoutApi,
 });
+const practiceUI = createPracticeUI({
+  layout: layoutApi,
+  getCode: () => editor.getValue(),
+});
 const tutor = createTutor({
   editor, memory, consoleUI,
   ui: tutorUI,
-  actions: { run, trace },
+  practiceUI,
+  actions: {
+    run, trace,
+    isExercisesVisible: () => layoutApi.isTutorVisible(),
+    enterFocus: () => layoutApi.enterFocus(),
+  },
   curriculum,
   isCollabActive: () => collab.isActive(),
 });
+tutorRef = tutor;
 document.getElementById("btn-tutor").addEventListener("click", () => {
   if (collab.isActive()) { setStatus("exercises are unavailable in a shared room", ""); return; }
-  layoutApi.setTutorVisible(!layoutApi.isTutorVisible());
+  // The tutor routes to the right surface (practice card view for drills
+  // and the menu; the focus stage for a mid-guided-lesson resume).
+  tutor.toggleSurface();
   if (layoutApi.isTutorVisible()) { editor.refresh(); consoleUI.fit(); }
 });
 

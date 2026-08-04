@@ -250,6 +250,21 @@ uncommitted, so tags are not yet permanent; K-2 returns early.
   need the card answers, §10.3's alias-trap argument). Optional
   per-concept override `introStyle: "teach-first" | "discover-first"`,
   validated by loadKB; no concept currently overrides.
+- Practice card surface (owner-approved ground-up redesign): drills leave
+  the IDE entirely — a full-viewport one-card view (`app/practice-ui.mjs`,
+  `body.practice`) with program-in-card (read-only CM), one-line prompts,
+  in-card "▶" reveal from the graded run (`card.reveal` contract; stage
+  handles lack it and stay byte-identical), explain-in-the-same-card,
+  progress dots, and full-surface menu/map/summary. A surface ROUTER in
+  tutor.mjs dispatches ui calls (drills/menu/map → practice; guided
+  lessons → the focus stage — the IDE is their content) with teardown on
+  switch. Prose diet: round banner deleted; 🌱 teach = ask.teach
+  (statement + collapsed example; reload-safe), spot-diff pair =
+  ask.context; prompts one line, numbering → dots; first-time-per-form
+  mechanics lines gated by plp.practice.v1. Escape hatches: ←/Esc hide
+  (round resumable — collab go-live shares the path), open-in-editor +
+  restore chip, predict-state → memory model. Shared widgets extracted to
+  app/tutor-widgets.mjs so both surfaces render identical cards/meters.
 - UI revamp (owner-approved plan, executed in 9 phases): focus mode — the
   beat panel promoted to a full-height stage in the code column, editor
   receded right, console a slim always-live strip that GROWS as the reveal

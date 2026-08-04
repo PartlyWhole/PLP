@@ -52,7 +52,35 @@ the session notes / commit message):
   `introStyle: "teach-first" | "discover-first"`. Once seen, prompts
   never name the rule; it returns only in the after-miss explain card.
 
-## The stage, the history rail, and focus mode
+## The practice card surface (drills)
+
+Practice rounds render on a dedicated **full-viewport card surface**
+([practice-ui.mjs](practice-ui.mjs), `#practice`, `body.practice` hides
+the header and the whole IDE grid): one card at a time — the program
+(read-only CodeMirror), a one-line ask, the input, and quiet hint/skip
+links, under a slim bar with topic + progress dots. The engine still runs
+every program for real underneath; the card's **reveal** ("▶ it printed…")
+is the graded run's actual output (the `card.reveal` contract in
+tutor.mjs), and the explain face renders into the same card with the
+reveal still visible. Round summaries, the topic menu, and the concept
+map are full-surface cards on the same view.
+
+Prose is dieted to the moment it applies: no round banner (the header
+shows progress), the 🌱 rule **statement** rides on the first ask of a
+new core concept (`ask.teach`, worked example behind "show me an
+example"), spot-the-difference's program A + output ride on
+`ask.context`, prompts are one line, and first-time-per-form mechanics
+are a single quiet line gated by `plp.practice.v1`.
+
+Escape hatches: **←**/Esc hide the surface back to the IDE (the round
+stays resumable — collab go-live uses the same hide-not-end path);
+"open in editor" on every program block; a "put the question's program
+back" chip appears if the code was edited outside; predict-state reveals
+link to the memory model. A **surface router** in tutor.mjs dispatches
+every ui call: drills/menu/map → practice; guided lessons → the stage
+below (the IDE is *their* content).
+
+## The stage, the history rail, and focus mode (guided lessons)
 
 Opening Exercises enters **focus mode** (`#layout.focus`, owned by
 app/layout.mjs): the current **beat** (the lead-in prose since the last
