@@ -499,7 +499,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         // single-line input; free prediction keeps the textarea.
         ta = createAnswerInput({
           singleLine: ask.singleLine,
-          placeholder: isState ? "the value it holds…" : ask.singleLine ? "the one line this prints…" : "type your predicted output…",
+          placeholder: isState ? "the value it holds…" : ask.singleLine ? "what this prints…" : "type your predicted output…",
         });
         body.appendChild(ta);
         return null;
