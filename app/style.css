@@ -635,6 +635,9 @@ button.pr-quiet:hover { color: var(--t-ink); text-decoration: underline; }
 .pr-retry-verdict { margin: 0; }
 .pr-retry-verdict:empty { display: none; }
 .pr-retry-note { flex-basis: 100%; margin: 0; font-size: var(--fs-meta); }
+/* trace-table retry: buttons row under the (swappable) table slot */
+.pr-table-slot { overflow-x: auto; }
+.pr-retry-cancel { font-size: var(--fs-meta); color: var(--t-ink-dim); }
 
 /* scratch notes drawer */
 .pr-top [data-role=pr-notes].on { background: var(--t-surface-3); }

@@ -928,7 +928,7 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
-  test("trace-table ask: clean all-correct first attempt grants met; review shows the completed table with no retry widget", async ({ page }) => {
+  test("trace-table ask: clean all-correct first attempt grants met; review shows the completed table with the table-shaped retry", async ({ page }) => {
     await setup(page);
     await startTraceTableRound(page);
     await page.evaluate(() => window.plp.tutor.submit({ b0: "0", b1: "[1, 2]", b2: "1" }));
@@ -941,11 +941,74 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0009": { seen: 1, missed: 0 } });
 
     // Review: the completed table rebuilds read-only — your answers marked
-    // per cell — and the single-input retry widget is NOT offered.
+    // per cell — and the table-shaped retry widget IS offered (not the
+    // single-input one).
     await page.evaluate(() => window.plp.tutor.review(0));
     await expect(page.locator("#practice .pr-review .tutor-trace-table")).toBeVisible();
     await expect(page.locator("#practice .pr-review .tutor-trace-table code.ok")).toHaveCount(3);
-    await expect(page.locator("#practice .pr-review .pr-retry")).toHaveCount(0);
+    await expect(page.locator("#practice .pr-review .pr-retry.pr-retry-table")).toHaveCount(1);
+    await expect(page.locator("#practice .pr-review .pr-retry input")).toHaveCount(0);
+    await page.evaluate(() => window.plp.tutor.closeReview());
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("trace-table review retry: blank table replaces the graded truth; a correct retry decorates the dot but never the score", async ({ page }) => {
+    await setup(page);
+    await startTraceTableRound(page);
+    // Miss the table on the first (scored) attempt.
+    await page.evaluate(() => window.plp.tutor.submit({ b0: "0", b1: "[1, 2]", b2: "999" }));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
+    const liveCode = await page.evaluate(() => window.plp.editor.getValue());
+    await expect(page.locator("#practice .pr-dot.miss")).toHaveCount(1);
+
+    // The red dot opens the review: graded table (truth beside the miss)
+    // plus the "Try it again" entry point and the score-keeping note.
+    await page.locator("#practice button.pr-dot").click();
+    await expect(page.locator("#practice .pr-review .tutor-trace-table code.bad")).toHaveCount(1);
+    await expect(page.locator("#practice .pr-review .pr-retry-note")).toContainText("keeps the first try");
+
+    // Starting the retry swaps in a FRESH blank table: no graded marks, no
+    // truth anywhere, one empty input per blank.
+    await page.locator("#practice .pr-retry-table button.primary", { hasText: "Try it again" }).click();
+    await expect(page.locator("#practice .pr-review .tutor-trace-table input[data-blank-id]")).toHaveCount(3);
+    await expect(page.locator("#practice .pr-review .tutor-trace-table code.ok, #practice .pr-review .tutor-trace-table code.bad")).toHaveCount(0);
+    await expect(page.locator("#practice .pr-review .tutor-trace-table .hint")).toHaveCount(0);
+
+    // The quiet escape restores the graded view without grading anything.
+    await page.locator("#practice .pr-retry-cancel").click();
+    await expect(page.locator("#practice .pr-review .tutor-trace-table code.bad")).toHaveCount(1);
+    await expect(page.locator("#practice .pr-review .tutor-trace-table input")).toHaveCount(0);
+
+    // Retry for real: the empty gate holds, then an all-correct fill grades
+    // against a genuine re-run of the program.
+    await page.locator("#practice .pr-retry-table button.primary", { hasText: "Try it again" }).click();
+    await page.locator("#practice .pr-retry-table button.primary", { hasText: "Check my answers" }).click();
+    await expect(page.locator("#practice .pr-retry-verdict")).toContainText("Fill every box first");
+    const inputs = page.locator("#practice .pr-review .tutor-trace-table input[data-blank-id]");
+    await inputs.nth(0).fill("0");
+    await inputs.nth(1).fill("[1, 2]");
+    await inputs.nth(2).fill("1");
+    await page.locator("#practice .pr-retry-table button.primary", { hasText: "Check my answers" }).click();
+    await expect(page.locator("#practice .pr-retry-verdict")).toContainText("✓ every step!", { timeout: 30_000 });
+    // The re-graded table shows every cell right.
+    await expect(page.locator("#practice .pr-review .tutor-trace-table code.ok")).toHaveCount(3);
+
+    // Score of record untouched; the retry only decorates.
+    const after = await page.evaluate(() => ({
+      rec: (() => {
+        const r = window.plp.tutor.feed().find((c) => c.type === "question-frozen");
+        return { ok: r.ok, retryOk: r.retry.ok, tries: r.retry.tries };
+      })(),
+      stats: window.plp.tutor.drillStats(),
+      met: window.plp.tutor.met(),
+      editor: window.plp.editor.getValue(),
+    }));
+    expect(after.rec).toEqual({ ok: false, retryOk: true, tries: 1 });
+    expect(after.stats).toEqual({ "0009": { seen: 1, missed: 1 } });
+    expect(after.met).toEqual({});
+    expect(after.editor).toBe(liveCode); // the live round's program survived the retry run
+    // The dot now reads missed-then-solved (red with the green ring).
+    await expect(page.locator("#practice .pr-dot.miss.retried")).toHaveCount(1);
     await page.evaluate(() => window.plp.tutor.closeReview());
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });

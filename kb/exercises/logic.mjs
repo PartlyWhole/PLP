@@ -229,4 +229,73 @@ export default [
       },
     },
   },
+
+  {
+    // The branch decides which rebind runs (002K): the deferred
+    // branch-rebind exercise — legal now that the focus concept's parents
+    // are else-otherwise AND accumulate-rebind.
+    id: "branch-rebind",
+    topic: "logic",
+    focus: "002K", // branch-picks-binding
+    assumed: ["0005", "0006", "0008", "0009", "000A", "000B", "0015", "0016", "0017", "0018"],
+    role: "intro",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["if-taken", "if-skipped", "if-else"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["if-taken", "if-skipped", "if-else"]);
+        const t = int(rng, 4, 7);
+        const d = int(rng, 1, 3);
+        if (shape === "if-else") {
+          const start = pick(rng, [t - 2, t + 2]);
+          const result = start > t ? start - d : start + d;
+          return {
+            code: `n = ${start}\nif n > ${t}:\n    n = n - ${d}\nelse:\n    n = n + ${d}\nprint(n)\n`,
+            shape, variant: "plain",
+            variantCard: `\`${start} > ${t}\` is ${start > t ? "True, so the if branch" : "False, so the else branch"} rebinds \`n\` — it ends holding ${result}.`,
+          };
+        }
+        const taken = shape === "if-taken";
+        const start = taken ? t + 2 : t - 2;
+        return {
+          code: `n = ${start}\nif n > ${t}:\n    n = n - ${d}\nprint(n)\n`,
+          shape, variant: "plain",
+          variantCard: taken
+            ? `\`${start} > ${t}\` is True, so the rebind runs: \`n\` ends at ${start - d}.`
+            : `\`${start} > ${t}\` is False, so the rebind is SKIPPED — \`n\` still holds ${start}.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Trace walkthrough (design §5.2 trace-table): which branch rebound
+    // `n`? The if-else shape always rebinds exactly once, so both watched
+    // steps are real.
+    id: "trace-branch",
+    topic: "logic",
+    focus: "002K", // branch-picks-binding
+    assumed: ["0005", "0006", "0008", "0009", "000A", "000B", "0015", "0016", "0017", "0018"],
+    role: "review",
+    form: "trace-table",
+    generator: {
+      shapes: ["else-taken", "if-taken"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["else-taken", "if-taken"]);
+        const t = int(rng, 4, 7);
+        const d = int(rng, 1, 3);
+        const start = shape === "if-taken" ? t + 2 : t - 2;
+        return {
+          code: `n = ${start}\nif n > ${t}:\n    n = n - ${d}\nelse:\n    n = n + ${d}\nprint(n)\n`,
+          probeNames: ["n"],
+          shape, variant: "plain",
+          variantCard: "Only ONE of the two rebind lines ever runs — the table has exactly one branch row, and which line number it is tells you which branch won.",
+        };
+      },
+    },
+  },
 ];

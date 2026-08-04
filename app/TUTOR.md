@@ -103,6 +103,11 @@ restored around the retry run), but the score of record never moves:
 `rec.ok`, the kb seen/missed stats, and met grants all keep the first
 attempt; the retry outcome only decorates the record (`rec.retry`) and
 its dot. A skipped question's retry teaches the record its answer.
+Single-answer kinds retry through a one-line input; a trace-table retry
+swaps the graded table for a fresh BLANK one (the truth leaves the
+screen the moment the retry starts — otherwise it would be copying),
+grades the refilled cells against a real re-run, then re-renders the
+table graded; a quiet "never mind" restores the recorded graded view.
 
 Escape hatches: **←**/Esc hide the surface back to the IDE (the round
 stays resumable — collab go-live uses the same hide-not-end path);

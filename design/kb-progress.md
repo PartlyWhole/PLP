@@ -301,6 +301,18 @@ uncommitted, so tags are not yet permanent; K-2 returns early.
   branch: 2..maxBlanks, all names blanked, single-line expecteds); docgen
   renders end-holdings; lists spot-diff fixture re-derived 143→199. Pool
   87→103 exercises.
+- Wave 3 (owner: branch-rebind + dict traces + table retry): MINTED 002K
+  branch-picks-binding (core, parents else-otherwise + accumulate-rebind —
+  the deferred branch-rebind trace's legal home; ledger 82→83, analyzer
+  rule: plain-name rebind at ifDepth>0 emits 002K, zero fallout across all
+  108 pre-existing exercise programs). New: branch-rebind intro (3 shapes),
+  trace-branch (if-else always rebinds exactly once — both rows real),
+  trace-dict-build (001S; build-two-keys + overwrite-key — the middle row
+  is the only moment the first value exists). Table RETRY in review
+  (subagent): "Try it again" swaps the graded table for a blank one (truth
+  leaves the screen — otherwise it's copying), grades a real re-run
+  per-cell, "never mind" restores; score-of-record semantics identical to
+  single-input retries. Pool 105→108, concepts 69→70 wired.
 - UI revamp (owner-approved plan, executed in 9 phases): focus mode — the
   beat panel promoted to a full-height stage in the code column, editor
   receded right, console a slim always-live strip that GROWS as the reveal

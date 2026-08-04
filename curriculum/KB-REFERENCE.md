@@ -8,8 +8,8 @@
 
 ## Overview
 
-- **69 concepts** — 4 structural / 47 core / 18 edge.
-- **105 exercises** across 7 topics.
+- **70 concepts** — 4 structural / 48 core / 18 edge.
+- **108 exercises** across 7 topics.
 - **Forms:** fill-one-blank, predict-exact-output, predict-state, spot-the-difference, trace-table.
 
 ## Topics
@@ -18,7 +18,7 @@
 - **Numbers & bools** (`numbers`): 0008, 000N, 000P, 000Q, 000R, 000S, 000T, 000V, 000W, 000X
 - **Strings** (`strings`): 000Y, 000Z, 0010, 0011, 0012, 0013, 0014
 - **Lists & aliasing** (`lists`): 000D, 000E, 000F, 000G, 000H, 001Z, 0020, 0021, 0022, 0023, 0024, 0025
-- **Conditions & logic** (`logic`): 0015, 0016, 0017, 0018, 0019, 001A, 001B, 001C, 001D
+- **Conditions & logic** (`logic`): 0015, 0016, 0017, 0018, 0019, 001A, 001B, 001C, 001D, 002K
 - **Loops & ranges** (`loops`): 001E, 001F, 001G, 001H, 001J, 001K, 001M, 001N, 001P, 001Q
 - **Dicts & tuples** (`structures`): 001R, 001S, 001T, 001V, 001W, 001X, 001Y
 - **Structural roots**: 0001, 0002, 0003, 0004
@@ -93,6 +93,7 @@ graph TD
   001B("001B truthiness-empty-falsy")
   001C("001C and-or-return-operand")
   001D("001D chained-compare")
+  002K["002K branch-picks-binding"]
   end
   subgraph loops [Loops & ranges]
   001E["001E loop-for-visits-each"]
@@ -214,6 +215,8 @@ graph TD
   0011 --> 0024
   0022 --> 0025
   0024 --> 0025
+  000B --> 002K
+  0018 --> 002K
 ```
 
 ## Concepts
@@ -315,7 +318,7 @@ A second x = … replaces x's value; the old value is gone.
 x = x + 1 reads the old value, computes, then rebinds x to the result.
 
 - Parents: 0009, 000A
-- Children: 001J, 001M
+- Children: 001J, 001M, 002K
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A
 - Characteristic wrong answer: the old value, or one step short
 - Exercises: accumulate-step, read-between-steps, trace-rebind
@@ -605,7 +608,7 @@ if runs its indented lines when the test is True and skips them when it is False
 else runs exactly when the if test was False — one branch runs, never both.
 
 - Parents: 0017
-- Children: 0019
+- Children: 0019, 002K
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0008 ← 0015 ← 0016 ← 0017
 - Characteristic wrong answer: both branches' output
 - Exercises: if-else-one-branch
@@ -778,7 +781,7 @@ d[k] = v stores v under k — adding the key if it is new, replacing it if it ex
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E ← 001R
 - Characteristic wrong answer: the old value survives, or a new key is rejected
-- Exercises: dict-store, store-order
+- Exercises: dict-store, store-order, trace-dict-build
 
 ### 001T · dict-get-default — core
 
@@ -899,6 +902,16 @@ a[:] copies only the outer list — the inner lists are shared, so a change thro
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000A ← 000C ← 000D ← 000E ← 000G ← 000H ← 0011 ← 0022 ← 0024
 - Characteristic wrong answer: the original grid unchanged
 - Exercises: shallow-copy-shares-rows
+
+### 002K · branch-picks-binding — core
+
+A branch can rebind a name — what the name ends up holding depends on which branch ran.
+
+- Parents: 0018, 000B
+- Children: —
+- Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000B ← 0015 ← 0016 ← 0017 ← 0018
+- Characteristic wrong answer: the value the OTHER branch would have produced
+- Exercises: branch-rebind, trace-branch
 
 ## Exercises
 
@@ -1178,6 +1191,24 @@ print(False)
 prints:
 ```
 False
+```
+
+### branch-rebind — focus 002K (branch-picks-binding)
+
+- Form: `predict-exact-output` · Role: intro · Topic: logic
+- Assumed: 0005, 0006, 0008, 0009, 000A, 000B, 0015, 0016, 0017, 0018
+- Shapes: if-taken, if-skipped, if-else · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+n = 3
+if n > 5:
+    n = n - 1
+print(n)
+```
+prints:
+```
+3
 ```
 
 ### break-order — focus 001N (break-exits)
@@ -2804,6 +2835,46 @@ Step-table walkthrough over `a`, `b` (blanks derive from the live trace); the wa
 [4, 8, 26]
 [4, 8, 26]
 [4, 8, 26]
+```
+
+### trace-branch — focus 002K (branch-picks-binding)
+
+- Form: `trace-table` · Role: review · Topic: logic
+- Assumed: 0005, 0006, 0008, 0009, 000A, 000B, 0015, 0016, 0017, 0018
+- Shapes: else-taken, if-taken · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+n = 4
+if n > 6:
+    n = n - 2
+else:
+    n = n + 2
+print(n)
+```
+Step-table walkthrough over `n` (blanks derive from the live trace); the watched names end holding:
+```
+6
+6
+```
+
+### trace-dict-build — focus 001S (dict-key-assign)
+
+- Form: `trace-table` · Role: review · Topic: structures
+- Assumed: 0005, 0006, 001R
+- Shapes: build-two-keys, overwrite-key · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+d = {}
+d["x"] = 1
+d["x"] = 41
+print(d)
+```
+Step-table walkthrough over `d` (blanks derive from the live trace); the watched names end holding:
+```
+{'x': 41}
+{'x': 41}
 ```
 
 ### trace-rebind — focus 000B (accumulate-rebind)

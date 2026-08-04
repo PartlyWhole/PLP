@@ -450,6 +450,73 @@ export function createPracticeUI({ layout, getCode }) {
     return t;
   }
 
+  // A retry attempt: the same table structure, every blank cell a fresh
+  // empty input, no truth anywhere (a retry beside the answers would be
+  // copying, not tracing).
+  function buildRetryTable(rows) {
+    const t = document.createElement("table");
+    t.className = "mem-table quiz-mem tutor-trace-table";
+    const first = rows.find((r) => !r.elided);
+    const names = first ? first.cells.map((c) => c.name) : [];
+    const head = document.createElement("tr");
+    for (const h of ["step", "line", "code", ...names]) {
+      const th = document.createElement("th");
+      th.textContent = h;
+      head.appendChild(th);
+    }
+    t.appendChild(head);
+    for (const r of rows) {
+      const tr = document.createElement("tr");
+      if (r.elided) {
+        const td = document.createElement("td");
+        td.colSpan = 3 + names.length;
+        td.className = "hint";
+        td.textContent = "⋯ some steps skipped ⋯";
+        tr.appendChild(td);
+        t.appendChild(tr);
+        continue;
+      }
+      const step = document.createElement("td");
+      step.className = "uid";
+      step.textContent = String(r.step);
+      const line = document.createElement("td");
+      line.className = "uid";
+      line.textContent = String(r.line);
+      const codeTd = document.createElement("td");
+      const codeEl = document.createElement("code");
+      codeEl.textContent = r.codeText;
+      codeTd.appendChild(codeEl);
+      tr.append(step, line, codeTd);
+      for (const c of r.cells) {
+        const td = document.createElement("td");
+        if (c.blankId) {
+          const input = document.createElement("input");
+          input.type = "text";
+          input.className = "tutor-output-input tutor-output-line";
+          input.dataset.blankId = c.blankId;
+          input.placeholder = "?";
+          input.spellcheck = false;
+          td.appendChild(input);
+        } else {
+          td.textContent = c.value;
+        }
+        tr.appendChild(td);
+      }
+      t.appendChild(tr);
+    }
+    return {
+      el: t,
+      inputs: () => [...t.querySelectorAll("input[data-blank-id]")],
+      collect() {
+        const answers = {};
+        for (const inp of t.querySelectorAll("input[data-blank-id]")) {
+          answers[inp.dataset.blankId] = inp.value;
+        }
+        return answers;
+      },
+    };
+  }
+
   function buildReviewCard(desc) {
     const el = document.createElement("div");
     el.className = "pr-question pr-review";
@@ -461,7 +528,15 @@ export function createPracticeUI({ layout, getCode }) {
 
     if (desc.context?.code) el.appendChild(buildContextBlock(desc.context));
     if (desc.code) mountProgram(el, desc.code);
-    if (desc.table?.rows) el.appendChild(buildReviewTable(desc.table, desc.answersById ?? {}));
+    // The table lives in a slot so a retry can swap it out (blank attempt)
+    // and back (graded view) without touching the rest of the card.
+    let tableSlot = null;
+    if (desc.table?.rows) {
+      tableSlot = document.createElement("div");
+      tableSlot.className = "pr-table-slot";
+      tableSlot.appendChild(buildReviewTable(desc.table, desc.answersById ?? {}));
+      el.appendChild(tableSlot);
+    }
     if (desc.prompt) {
       const p = document.createElement("p");
       p.className = "pr-prompt";
@@ -494,7 +569,93 @@ export function createPracticeUI({ layout, getCode }) {
       revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: desc.expectedText, correct: desc.ok }));
     }
 
-    if (desc.onRetry) {
+    if (desc.onRetry && desc.kind === "trace-table" && tableSlot) {
+      // A trace-table retry is a genuine second walk: the graded table (and
+      // its truth) leaves the screen, a fresh blank table takes its place,
+      // and the answers grade for real against a re-run of the program.
+      const wrap = document.createElement("div");
+      wrap.className = "pr-retry pr-retry-table";
+      const startBtn = document.createElement("button");
+      startBtn.type = "button";
+      startBtn.className = "primary";
+      startBtn.textContent = "Try it again ▶";
+      const checkBtn = document.createElement("button");
+      checkBtn.type = "button";
+      checkBtn.className = "primary";
+      checkBtn.textContent = "Check my answers ▶";
+      checkBtn.hidden = true;
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "pr-quiet pr-retry-cancel";
+      cancelBtn.textContent = "never mind, show the graded table";
+      cancelBtn.hidden = true;
+      const verdictOut = document.createElement("p");
+      verdictOut.className = "pr-retry-verdict";
+      const note = document.createElement("p");
+      note.className = "hint pr-retry-note";
+      note.textContent = "retries are for you — your score keeps the first try";
+      const gradedEl = tableSlot.firstChild; // the recorded graded view
+      let attempt = null;
+      const showGraded = () => {
+        tableSlot.replaceChildren(gradedEl);
+        attempt = null;
+        verdictOut.textContent = "";
+        startBtn.hidden = false;
+        checkBtn.hidden = true;
+        cancelBtn.hidden = true;
+      };
+      const start = () => {
+        attempt = buildRetryTable(desc.table.rows);
+        for (const inp of attempt.inputs()) {
+          inp.addEventListener("keydown", (e) => { if (e.key === "Enter" && !inp.readOnly) check(); });
+        }
+        tableSlot.replaceChildren(attempt.el);
+        verdictOut.textContent = "";
+        startBtn.hidden = true;
+        checkBtn.hidden = false;
+        cancelBtn.hidden = false;
+        attempt.inputs()[0]?.focus();
+      };
+      const check = async () => {
+        if (!attempt || checkBtn.disabled) return;
+        const answers = attempt.collect();
+        if (Object.values(answers).some((v) => !String(v ?? "").trim())) {
+          verdictOut.textContent = "Fill every box first";
+          return;
+        }
+        checkBtn.disabled = true;
+        for (const inp of attempt.inputs()) inp.readOnly = true;
+        verdictOut.textContent = "running it for real…";
+        const res = await desc.onRetry(answers);
+        checkBtn.disabled = false;
+        verdictOut.textContent = "";
+        if (!res) {
+          for (const inp of attempt.inputs()) inp.readOnly = false;
+          verdictOut.textContent = "couldn't run just now — try again in a moment";
+          return;
+        }
+        // Re-render the attempt GRADED: per-cell marks, truth beside misses
+        // (the same renderer the recorded review uses).
+        const total = Object.keys(res.perBlank ?? {}).length;
+        const right = Object.values(res.perBlank ?? {}).filter(Boolean).length;
+        tableSlot.replaceChildren(buildReviewTable(
+          { rows: desc.table.rows, expectedById: res.expectedById, perBlank: res.perBlank },
+          answers,
+        ));
+        attempt = null;
+        verdictOut.appendChild(verdictSpan(res.ok, res.ok
+          ? "✓ every step!"
+          : `✗ ${right} of ${total} — the truth is shown`));
+        startBtn.hidden = false;
+        checkBtn.hidden = true;
+        cancelBtn.hidden = true;
+      };
+      startBtn.addEventListener("click", start);
+      checkBtn.addEventListener("click", check);
+      cancelBtn.addEventListener("click", showGraded);
+      wrap.append(startBtn, checkBtn, cancelBtn, verdictOut, note);
+      el.appendChild(wrap);
+    } else if (desc.onRetry) {
       const wrap = document.createElement("div");
       wrap.className = "pr-retry";
       const input = document.createElement("input");

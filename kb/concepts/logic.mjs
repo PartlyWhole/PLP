@@ -116,4 +116,18 @@ export default [
       + "both links, not `(a < b) < c`.\n\n```py\nprint(1 < 2 < 3)\n```\n\n"
       + "This prints `True`: 1 < 2 and 2 < 3 are both true.",
   },
+  {
+    tag: "002K",
+    slug: "branch-picks-binding",
+    kind: "core",
+    parents: ["0018", "000B"],
+    statement: "A branch can rebind a name — what the name ends up holding depends on which branch ran.",
+    wrongAnswer: "the value the OTHER branch would have produced",
+    card: "The test decides which branch runs, and only the branch that "
+      + "runs gets to rebind the name.\n\n"
+      + "```py\nn = 8\nif n > 5:\n    n = n - 5\nelse:\n    n = n + 10\nprint(n)\n```\n\n"
+      + "`8 > 5` is True, so only `n = n - 5` runs: this prints `3`. "
+      + "Change the start to `n = 2` and the else branch runs instead — "
+      + "`12`. Same program, one line executed, two different endings.",
+  },
 ];

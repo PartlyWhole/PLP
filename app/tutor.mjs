@@ -954,9 +954,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       kind: r.kind, code: displayCode, expectedText: r.expectedText,
       table: r.table, answersById: r.answersById,
       teach: r.teach, context: r.context,
-      // The single-input retry widget fits single-answer kinds only; a
-      // trace-table review is the completed table itself, read-only.
-      onRetry: r.code && r.kind !== "trace-table" ? (text) => retryAnswer(rec, text) : null,
+      // Single-answer kinds get the single-input widget; trace-table gets
+      // a fresh blank table (the UI branches on kind — retryAnswer takes a
+      // text string or an answersById map accordingly).
+      onRetry: r.code ? (answer) => retryAnswer(rec, answer) : null,
       onBack: () => practiceUI.closeReview?.(),
     });
     return rec;
@@ -964,7 +965,33 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
 
   async function retryAnswer(rec, text) {
     const r = rec.review;
-    if (!r?.code || !text?.trim()) return null;
+    if (!r?.code) return null;
+    if (r.kind === "trace-table") {
+      // `text` is an answersById map here. Blank ids are index-based
+      // (b0, b1, …) and the trace of the same program is deterministic, so
+      // the stored review ids line up with the regenerated question's.
+      if (!text || typeof text !== "object") return null;
+      const before = editor.getValue();
+      try {
+        editor.setValue(r.code);
+        const summary = await actions.trace();
+        if (!summary) return null; // a run is live — the retry never happened
+        const q = generateQuestion("trace-table", ctx(), r.opts ?? {});
+        if (!q) return null;
+        const res = q.grade(text);
+        rec.retry = { ok: res.correct, tries: (rec.retry?.tries ?? 0) + 1 };
+        persist();
+        pushProgress(); // the dot picks up its missed-then-solved state
+        return {
+          ok: res.correct,
+          perBlank: res.perBlank,
+          expectedById: Object.fromEntries(q.blanks.map((b) => [b.id, b.expected])),
+        };
+      } finally {
+        editor.setValue(before);
+      }
+    }
+    if (!text?.trim()) return null;
     const before = editor.getValue(); // the live round's program — must survive
     try {
       let ok, expectedText;

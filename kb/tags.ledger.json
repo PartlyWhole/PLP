@@ -80,5 +80,6 @@
   { "tag": "002F", "slug": "args-evaluated-first", "kind": "core", "parents": ["0029", "0009"], "status": "active" },
   { "tag": "002G", "slug": "call-in-expression", "kind": "core", "parents": ["002A", "0008"], "status": "active" },
   { "tag": "002H", "slug": "none-when-no-return", "kind": "edge", "parents": ["002B"], "status": "active" },
-  { "tag": "002J", "slug": "mutable-arg-shared", "kind": "edge", "parents": ["0029", "000H"], "status": "active" }
+  { "tag": "002J", "slug": "mutable-arg-shared", "kind": "edge", "parents": ["0029", "000H"], "status": "active" },
+  { "tag": "002K", "slug": "branch-picks-binding", "kind": "core", "parents": ["0018", "000B"], "status": "active" }
 ]

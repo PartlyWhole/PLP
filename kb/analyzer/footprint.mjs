@@ -53,6 +53,7 @@ export const TAG = {
   boolValues: "0016",
   ifRunsOrSkips: "0017",
   elseOtherwise: "0018",
+  branchPicksBinding: "002K",
   elifFirstTrueWins: "0019",
   boolOps: "001A",
   truthinessEmptyFalsy: "001B",
@@ -114,7 +115,8 @@ function analyze(statements) {
   let env = new Map();          // name → { type, objId?, elem?, keyType?, valType? }
   const objects = new Map();    // objId → { names:Set, mutations:[{via, shared, line}], sharedEver }
   let nextObj = 1;
-  let forDepth = 0; // only FOR loops: loop-accumulate/loop-build-list are children of loop-for-visits-each
+  let forDepth = 0;
+  let ifDepth = 0; // inside if/elif/else bodies: a rebind here is branch-picks-binding (002K)
   const strCopy = new Map();    // name → source name (b = a where a is str)
   const rebound = new Set();    // names that have been reassigned
 
@@ -594,7 +596,13 @@ function analyze(statements) {
         if (forDepth > 0) emit(TAG.loopAccumulate, "row44", stmt.line);
       } else if (numeric) emit(TAG.evaluateBeforeBind, "row7", stmt.line);
     }
-    if (wasBound) { emit(TAG.rebindUpdatesName, "rule2", stmt.line); rebound.add(id); }
+    if (wasBound) {
+      emit(TAG.rebindUpdatesName, "rule2", stmt.line);
+      // A rebind that only runs when its branch runs: which binding the
+      // name ends with depends on the test (002K branch-picks-binding).
+      if (ifDepth > 0) emit(TAG.branchPicksBinding, "row37b", stmt.line);
+      rebound.add(id);
+    }
     bind(id, val);
   }
 
@@ -603,6 +611,7 @@ function analyze(statements) {
     if (stmt.orelse) emit(TAG.elseOtherwise, "row37", stmt.line);
     if (stmt.clauses.length > 1) emit(TAG.elifFirstTrueWins, "row37", stmt.line);
     const endEnvs = [];
+    ifDepth++;
     for (const clause of stmt.clauses) {
       const testVal = evalExpr(clause.test, { inTest: true });
       if (testVal.type !== "bool") emit(TAG.truthinessEmptyFalsy, "rule10", clause.test.line);
@@ -617,6 +626,7 @@ function analyze(statements) {
     } else {
       endEnvs.push(new Map(env));
     }
+    ifDepth--;
     env = mergeEnvs(endEnvs);
   }
 

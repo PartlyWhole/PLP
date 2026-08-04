@@ -248,4 +248,40 @@ export default [
       },
     },
   },
+
+  {
+    // Trace walkthrough (design §5.2 trace-table): the dict grows (or
+    // overwrites) one store at a time — fill in what `d` holds after each.
+    id: "trace-dict-build",
+    topic: "structures",
+    focus: "001S", // dict-key-assign
+    assumed: ["0005", "0006", "001R"],
+    role: "review",
+    form: "trace-table",
+    generator: {
+      shapes: ["build-two-keys", "overwrite-key"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["build-two-keys", "overwrite-key"]);
+        const [k1, k2] = pick(rng, [["a", "b"], ["x", "y"], ["id", "n"]]);
+        const v1 = int(rng, 1, 9);
+        const v2 = int(rng, 10, 99);
+        if (shape === "overwrite-key") {
+          return {
+            code: `d = {}\nd["${k1}"] = ${v1}\nd["${k1}"] = ${v2}\nprint(d)\n`,
+            probeNames: ["d"],
+            shape, variant: "plain",
+            variantCard: `Both stores hit the SAME key — the second replaces the first, so the middle row is the only moment \`${v1}\` exists.`,
+          };
+        }
+        return {
+          code: `d = {}\nd["${k1}"] = ${v1}\nd["${k2}"] = ${v2}\nprint(d)\n`,
+          probeNames: ["d"],
+          shape: "build-two-keys", variant: "plain",
+          variantCard: "The dict grows one store at a time — each row is the whole dict as it stood after that line.",
+        };
+      },
+    },
+  },
 ];
