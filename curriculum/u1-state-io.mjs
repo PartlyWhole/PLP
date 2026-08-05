@@ -12,9 +12,11 @@ export default {
   title: "1 · State and I/O",
   // KB concepts this unit touches (design/lesson-kb-binding.md §3). The old
   // free-text `skills` had no KB witness: state-model/read-trace are the
-  // structural-roots narrative, predict-output is a form not a concept, and
-  // input-boundary awaits an input concept being minted (known gap).
-  concepts: ["0006", "0009", "000A", "000B"],
+  // structural-roots narrative and predict-output is a form not a concept.
+  // `input-boundary` is now `0026` (expansion ladder §R4a): the concept is
+  // minted and wired, and the predict-io ask below is its graded witness, so
+  // the unit's input steps finally grant met.
+  concepts: ["0006", "0009", "000A", "000B", "0026"],
   steps: [
     // ---- first contact: do, then see (no prose first) --------------------
     {
@@ -108,6 +110,44 @@ export default {
         + "In a video game, input is key presses and mouse moves instead of "
         + "typed lines — but it's the same idea: outside world → state.",
       pause: true,
+    },
+    // The int(input()) bridge. Hand-authored rather than a KB exercise: a
+    // drill's closure for 0026 admits print/names/input only (K-4), so the
+    // str→int conversion cannot appear in one — but it is exactly the thing a
+    // learner meets first in the wild, so the lesson carries it.
+    {
+      say: "Your turn. This time **you** predict the whole console — the "
+        + "prompt, the line that gets typed, and everything the program "
+        + "prints. Someone will type `7`.",
+    },
+    {
+      loadCode: 'answer = input("Pick a number: ")\n'
+        + 'number = int(answer)\n'
+        + 'print(number + 1)\n',
+    },
+    {
+      ask: {
+        kind: "predict-io",
+        focus: "0026", // input-pauses-for-value
+        stdinScript: ["7"],
+        // The stdin chips are a PRACTICE-surface affordance; a guided lesson
+        // renders on the stage, so the script is named in the prompt itself.
+        prompt: "Someone types `7`. What does the whole console show — every line of it?",
+        hints: [
+          "The prompt is printed by the program, and the typed line lands "
+            + "right where the typing happened — on the same line as the "
+            + "prompt, because pressing Enter is what ends that line.",
+          "`input(...)` always hands back **text**, so `answer` holds `\"7\"`. "
+            + "`int(answer)` turns that text into the number `7`, and then "
+            + "`7 + 1` prints.",
+        ],
+      },
+    },
+    {
+      if: { lastAnswer: "correct" },
+      say: "Exactly — and notice the last piece: `input(...)` handed back the "
+        + "**text** `\"7\"`, not the number. `int(...)` is what made it a "
+        + "number you can add to.",
     },
     {
       say: "**Output** is the same boundary in reverse: `print(...)` sends "

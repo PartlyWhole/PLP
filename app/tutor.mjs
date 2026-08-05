@@ -25,7 +25,7 @@
 // visible Trace, and grading compares against what the engine actually
 // printed. The run IS the reveal.
 
-import { generateQuestion, questionGenerators, normalizeAnswer } from "./questions.mjs";
+import { generateQuestion, questionGenerators, normalizeAnswer, normalizeOutput } from "./questions.mjs";
 import { renderQuestionBody, renderTraceTable, renderOrderLines, renderErrorPicker, createAnswerInput, appendExpected } from "./question-ui.mjs";
 import { buildKBSession, kbTopics, migrateStats, spliceBlank, lintLessonConcepts, frontierTags, drillTopicFor, topicProgress, conceptTopics } from "./kb-session.mjs";
 import { summarizeRound } from "./progress.mjs";
@@ -43,7 +43,7 @@ const LEGACY_DRILL_STATS_KEY = "plp.drills.v1";
 const KB_MET_KEY = "plp.kb.met.v1";
 
 const KNOWN_EVENTS = new Set([
-  "run-started", "run-ended", "run-rejected", "input-answered",
+  "run-started", "run-ended", "run-rejected", "input-requested", "input-answered",
   "interrupt-requested", "edited", "scrubbed", "hover-name", "chip-clicked",
   "mode-changed", "memory-rendered", "quiz-question", "quiz-graded",
 ]);
@@ -150,6 +150,13 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     source: editor.getValue(),
     steps: memory.steps(),
     positions: memory.linePositions(),
+    // The console transcript as PURE DATA (questions.mjs never touches the
+    // DOM): `consoleText` is the whole transcript — prompts, the single-path
+    // echo of what was typed, and the program's own output — and
+    // `consoleTextNoEcho` is exactly what the engine wrote. The predict-io
+    // form (expansion ladder §R4a) is graded against these.
+    consoleText: consoleUI.text(),
+    consoleTextNoEcho: consoleUI.engineText(),
   });
 
   // ---- practice stats (per-concept-TAG seen/missed; weights selection) ---
@@ -500,6 +507,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       if (step.ask.kind === "trace-table") return execTraceTable(step.ask);
       if (step.ask.kind === "order-the-lines") return execOrderLines(step.ask);
       if (step.ask.kind === "predict-the-error") return execPredictError(step.ask);
+      if (step.ask.kind === "predict-io") return execPredictIO(step.ask);
       return execGeneratedAsk(step.ask);
     }
 
@@ -813,6 +821,139 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
         review: { kind: ask.kind, form: ask.form, opts: ask.opts, code: editor.getValue(), teach: ask.teach, context: ask.context },
       }),
+    });
+    return true;
+  }
+
+  // predict-io (expansion ladder §R4a): the program calls input(), the card
+  // SHOWS the lines "someone types", and the graded answer is the whole
+  // console transcript — prompt text, the typed lines where they land, and
+  // the program's own output.
+  //
+  // EXECUTION: the ask's `stdinScript` answers each live rendezvous in order
+  // (runner.traceWithScript, driven by the `input-requested` event). If the
+  // program asks for more lines than the script holds, that run is
+  // INTERRUPTED and the question is skipped — never left waiting (invariant
+  // 2: every run must reach a terminal state).
+  //
+  // GRADING: the full transcript, OR the echo-stripped variant. A learner who
+  // predicts only what the PROGRAM emits (prompts + output, no typed lines)
+  // has understood the same thing; failing that reading would be grading a
+  // presentation choice, not the concept.
+  function execPredictIO(ask) {
+    events.emit("quiz-question", { kind: "predict-io" });
+    const script = [...(ask.stdinScript ?? [])];
+    const hints = [...(ask.hints ?? [])];
+    const totalHints = hints.length;
+    let ta = null;
+    const card = ui.addInteractiveCard({
+      teach: ask.teach, context: ask.context, form: ask.form ?? ask.kind,
+      stdinScript: script,
+      prompt: ask.prompt
+        ?? "Someone types the answers shown. What does the whole console show?",
+      render: (body) => {
+        ta = createAnswerInput({
+          singleLine: false,
+          placeholder: "type the whole console transcript…",
+        });
+        body.appendChild(ta);
+        return null;
+      },
+      actions: [],
+      prog: store.currentProg,
+    });
+    ui.popBatch(batch, card);
+    batch = [];
+
+    const skipDesc = (verdict, answerText) => ({
+      prompt: ask.prompt, ok: false, verdict,
+      answerText, lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: "predict-io",
+      misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
+      review: {
+        kind: "predict-io", form: ask.form, code: editor.getValue(),
+        stdinScript: script, teach: ask.teach, context: ask.context,
+      },
+    });
+
+    const doLock = async () => {
+      const text = ta.value;
+      if (!text.trim()) { card.setNote("Type what you think the console shows first"); return; }
+      const ranCode = editor.getValue(); // grade-what-runs: snapshot for review/retry
+      ta.readOnly = true;
+      card.setActions([]);
+      card.setNote("Running it for real…");
+      ui.beginReveal?.({ memory: false });
+      const res = await actions.traceWithScript?.(script);
+      if (!res?.summary) {
+        ta.readOnly = false;
+        card.setNote("The run couldn't start (is another one going?) — try again");
+        armLockActions();
+        return;
+      }
+      // The two ways a scripted run yields nothing gradable: the program
+      // out-asked its script (interrupted by design), or it ended some other
+      // way than completing. Both skip; neither hangs.
+      if (res.exhausted || res.summary.terminal_reason !== "completed") {
+        resolveAsk(card, skipDesc("couldn't grade this run", text));
+        return;
+      }
+      const c = ctx();
+      const full = c.consoleText;
+      const noEcho = c.consoleTextNoEcho;
+      const got = normalizeOutput(text);
+      const correct = got === normalizeOutput(full) || got === normalizeOutput(noEcho);
+      ta.classList.toggle("ok", correct);
+      ta.classList.toggle("bad", !correct);
+      card.reveal?.({ text: full, correct, kind: "predict-io" });
+      if (!correct && !card.reveal) {
+        appendExpected(card.body, { label: "What the console really showed:", text: full });
+      }
+      // MET GRANT (lesson-kb-binding §4): predicting the transcript of a
+      // program that PAUSES for the outside world is a prediction of its
+      // observable effect — the same §2.8 evidence class as predict-output.
+      // Same discipline: first attempt (this kind has no retries) and before
+      // the final hint.
+      const metTag = ask.focus ?? ask.concept;
+      const beforeFinalHint = totalHints === 0 || hints.length > 0;
+      if (correct && metTag && beforeFinalHint) {
+        if (grantMet(metTag, ask.focus ? "lesson" : "drill")) {
+          (store.roundMet ??= []).push(metTag);
+          persist();
+        }
+      }
+      resolveAsk(card, {
+        prompt: ask.prompt, ok: correct,
+        verdict: correct ? "✓ Exactly right!" : "✗ Not quite — compare with what really happened",
+        answerText: text,
+        lastAnswer: correct ? "correct" : "wrong",
+        template: ask.template, concept: ask.concept, kind: "predict-io",
+        misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
+        review: {
+          kind: "predict-io", form: ask.form, code: ranCode, stdinScript: script,
+          expectedText: full, teach: ask.teach, context: ask.context,
+        },
+      });
+    };
+    const armLockActions = () => card.setActions([
+      { label: "Check my answer ▶", primary: true, onClick: () => doLock() },
+      ...(hints.length ? [{
+        label: "Give me a hint",
+        onClick: () => {
+          const h = { type: "hint", md: hints.shift() };
+          record(h);
+          ui.addCard(h);
+          ui.appendToPopup(h);
+          if (!hints.length) armLockActions();
+        },
+      }] : []),
+      { label: "Skip this one", onClick: () => resolveAsk(card, skipDesc("skipped")) },
+    ]);
+    armLockActions();
+    setWaiting({
+      type: "ask",
+      kind: "predict-io",
+      lock: (text) => { if (text != null) ta.value = text; return doLock(); },
+      skip: () => resolveAsk(card, skipDesc("skipped")),
     });
     return true;
   }
@@ -1455,7 +1596,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       table: r.table, answersById: r.answersById,
       items: r.items, answerOrder: r.answerOrder, canonical: r.canonical,
       picked: r.picked, actual: r.actual, pickerCode: r.kind === "predict-the-error" ? r.code : undefined,
-      teach: r.teach, context: r.context,
+      teach: r.teach, context: r.context, stdinScript: r.stdinScript,
       // Single-answer kinds get the single-input widget; trace-table gets
       // a fresh blank table (the UI branches on kind — retryAnswer takes a
       // text string or an answersById map accordingly).
@@ -1513,6 +1654,30 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         persist();
         pushProgress();
         return { ok, lineOk, typeOk, actual, expectedText: revealTextFor(actual) };
+      } finally {
+        editor.setValue(before);
+      }
+    }
+    // predict-io: the SAME script re-answers the SAME program, so the retry
+    // is deterministic — and the escape hatch is the same one the first
+    // attempt had (an out-asked script interrupts and grades nothing).
+    if (r.kind === "predict-io") {
+      if (typeof text !== "string" || !text.trim()) return null;
+      const before = editor.getValue();
+      try {
+        editor.setValue(r.code);
+        const res = await actions.traceWithScript?.(r.stdinScript ?? []);
+        if (!res?.summary) return null; // a run is live — the retry never happened
+        if (res.exhausted || res.summary.terminal_reason !== "completed") return null;
+        const c = ctx();
+        const expectedText = c.consoleText;
+        const got = normalizeOutput(text);
+        const ok = got === normalizeOutput(expectedText) || got === normalizeOutput(c.consoleTextNoEcho);
+        rec.retry = { ok, tries: (rec.retry?.tries ?? 0) + 1 };
+        if (r.expectedText === undefined) r.expectedText = expectedText;
+        persist();
+        pushProgress();
+        return { ok, expectedText };
       } finally {
         editor.setValue(before);
       }

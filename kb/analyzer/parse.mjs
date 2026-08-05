@@ -3,21 +3,37 @@
 // outside it is a hard `unmapped-syntax` error (totality). Compound
 // statements are indentation-structured; expressions carry full Python
 // precedence so the inv-8 oracle can diff the tree against Python's own ast.
+//
+// FUNCTIONS SUBSET (expansion ladder §R4b, piece A1). The def grammar is
+// deliberately narrow, and the narrowness is the design, not a stub:
+//   - `def NAME(p1, p2):` at the TOP LEVEL ONLY — a def at indent > 0 or
+//     inside an if/for/while body is unmapped-syntax. Nested defs and
+//     closures have no concept node.
+//   - Parameters are bare names: no defaults, no keywords, no *args.
+//   - A def body is STRAIGHT-LINE: assignment, augmented assignment,
+//     expression statement, `return [expr]`. No if/for/while inside a body,
+//     no nested def, and (enforced in footprint.mjs) no call of a user
+//     function inside a body — which is what keeps recursion and
+//     maybe-return merges out of the abstract interpreter entirely.
+//   - `return` is legal only inside a def body (an `inDef` flag threads
+//     through parseBlock); at the top level it is unmapped-syntax.
+// Calls are parsed for ANY name (see parseAtom): footprint.mjs is the judge
+// of whether the name is a known builtin, a user function, an unbound name
+// (would-raise) or an unsupported builtin (unmapped-syntax).
 
 import { tokenize, AnalyzerError } from "./tokenize.mjs";
 
 export { AnalyzerError };
 
-const BUILTINS = new Set(["print", "len", "sum", "max", "min", "range", "str", "int", "list"]);
 const METHODS = new Set(["append", "extend", "pop", "insert", "remove", "get", "upper", "lower"]);
-const KEYWORDS = new Set(["True", "False", "None", "and", "or", "not", "in", "is", "if", "elif", "else", "for", "while", "break", "continue"]);
+const KEYWORDS = new Set(["True", "False", "None", "and", "or", "not", "in", "is", "if", "elif", "else", "for", "while", "break", "continue", "def", "return"]);
 const ADD_OPS = new Set(["+", "-"]);
 const MUL_OPS = new Set(["*", "/", "//", "%"]);
 const COMPARE_OPS = new Set(["<", ">", "<=", ">=", "==", "!="]);
 
 export function parse(source) {
   const lines = tokenize(source);
-  const { body, next } = parseBlock(lines, 0, 0);
+  const { body, next } = parseBlock(lines, 0, 0, { inDef: false, top: true });
   if (next !== lines.length) {
     throw new AnalyzerError("unmapped-syntax", "inconsistent indentation", lines[next]?.toks[0]?.line);
   }
@@ -26,22 +42,38 @@ export function parse(source) {
 
 // Parse consecutive statements at exactly `indent`. Stops at end of input or
 // at the first line whose indent is less than `indent`.
-function parseBlock(lines, idx, indent) {
+function parseBlock(lines, idx, indent, ctx = { inDef: false, top: false }) {
   const body = [];
   while (idx < lines.length && lines[idx].indent === indent) {
-    const { stmt, next } = parseStatement(lines, idx, indent);
+    const { stmt, next } = parseStatement(lines, idx, indent, ctx);
     body.push(stmt);
     idx = next;
   }
   return { body, next: idx };
 }
 
-function parseStatement(lines, idx, indent) {
+function parseStatement(lines, idx, indent, ctx = { inDef: false, top: false }) {
   const { toks } = lines[idx];
   const first = toks[0];
-  if (first.type === "NAME" && first.value === "if") return parseIf(lines, idx, indent);
-  if (first.type === "NAME" && first.value === "for") return parseFor(lines, idx, indent);
-  if (first.type === "NAME" && first.value === "while") return parseWhile(lines, idx, indent);
+  if (first.type === "NAME" && first.value === "def") {
+    // Top level only: a def anywhere else (nested, or inside a compound body)
+    // is outside the subset — see the FUNCTIONS SUBSET note in the header.
+    if (!ctx.top || ctx.inDef || indent !== 0) {
+      throw new AnalyzerError("unmapped-syntax", "def is only allowed at the top level in the subset", first.line);
+    }
+    return parseDef(lines, idx, indent);
+  }
+  if (first.type === "NAME" && first.value === "return") {
+    if (!ctx.inDef) throw new AnalyzerError("unmapped-syntax", "return outside a function", first.line);
+    if (toks.length === 1) return { stmt: { kind: "return", value: null, line: first.line }, next: idx + 1 };
+    const p = new TokenStream(toks.slice(1));
+    const value = parseExpr(p);
+    p.expectEnd();
+    return { stmt: { kind: "return", value, line: first.line }, next: idx + 1 };
+  }
+  if (first.type === "NAME" && first.value === "if") return parseIf(lines, idx, indent, ctx);
+  if (first.type === "NAME" && first.value === "for") return parseFor(lines, idx, indent, ctx);
+  if (first.type === "NAME" && first.value === "while") return parseWhile(lines, idx, indent, ctx);
   if (first.type === "NAME" && (first.value === "break" || first.value === "continue")) {
     if (toks.length !== 1) throw new AnalyzerError("unmapped-syntax", `trailing tokens after ${first.value}`, first.line);
     return { stmt: { kind: first.value, line: first.line }, next: idx + 1 };
@@ -67,7 +99,7 @@ function parseColonHeader(toks) {
   }
 }
 
-function parseIf(lines, idx, indent) {
+function parseIf(lines, idx, indent, ctx = { inDef: false, top: false }) {
   const clauses = [];
   let orelse = null;
   let header = lines[idx];
@@ -79,7 +111,7 @@ function parseIf(lines, idx, indent) {
     const test = parseExpr(p);
     p.expectEnd();
     const bodyIndent = requireBodyIndent(lines, idx + 1, indent, header.toks[0].line);
-    const { body, next } = parseBlock(lines, idx + 1, bodyIndent);
+    const { body, next } = parseBlock(lines, idx + 1, bodyIndent, { inDef: ctx.inDef, top: false });
     clauses.push({ test, body });
     idx = next;
     if (idx < lines.length && lines[idx].indent === indent && lines[idx].toks[0].value === "elif") {
@@ -94,14 +126,14 @@ function parseIf(lines, idx, indent) {
       throw new AnalyzerError("unmapped-syntax", "else header must be 'else:'", elseHeader.toks[0].line);
     }
     const bodyIndent = requireBodyIndent(lines, idx + 1, indent, elseHeader.toks[0].line);
-    const blk = parseBlock(lines, idx + 1, bodyIndent);
+    const blk = parseBlock(lines, idx + 1, bodyIndent, { inDef: ctx.inDef, top: false });
     orelse = blk.body;
     idx = blk.next;
   }
   return { stmt: { kind: "if", clauses, orelse, line: clauses[0].test.line }, next: idx };
 }
 
-function parseFor(lines, idx, indent) {
+function parseFor(lines, idx, indent, ctx = { inDef: false, top: false }) {
   const header = lines[idx];
   parseColonHeader(header.toks);
   const p = new TokenStream(header.toks.slice(1, header.toks.length - 1));
@@ -113,39 +145,85 @@ function parseFor(lines, idx, indent) {
   const iter = parseExpr(p);
   p.expectEnd();
   const bodyIndent = requireBodyIndent(lines, idx + 1, indent, header.toks[0].line);
-  const blk = parseBlock(lines, idx + 1, bodyIndent);
+  const blk = parseBlock(lines, idx + 1, bodyIndent, { inDef: ctx.inDef, top: false });
   idx = blk.next;
   let orelse = null;
   if (idx < lines.length && lines[idx].indent === indent && lines[idx].toks[0].value === "else") {
     const eh = lines[idx];
     if (eh.toks.length !== 2 || eh.toks[1].value !== ":") throw new AnalyzerError("unmapped-syntax", "else header must be 'else:'", eh.toks[0].line);
     const bi = requireBodyIndent(lines, idx + 1, indent, eh.toks[0].line);
-    const eb = parseBlock(lines, idx + 1, bi);
+    const eb = parseBlock(lines, idx + 1, bi, { inDef: ctx.inDef, top: false });
     orelse = eb.body;
     idx = eb.next;
   }
   return { stmt: { kind: "for", vars, iter, body: blk.body, orelse, line: header.toks[0].line }, next: idx };
 }
 
-function parseWhile(lines, idx, indent) {
+function parseWhile(lines, idx, indent, ctx = { inDef: false, top: false }) {
   const header = lines[idx];
   parseColonHeader(header.toks);
   const p = new TokenStream(header.toks.slice(1, header.toks.length - 1));
   const test = parseExpr(p);
   p.expectEnd();
   const bodyIndent = requireBodyIndent(lines, idx + 1, indent, header.toks[0].line);
-  const blk = parseBlock(lines, idx + 1, bodyIndent);
+  const blk = parseBlock(lines, idx + 1, bodyIndent, { inDef: ctx.inDef, top: false });
   idx = blk.next;
   let orelse = null;
   if (idx < lines.length && lines[idx].indent === indent && lines[idx].toks[0].value === "else") {
     const eh = lines[idx];
     if (eh.toks.length !== 2 || eh.toks[1].value !== ":") throw new AnalyzerError("unmapped-syntax", "else header must be 'else:'", eh.toks[0].line);
     const bi = requireBodyIndent(lines, idx + 1, indent, eh.toks[0].line);
-    const eb = parseBlock(lines, idx + 1, bi);
+    const eb = parseBlock(lines, idx + 1, bi, { inDef: ctx.inDef, top: false });
     orelse = eb.body;
     idx = eb.next;
   }
   return { stmt: { kind: "while", test, body: blk.body, orelse, line: header.toks[0].line }, next: idx };
+}
+
+// def NAME(p1, p2, …): + an indented STRAIGHT-LINE body.
+function parseDef(lines, idx, indent) {
+  const header = lines[idx];
+  const toks = header.toks;
+  parseColonHeader(toks);
+  const line = toks[0].line;
+  if (toks[1]?.type !== "NAME" || KEYWORDS.has(toks[1].value)) {
+    throw new AnalyzerError("unmapped-syntax", "def needs a plain function name", line);
+  }
+  const name = toks[1].value;
+  if (!(toks[2]?.type === "OP" && toks[2].value === "(")) {
+    throw new AnalyzerError("unmapped-syntax", "def name must be followed by '('", line);
+  }
+  if (!(toks[toks.length - 2]?.type === "OP" && toks[toks.length - 2].value === ")")) {
+    throw new AnalyzerError("unmapped-syntax", "def header must close its parameter list", line);
+  }
+  const paramToks = toks.slice(3, toks.length - 2);
+  const params = [];
+  for (let i = 0; i < paramToks.length; i++) {
+    if (i % 2 === 0) {
+      const t = paramToks[i];
+      // Bare names only — a default (`n=1`), a keyword form or *args all land
+      // here as a non-NAME token or a trailing '=' and are rejected.
+      if (t.type !== "NAME" || KEYWORDS.has(t.value)) {
+        throw new AnalyzerError("unmapped-syntax", "parameters must be bare names in the subset", line);
+      }
+      if (params.includes(t.value)) throw new AnalyzerError("unmapped-syntax", `duplicate parameter ${t.value}`, line);
+      params.push(t.value);
+    } else if (!(paramToks[i].type === "OP" && paramToks[i].value === ",")) {
+      throw new AnalyzerError("unmapped-syntax", "parameters must be bare names separated by commas", line);
+    }
+  }
+  if (paramToks.length && paramToks[paramToks.length - 1].type === "OP") {
+    throw new AnalyzerError("unmapped-syntax", "trailing comma in a parameter list is outside the subset", line);
+  }
+  const bodyIndent = requireBodyIndent(lines, idx + 1, indent, line);
+  const { body, next } = parseBlock(lines, idx + 1, bodyIndent, { inDef: true, top: false });
+  if (!body.length) throw new AnalyzerError("unmapped-syntax", "def body is empty", line);
+  for (const st of body) {
+    if (!["assign", "augassign", "expr", "return"].includes(st.kind)) {
+      throw new AnalyzerError("unmapped-syntax", `${st.kind} inside a function body is outside the subset (bodies are straight-line)`, st.line);
+    }
+  }
+  return { stmt: { kind: "def", name, params, body, line }, next };
 }
 
 // --- simple (single-line) statements -----------------------------------
@@ -370,7 +448,10 @@ function parseAtom(p) {
     if (KEYWORDS.has(t.value)) throw new AnalyzerError("unmapped-syntax", `keyword ${t.value} is not valid here`, t.line);
     p.next();
     if (p.peekOp("(")) {
-      if (!BUILTINS.has(t.value)) throw new AnalyzerError("unmapped-syntax", `call of non-builtin ${t.value} is outside the subset`, t.line);
+      // Any NAME may be CALLED here (ladder §R4b A1): footprint.mjs is the
+      // judge — a user function runs its body, an unbound name is a
+      // would-raise NameError, a value that is not a function is a
+      // would-raise, and an unsupported builtin is still unmapped-syntax.
       p.next();
       const args = parseArgs(p);
       p.expectOp(")");

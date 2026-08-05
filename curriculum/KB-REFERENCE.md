@@ -8,19 +8,20 @@
 
 ## Overview
 
-- **75 concepts** — 4 structural / 50 core / 21 edge.
-- **150 exercises** across 7 topics.
-- **Forms:** fill-one-blank, order-the-lines, predict-exact-output, predict-state, predict-the-error, spot-the-difference, trace-table.
+- **85 concepts** — 4 structural / 59 core / 22 edge.
+- **165 exercises** across 8 topics.
+- **Forms:** fill-one-blank, order-the-lines, predict-exact-output, predict-io, predict-state, predict-the-error, spot-the-difference, trace-table.
 
 ## Topics
 
-- **State & I/O** (`state`): 0005, 0006, 0007, 0009, 000A, 000B, 000C, 000J, 000M, 002N
+- **State & I/O** (`state`): 0005, 0006, 0007, 0009, 000A, 000B, 000C, 000J, 000M, 0026, 002N
 - **Numbers & bools** (`numbers`): 0008, 000K, 000N, 000P, 000Q, 000R, 000S, 000T, 000V, 000W, 000X
 - **Strings** (`strings`): 000E, 000Y, 000Z, 0010, 0011, 0012, 0013, 0014, 002P
 - **Lists & aliasing** (`lists`): 000D, 000F, 000G, 000H, 001Z, 0020, 0021, 0022, 0023, 0024, 0025, 002M, 002Q
 - **Conditions & logic** (`logic`): 0015, 0016, 0017, 0018, 0019, 001A, 001B, 001C, 001D, 002K
 - **Loops & ranges** (`loops`): 001E, 001F, 001G, 001H, 001J, 001K, 001M, 001N, 001P, 001Q
 - **Dicts & tuples** (`structures`): 001R, 001S, 001T, 001V, 001W, 001X, 001Y, 002R
+- **Functions** (`functions`): 0027, 0028, 0029, 002A, 002B, 002C, 002F, 002G, 002H
 - **Structural roots**: 0001, 0002, 0003, 0004
 
 ## Concept graph
@@ -46,6 +47,7 @@ graph TD
   000C["000C name-from-name"]
   000J["000J print-multi-args"]
   000M("000M swap-right-side-first")
+  0026["0026 input-pauses-for-value"]
   002N["002N errors-are-information"]
   end
   subgraph numbers [Numbers & bools]
@@ -120,6 +122,17 @@ graph TD
   001X["001X tuple-unpack"]
   001Y("001Y tuple-by-comma")
   002R("002R key-error-missing")
+  end
+  subgraph functions [Functions]
+  0027["0027 def-defines-not-runs"]
+  0028["0028 call-runs-body"]
+  0029["0029 def-params-bind-args"]
+  002A["002A return-hands-back-value"]
+  002B["002B return-vs-print"]
+  002C["002C return-exits-function"]
+  002F["002F args-evaluated-first"]
+  002G["002G call-in-expression"]
+  002H("002H none-when-no-return")
   end
   0001 --> 0005
   0004 --> 0005
@@ -220,6 +233,20 @@ graph TD
   0011 --> 0024
   0022 --> 0025
   0024 --> 0025
+  0006 --> 0026
+  0005 --> 0027
+  0027 --> 0028
+  0006 --> 0029
+  0028 --> 0029
+  0009 --> 002A
+  0028 --> 002A
+  002A --> 002B
+  002A --> 002C
+  0009 --> 002F
+  0029 --> 002F
+  0008 --> 002G
+  002A --> 002G
+  002B --> 002H
   000B --> 002K
   0018 --> 002K
   000D --> 002M
@@ -273,7 +300,7 @@ Each print produces exactly one line of output.
 print("…") writes the quoted characters, without the quotes, as one line.
 
 - Parents: 0001, 0004
-- Children: 0006, 0007, 0008, 000J, 0016
+- Children: 0006, 0007, 0008, 000J, 0016, 0027
 - Lineage: 0001 ← 0004
 - Characteristic wrong answer: the text with its quotes kept
 - Exercises: hello-print
@@ -283,7 +310,7 @@ print("…") writes the quoted characters, without the quotes, as one line.
 x = v makes the name x hold the value v; print(x) shows that value.
 
 - Parents: 0005, 0003
-- Children: 0007, 0009, 000A, 000D, 000J, 001W, 002N
+- Children: 0007, 0009, 000A, 000D, 000J, 001W, 0026, 0029, 002N
 - Lineage: 0001 ← 0003 ← 0004 ← 0005
 - Characteristic wrong answer: the letter x itself
 - Exercises: fill-value, name-then-print
@@ -303,7 +330,7 @@ x = v makes the name x hold the value v; print(x) shows that value.
 + - * on whole numbers compute the usual math result.
 
 - Parents: 0003, 0005
-- Children: 0009, 000N, 000P, 000Q, 000V, 000X, 000Z, 0015
+- Children: 0009, 000N, 000P, 000Q, 000V, 000X, 000Z, 0015, 002G
 - Lineage: 0001 ← 0003 ← 0004 ← 0005
 - Characteristic wrong answer: an arithmetic slip (no reasoned misconception — the intro checks fluency)
 - Exercises: fill-arith-op, plain-arith
@@ -313,7 +340,7 @@ x = v makes the name x hold the value v; print(x) shows that value.
 The right side is computed down to one value before the name stores it.
 
 - Parents: 0006, 0008
-- Children: 000B, 000M
+- Children: 000B, 000M, 002A, 002F
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008
 - Characteristic wrong answer: the expression itself, unevaluated
 - Exercises: bind-computed
@@ -918,6 +945,106 @@ a[:] copies only the outer list — the inner lists are shared, so a change thro
 - Characteristic wrong answer: the original grid unchanged
 - Exercises: shallow-copy-latent, shallow-copy-shares-rows
 
+### 0026 · input-pauses-for-value — core
+
+input(…) stops the program until the outside world types a line; the typed text enters the state as an ordinary binding.
+
+- Parents: 0006
+- Children: —
+- Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006
+- Characteristic wrong answer: the program runs on without waiting, or the value appears from nowhere
+- Exercises: greet-and-echo, two-questions
+
+### 0027 · def-defines-not-runs — core
+
+def stores the recipe under a name; its body does not run yet.
+
+- Parents: 0005
+- Children: 0028
+- Lineage: 0001 ← 0004 ← 0005
+- Characteristic wrong answer: the body's output appearing at def time
+- Exercises: def-then-done
+
+### 0028 · call-runs-body — core
+
+name() runs the stored body now, once per call.
+
+- Parents: 0027
+- Children: 0029, 002A
+- Lineage: 0001 ← 0004 ← 0005 ← 0027
+- Characteristic wrong answer: nothing, or the body running only once despite two calls
+- Exercises: call-count, called-or-not
+
+### 0029 · def-params-bind-args — core
+
+Calling f(v) binds the argument v to the parameter name for that run of the body.
+
+- Parents: 0028, 0006
+- Children: 002F
+- Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0027 ← 0028
+- Characteristic wrong answer: the parameter keeping an old or unrelated value
+- Exercises: param-gets-value, pick-the-argument
+
+### 002A · return-hands-back-value — core
+
+return hands one value back to the caller; the call expression becomes that value.
+
+- Parents: 0028, 0009
+- Children: 002B, 002C, 002G
+- Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 0027 ← 0028
+- Characteristic wrong answer: the value printing by itself, or nothing coming back
+- Exercises: return-then-use
+
+### 002B · return-vs-print — core
+
+print shows a value on the screen; return hands it back — a function that only prints hands back None.
+
+- Parents: 002A
+- Children: 002H
+- Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 0027 ← 0028 ← 002A
+- Characteristic wrong answer: treating the printed text as the returned value
+- Exercises: return-or-print, shout-state, shout-trap
+
+### 002C · return-exits-function — core
+
+return leaves the function immediately; lines after it do not run.
+
+- Parents: 002A
+- Children: —
+- Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 0027 ← 0028 ← 002A
+- Characteristic wrong answer: the lines after return also running
+- Exercises: early-exit
+
+### 002F · args-evaluated-first — core
+
+Arguments are computed down to values before the call starts.
+
+- Parents: 0029, 0009
+- Children: —
+- Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 0027 ← 0028 ← 0029
+- Characteristic wrong answer: the expression arriving unevaluated
+- Exercises: args-computed-first
+
+### 002G · call-in-expression — core
+
+A call is an expression: its returned value takes part in the surrounding calculation.
+
+- Parents: 002A, 0008
+- Children: —
+- Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 0027 ← 0028 ← 002A
+- Characteristic wrong answer: the call's value ignored by the surrounding math
+- Exercises: call-slots-in
+
+### 002H · none-when-no-return — edge
+
+Falling off the end of a function (or a bare return) hands back None.
+
+- Parents: 002B
+- Children: —
+- Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 0027 ← 0028 ← 002A ← 002B
+- Characteristic wrong answer: the last computed value coming back by itself
+- Exercises: nothing-comes-back
+
 ### 002K · branch-picks-binding — core
 
 A branch can rebind a name — what the name ends up holding depends on which branch ran.
@@ -1216,6 +1343,24 @@ prints:
 [4, 8, 13, 16]
 ```
 
+### args-computed-first — focus 002F (args-evaluated-first)
+
+- Form: `predict-exact-output` · Role: intro · Topic: functions
+- Assumed: 0005, 0006, 0008, 0009, 0027, 0028, 0029
+- Shapes: sum-arg, difference-arg, name-plus-number · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def show(n):
+    print(n * 4)
+count = 4
+show(count + 4)
+```
+prints:
+```
+32
+```
+
 ### aug-assign-shared-list — focus 0023 (plus-eq-mutates-list)
 
 - Form: `predict-exact-output` · Role: intro · Topic: lists
@@ -1395,6 +1540,74 @@ for x in [6, 7, 8]:
 prints:
 ```
 6
+```
+
+### call-count — focus 0028 (call-runs-body)
+
+- Form: `predict-exact-output` · Role: intro · Topic: functions
+- Assumed: 0005, 0027
+- Shapes: call-once, call-twice, interleaved · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def show():
+    print("fish")
+show()
+show()
+show()
+```
+prints:
+```
+fish
+fish
+fish
+```
+
+### call-slots-in — focus 002G (call-in-expression)
+
+- Form: `predict-exact-output` · Role: intro · Topic: functions
+- Assumed: 0005, 0006, 0008, 0009, 0027, 0028, 002A
+- Shapes: call-plus-number, number-minus-call, call-times-number · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def show():
+    return 5
+print(show() * 4)
+```
+prints:
+```
+20
+```
+
+### called-or-not — focus 0028 (call-runs-body)
+
+- Form: `spot-the-difference` · Role: review · Topic: functions
+- Assumed: 0005, 0027
+- Contrast: 0027
+- Shapes: call-vs-plain-print · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+def shout():
+    print("sun")
+shout()
+```
+prints:
+```
+sun
+```
+
+Program B (predicted):
+```py
+def shout():
+    print("sun")
+print("moon")
+```
+prints:
+```
+moon
 ```
 
 ### capture-order — focus 0013 (str-immutable-rebind)
@@ -1839,6 +2052,23 @@ prints:
 [3, 7, 18, 97]
 ```
 
+### def-then-done — focus 0027 (def-defines-not-runs)
+
+- Form: `predict-exact-output` · Role: intro · Topic: functions
+- Assumed: 0005
+- Shapes: def-then-print, def-two-body-lines, two-defs · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def show():
+    print("tree")
+print("moon")
+```
+prints:
+```
+moon
+```
+
 ### dict-get — focus 001T (dict-get-default)
 
 - Form: `predict-exact-output` · Role: intro · Topic: structures
@@ -1960,6 +2190,25 @@ print(14 / 2)
 prints:
 ```
 7.0
+```
+
+### early-exit — focus 002C (return-exits-function)
+
+- Form: `predict-exact-output` · Role: intro · Topic: functions
+- Assumed: 0005, 0006, 0008, 0009, 0027, 0028, 002A
+- Shapes: dead-print, two-dead-lines, dead-assign-then-print · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def cheer():
+    return 7 + 4
+    count = 10
+    print(count)
+print(cheer())
+```
+prints:
+```
+11
 ```
 
 ### elif-chain — focus 0019 (elif-first-true-wins)
@@ -2402,6 +2651,25 @@ prints:
 16
 ```
 
+### greet-and-echo — focus 0026 (input-pauses-for-value)
+
+- Form: `predict-io` · Role: intro · Topic: state
+- Assumed: 0005, 0006
+- Shapes: echo-back, prompt-then-print-twice, bind-then-print · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+msg = input("Who is there? ")
+print(msg)
+print(msg)
+```
+someone types: `fish`
+the program emits (prompts + output, without the typed lines):
+```
+Who is there? fish
+fish
+```
+
 ### grid-far-corner-hard — focus 0022 (nested-lists)
 
 - Form: `predict-exact-output` · Role: review · Topic: lists
@@ -2758,6 +3026,23 @@ prints:
 3
 ```
 
+### nothing-comes-back — focus 002H (none-when-no-return)
+
+- Form: `predict-state` · Role: intro · Topic: functions
+- Assumed: 0005, 0006, 0008, 0009, 0027, 0028, 002A, 002B
+- Shapes: computed-discarded, bare-return · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def shout():
+    return
+count = shout()
+```
+After it runs, `count` holds:
+```
+None
+```
+
 ### or-value-contrast — focus 001C (and-or-return-operand)
 
 - Form: `spot-the-difference` · Role: review · Topic: logic
@@ -2876,6 +3161,43 @@ print(n)
 prints:
 ```
 9
+```
+
+### param-gets-value — focus 0029 (def-params-bind-args)
+
+- Form: `predict-exact-output` · Role: intro · Topic: functions
+- Assumed: 0005, 0006, 0027, 0028
+- Shapes: print-param, two-calls-different-args, two-params · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def cheer(first, second):
+    print(second)
+cheer("sun", "frog")
+```
+prints:
+```
+frog
+```
+
+### pick-the-argument — focus 0029 (def-params-bind-args)
+
+- Form: `fill-one-blank` · Role: review · Topic: functions
+- Assumed: 0005, 0006, 0027, 0028
+- Shapes: pick-first, pick-second · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended token `score`:
+```py
+score = "blue"
+n = "sun"
+def greet(word):
+    print(word)
+greet(score)
+```
+prints the target:
+```
+blue
 ```
 
 ### plain-arith — focus 0008 (arith-on-ints)
@@ -3305,6 +3627,57 @@ prints:
 hihihi
 ```
 
+### return-or-print — focus 002B (return-vs-print)
+
+- Form: `spot-the-difference` · Role: review · Topic: functions
+- Assumed: 0005, 0006, 0008, 0009, 0027, 0028, 002A
+- Contrast: 002A
+- Shapes: return-vs-print-body · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+def show():
+    return 7 + 3
+count = show()
+print(count)
+```
+prints:
+```
+10
+```
+
+Program B (predicted):
+```py
+def show():
+    print(7 + 3)
+count = show()
+print(count)
+```
+prints:
+```
+10
+None
+```
+
+### return-then-use — focus 002A (return-hands-back-value)
+
+- Form: `predict-exact-output` · Role: intro · Topic: functions
+- Assumed: 0005, 0006, 0008, 0009, 0027, 0028
+- Shapes: bind-then-print, direct-print, bind-then-use-in-math · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def show():
+    return 6 + 8
+x = show()
+print(x + 1)
+```
+prints:
+```
+15
+```
+
 ### shallow-copy-latent — focus 0025 (copy-is-shallow)
 
 - Form: `predict-state` · Role: review · Topic: lists
@@ -3338,6 +3711,43 @@ print(a)
 prints:
 ```
 [[4, 5, 36], [1, 6]]
+```
+
+### shout-state — focus 002B (return-vs-print)
+
+- Form: `predict-state` · Role: review · Topic: functions
+- Assumed: 0005, 0006, 0027, 0028, 002A
+- Shapes: probe-after-print-only-call · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def report():
+    print("fish")
+n = report()
+```
+After it runs, `n` holds:
+```
+fish
+None
+```
+
+### shout-trap — focus 002B (return-vs-print)
+
+- Form: `predict-exact-output` · Role: intro · Topic: functions
+- Assumed: 0005, 0006, 0027, 0028, 002A
+- Shapes: bind-then-print, print-the-call · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def shout():
+    print("hi")
+score = shout()
+print(score)
+```
+prints:
+```
+hi
+None
 ```
 
 ### slice-makes-copy — focus 0024 (slice-copies)
@@ -3888,6 +4298,26 @@ print(x)
 prints:
 ```
 7
+```
+
+### two-questions — focus 0026 (input-pauses-for-value)
+
+- Form: `predict-io` · Role: review · Topic: state
+- Assumed: 0005, 0006
+- Shapes: both-in-order, reverse-order, second-only · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+msg = input("Say a word: ")
+w = input("Type something: ")
+print(msg)
+print(w)
+```
+someone types: `frog`, then `fish`
+the program emits (prompts + output, without the typed lines):
+```
+Say a word: Type something: frog
+fish
 ```
 
 ### unpack-vs-pack-spot — focus 001X (tuple-unpack)

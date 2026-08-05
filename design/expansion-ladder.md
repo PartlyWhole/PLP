@@ -17,7 +17,7 @@ R3 predict-the-error ─────────┴─ (R2 first: forms │
    + error-family mints           plumbing proven │
                                   before contract │
                                   change)         │
-R4a input() rung (A0 + predict-io)  — independent ├─ any order after R1–R3
+R4a input() rung (A0 + predict-io)  — DONE       ├─ any order after R1–R3
 R4b functions waves (A1..A4, waves 1–5) ──────────┘
 R5 write-the-line  (after R3; scope rule below)
    fix-the-bug     = composition of R3+R5, build later, never a third path
@@ -106,7 +106,7 @@ tests + kb/index offerable branch) → hard siblings. Sizing M total.
 - First four: err-name-unbound, err-str-plus-int, err-index-range,
   err-key-missing. Sizing M–L (analyzer S–M + mints + form plumbing).
 
-## R4a — input(): A0 + the `predict-io` form (independent rung)
+## R4a — input(): A0 + the `predict-io` form (independent rung) — **DONE**
 
 - A0: `input` joins the analyzer builtins (returns str, emits 0026). S.
 - EXEC: tutor auto-answers each live rendezvous from the ask's
@@ -129,6 +129,15 @@ tests + kb/index offerable branch) → hard siblings. Sizing M total.
   exercise (K-4) — it becomes a hand-authored u1 lesson ask, and u1
   gains 0026 in its concepts so the existing input steps finally grant.
   Sizing M–L.
+- AS BUILT: `console.engineText()` (already the echo-excluding accessor)
+  turned out to be byte-identical to `python3` with piped stdin — verified
+  for one AND two rendezvous, where the missing echo runs the two prompts
+  together — so no new console accessor was needed. The scripted-run driver
+  lives ONCE, in `runner.traceWithScript`, shared by the tutor's
+  `execPredictIO` and `plp.traceWithStdin`: what the learner is graded
+  against and what K-10/K-doc record are the same execution. predict-io
+  also joins K-oracles' parse-only tier — its program cannot run without a
+  script, so K-10 carries its discrimination floor.
 
 ## R4b — Functions: analyzer A1–A4 + wiring waves 1–5
 

@@ -49,7 +49,7 @@ bad tag fails fast rather than silently mis-binding progress.
 That becomes:
 
 ```
-concepts: ["0006", "0009", "000A", "000B"]
+concepts: ["0006", "0009", "000A", "000B", "0026"]
 ```
 
 | Tag | Slug | Why it belongs to u1 |
@@ -69,11 +69,15 @@ dropped):
 - `predict-output` — a *form* (§5.2 predict-exact-output), not a
   concept. It describes how the ask is graded, not what is learned.
   Dropped.
-- `input-boundary` — the `input(...)` walkthrough teaches a real idea,
-  but **phase-1 KB has no input concept** (§3.2 State & I/O has no node
-  for the stdin rendezvous). Deferred until an input concept is minted;
-  recorded here as a **known gap**, not a blocker. Until then the
-  input-boundary steps carry no `focus` and grant nothing.
+- `input-boundary` — **GAP CLOSED** (expansion ladder §R4a). It was
+  deferred while phase-1 KB had no node for the stdin rendezvous; `0026`
+  `input-pauses-for-value` is now minted, wired (`kb/concepts/io.mjs`),
+  and exercised (`kb/exercises/io.mjs`), and the `predict-io` form can
+  supply a scripted stdin line during grading. u1 gained `0026` in its
+  `concepts` and carries a graded `predict-io` ask — the `int(input())`
+  bridge, hand-authored because a KB exercise for `0026` may not reach
+  outside `ancestors(0026)` for `int(...)` (§2.8 closure / K-4). The
+  input-boundary steps now grant met like any other graded prediction.
 
 **Ask-step focus assignment** (the two graded predictions in u1):
 
@@ -82,6 +86,9 @@ dropped):
 - The `total` accumulation prediction (step reading
   `total = 0\ntotal = total + 5\ntotal = total + 10\nprint("total:", total)`)
   → `focus: "000B"`.
+- The `int(input())` transcript prediction (step reading
+  `answer = input("Pick a number: ")\nnumber = int(answer)\nprint(number + 1)`,
+  `stdinScript: ["7"]`) → `focus: "0026"`.
 
 `0006` and `000A` are in the unit `concepts` set (the unit exercises
 them in demos) but have no dedicated graded ask in u1, so they are not
@@ -97,7 +104,7 @@ no lesson-specific relaxation.**
 A lesson marks concept C met iff **all** hold:
 
 1. The step is an `ask` of kind `predict-output`, `predict-state`,
-   `trace-table` or `predict-the-error` whose `focus` is C.
+   `trace-table`, `predict-the-error` or `predict-io` whose `focus` is C.
 2. It is graded **exact-output** (the primary predict-exact-output form)
    — or it is **predict-state** answered exactly (predicting what a name
    really holds after the run is the same §2.8 evidence class as
@@ -110,7 +117,13 @@ A lesson marks concept C met iff **all** hold:
    and the error kind right (expansion ladder §R3): naming where a program
    crashes and with what is an unaided, engine-verified prediction of the
    program's observable effect, the same §2.8 evidence class as predicting
-   what it prints.
+   what it prints — or it is a **predict-io** whose whole console
+   transcript is right (expansion ladder §R4a): predicting where a
+   program pauses, where the typed line lands, and what it prints around
+   both is a prediction of the program's observable effect, the same
+   §2.8 evidence class (the echo-stripped transcript is accepted too — a
+   learner who predicts only what the PROGRAM emits has understood the
+   same thing; the local echo is a presentation choice, not a concept).
 3. The student's answer is **correct on the first attempt** and arrives
    **before the final hint is shown**. §2.8 forbids crediting a shown
    answer or a lucky skip; a hint that states the output *is* a shown

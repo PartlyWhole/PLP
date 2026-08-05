@@ -40,6 +40,7 @@ export const kbTopics = [
   { id: "logic", title: "Conditions & logic" },
   { id: "loops", title: "Loops & ranges" },
   { id: "structures", title: "Dicts & tuples" },
+  { id: "functions", title: "Functions" },
 ];
 
 const TITLE_BY_TOPIC = new Map(kbTopics.map((t) => [t.id, t.title]));
@@ -341,6 +342,19 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met 
         form: ex.form, shape: prog.shape,
         concept: ex.focus, template: ex.id,
         prompt: "This program stops with an error. Tap the line it stops on, and pick what kind.",
+      };
+    } else if (ex.form === "predict-io") {
+      // The input boundary (expansion ladder §R4a): the program pauses for
+      // the outside world, the card SHOWS the lines someone types, and the
+      // whole console transcript is the answer. `multiline` is structural
+      // here — a transcript is several lines by construction.
+      steps.push({ loadCode: prog.code });
+      ask = {
+        kind: "predict-io",
+        form: ex.form, shape: prog.shape,
+        concept: ex.focus, template: ex.id,
+        stdinScript: prog.stdinScript, multiline: true,
+        prompt: "Someone types the answers shown. What does the whole console show?",
       };
     } else if (ex.form === "trace-table") {
       // Walk the trace: the student fills what each watched name holds at

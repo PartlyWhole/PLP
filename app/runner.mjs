@@ -89,11 +89,24 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
     records.push(record);
     renderRecordToUI(record, { memory, consoleUI });
     if (record.kind === "header") onStatus?.({ type: "header", host: record.host });
+    // The stdin rendezvous, announced (expansion ladder §R4a): the LOCAL
+    // engine has stopped and is waiting for a line. Emitted here rather than
+    // in renderRecordToUI so a collab follower replaying the driver's records
+    // never claims an input request it cannot answer. Scripted-input consumers
+    // (the tutor's predict-io form) answer from this event; the run is live
+    // while it fires, so answering must be deferred (queueMicrotask) — see
+    // app/tutor.mjs execPredictIO.
+    if (record.kind === "step" && record.event === "input") {
+      events.emit("input-requested", { prompt: record.event_data?.prompt ?? "" });
+    }
     hooks?.onRecord?.(record);
   }
 
   // Traced run ("Trace"): the memory model, bounded by the engine's budgets.
-  async function trace() {
+  // `stdinLines` is the DEGRADED-mode escape only: in live (isolated) mode the
+  // engine ignores it entirely and `input()` waits for provideInput (CLAUDE.md
+  // engine facts), so a scripted-input caller must ALSO answer live.
+  async function trace({ stdinLines = [] } = {}) {
     // Guard BEFORE touching any state: a concurrent call must not clobber
     // the active run's records.
     if (running || fast.isRunning()) throw new Error("a run is already active");
@@ -118,7 +131,7 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
         // so disable the engine's echo — exactly one echo either way.
         // Degraded mode keeps engine echo (pre-supplied lines, no typing).
         options: { echo_stdin: !crossOriginIsolated },
-        stdinLines: [],
+        stdinLines,
         onRecord,
       });
       booted = true;
@@ -204,29 +217,70 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
     }
   }
 
+  function interrupt() {
+    if (fast.isRunning()) fast.interrupt();
+    else session?.interrupt();
+    events.emit("interrupt-requested");
+  }
+
+  function provideInput(line) {
+    // Route to whichever engine is waiting; both throw when nothing is
+    // outstanding, so the console's single echo path stays identical.
+    if (fast.isRunning()) fast.provideInput(line);
+    else ensureSession().provideInput(line); // throws on no outstanding request
+    // Accepted: echo the line into the transcript (live mode disables the
+    // engine's echo; degraded mode never reaches here — provideInput throws).
+    consoleUI.append("echo", line + "\n");
+    hooks?.onInput?.(line);
+    events.emit("input-answered", { line });
+  }
+
+  // Scripted input (expansion ladder §R4a): trace a program, answering each
+  // rendezvous from `lines` in order. ONE implementation, shared by the
+  // tutor's predict-io form and the debug/test helper — so what the learner
+  // is graded against and what K-10/K-doc record are the same execution.
+  //
+  // Invariant 2 (every run reaches a terminal): if the program asks for more
+  // lines than the script holds, the run is INTERRUPTED rather than left
+  // waiting forever. `exhausted` reports that so the caller can skip instead
+  // of grading a run that never finished.
+  //
+  // Answers are deferred with queueMicrotask: the event fires from inside the
+  // record fan-out of the live run, and provideInput must not re-enter it.
+  // Degraded (non-isolated) mode has no live rendezvous at all, so the script
+  // is ALSO handed to the engine as pre-supplied stdin.
+  async function traceWithScript(lines = []) {
+    const script = [...lines];
+    let used = 0;
+    let exhausted = false;
+    const off = events.on((e) => {
+      if (e.type !== "input-requested") return;
+      if (used >= script.length) {
+        exhausted = true;
+        queueMicrotask(() => { try { interrupt(); } catch { /* already ending */ } });
+        return;
+      }
+      const line = script[used++];
+      queueMicrotask(() => { try { provideInput(line); } catch { /* run already ended */ } });
+    });
+    try {
+      const summary = await trace({ stdinLines: crossOriginIsolated ? [] : script });
+      return { summary, used, exhausted, script };
+    } finally {
+      off();
+    }
+  }
+
   return {
     run,     // untraced (the Run button)
     trace,   // traced (the Trace button)
+    traceWithScript,
     // Opt-in: when a traced run trips a budget, re-run it untraced instead
     // of just reporting. Off by default — Run already covers that need.
     setAutoFallback: (v) => { autoFallback = Boolean(v); },
     autoFallback: () => autoFallback,
-    interrupt: () => {
-      if (fast.isRunning()) fast.interrupt();
-      else session?.interrupt();
-      events.emit("interrupt-requested");
-    },
-    provideInput: (line) => {
-      // Route to whichever engine is waiting; both throw when nothing is
-      // outstanding, so the console's single echo path stays identical.
-      if (fast.isRunning()) fast.provideInput(line);
-      else ensureSession().provideInput(line); // throws on no outstanding request
-      // Accepted: echo the line into the transcript (live mode disables the
-      // engine's echo; degraded mode never reaches here — provideInput throws).
-      consoleUI.append("echo", line + "\n");
-      hooks?.onInput?.(line);
-      events.emit("input-answered", { line });
-    },
+    interrupt,
+    provideInput,
     isRunning: () => running || fast.isRunning(),
     fastState: () => fast.debugState(),
     records: () => records,

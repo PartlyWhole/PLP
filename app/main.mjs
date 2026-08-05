@@ -211,6 +211,10 @@ async function start(fn) {
 
 const run = () => start(() => runner.run());
 const trace = () => start(() => runner.trace());
+// Scripted-input trace (expansion ladder §R4a): the predict-io form and the
+// K-series drive input() programs through this. Same start() gate as Run and
+// Trace, so a scripted run can never race a learner-initiated one.
+const traceWithScript = (lines) => start(() => runner.traceWithScript(lines));
 
 runBtn.addEventListener("click", run);
 traceBtn.addEventListener("click", trace);
@@ -235,7 +239,12 @@ const tutor = createTutor({
   ui: tutorUI,
   practiceUI,
   actions: {
-    run, trace,
+    run, trace, traceWithScript,
+    // The input boundary (§R4a): answering a live rendezvous and the escape
+    // hatch that keeps invariant 2 (a run must always reach a terminal) when
+    // a program asks for more than the script holds.
+    provideInput: (line) => runner.provideInput(line),
+    interrupt: () => runner.interrupt(),
     // The last run's uncaught exception, or null. The traced stream's final
     // record is the terminal one, and it carries `exception` exactly when the
     // program raised — the same object renderRunEnd prints from
@@ -381,6 +390,12 @@ window.plp = {
   runner,
   run,
   trace,
+  // Trace a program that calls input(), answering each rendezvous from
+  // `lines` in order (expansion ladder §R4a). Resolves to
+  // { summary, used, exhausted } — `used` is how many script lines the
+  // program actually consumed, `exhausted` says it asked for more (and was
+  // interrupted rather than left waiting: invariant 2).
+  traceWithStdin: (lines) => traceWithScript(lines),
   interrupt: () => runner.interrupt(),
   provideInput: (line) => runner.provideInput(line),
   records: () => runner.records(),

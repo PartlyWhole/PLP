@@ -84,10 +84,20 @@ export const TAG = {
   plusEqMutatesList: "0023",
   sliceCopies: "0024",
   copyIsShallow: "0025",
+  defDefinesNotRuns: "0027",
+  callRunsBody: "0028",
+  defParamsBindArgs: "0029",
+  returnHandsBackValue: "002A",
+  returnVsPrint: "002B",
+  returnExitsFunction: "002C",
+  argsEvaluatedFirst: "002F",
+  callInExpression: "002G",
+  noneWhenNoReturn: "002H",
   errorsAreInformation: "002N",
   typeErrorStrInt: "002P",
   indexErrorOutOfRange: "002Q",
   keyErrorMissing: "002R",
+  inputPauses: "0026",
 };
 
 // raiseKind → the concept a program that ACTUALLY raises this way teaches
@@ -104,6 +114,20 @@ export const RAISE_TAG = {
   "index-out-of-range": TAG.indexErrorOutOfRange,
   "key-missing": TAG.keyErrorMissing,
 };
+
+// Real Python builtins the subset does not model. The parser now produces a
+// call node for ANY name (ladder §R4b A1), so this table is what keeps the
+// grammar CLOSED: `abs(3)` must stay unmapped-syntax rather than becoming a
+// bogus NameError. Names outside both this table and the modeled builtins are
+// judged by the store (user function / unbound / not callable).
+const UNSUPPORTED_BUILTINS = new Set([
+  "abs", "all", "any", "ascii", "bin", "bool", "bytes", "callable", "chr",
+  "complex", "dict", "dir", "divmod", "enumerate", "eval", "exec", "filter",
+  "float", "format", "frozenset", "getattr", "globals", "hasattr", "hash",
+  "help", "hex", "id", "isinstance", "issubclass", "iter", "locals", "map",
+  "next", "object", "oct", "open", "ord", "pow", "repr", "reversed", "round",
+  "set", "setattr", "slice", "sorted", "tuple", "type", "vars", "zip",
+]);
 
 const ADD_OPS = new Set(["+", "-"]);
 const opClass = (op) => (ADD_OPS.has(op) ? "add" : op === "**" ? "pow" : "mul");
@@ -144,6 +168,11 @@ function analyze(statements, opts = {}) {
   let ifDepth = 0; // inside if/elif/else bodies: a rebind here is branch-picks-binding (002K)
   const strCopy = new Map();    // name → source name (b = a where a is str)
   const rebound = new Set();    // names that have been reassigned
+  // The active abstract call frame (ladder §R4b A1), or null at module level.
+  // { assigned: Set (pre-scanned body assignments), bound: Set (params +
+  //   assignments performed so far), printed, discarded, returnedValue,
+  //   bareReturn, value }
+  let frame = null;
 
   const emit = (tag, rule, line) => { tags.add(tag); evidence.push({ tag, rule, line }); };
 
@@ -191,6 +220,15 @@ function analyze(statements, opts = {}) {
   }
 
   function requireBound(id, line) {
+    // Inside a call frame (ladder §R4b A1): a name the body ASSIGNS somewhere
+    // is local for the whole call, so reading it before that local assignment
+    // is UnboundLocalError in real Python even when a module-level name of the
+    // same spelling exists. The pre-scan makes that a would-raise here, so the
+    // abstract interpreter can never silently diverge from the interpreter by
+    // reading the module value through the frame's read-through.
+    if (frame && frame.assigned.has(id) && !frame.bound.has(id)) {
+      throw new AnalyzerError("would-raise", `local name ${id} read before its assignment in the function`, line, "unbound-local");
+    }
     if (!env.has(id)) throw new AnalyzerError("would-raise", `name ${id} read before assignment`, line, "name-unbound");
     return env.get(id);
   }
@@ -229,6 +267,11 @@ function analyze(statements, opts = {}) {
     throw new AnalyzerError("unmapped-syntax", `iterating a ${v.type} is outside the subset`, 0);
   }
 
+  // A user call's RESULT is "consumed" when something receives it (an assign
+  // right side, a print argument, an operand). IN_EXPR additionally says the
+  // call sits INSIDE a larger expression — the 002G witness.
+  const IN_EXPR = { consumed: true, inExpr: true };
+
   function evalExpr(node, ctx = {}) {
     switch (node.kind) {
       case "int":
@@ -263,7 +306,7 @@ function analyze(statements, opts = {}) {
         let nested = false;
         const elems = [];
         for (const item of node.items) {
-          const v = evalExpr(item);
+          const v = evalExpr(item, IN_EXPR);
           if (v.type === "list") nested = true;
           elem = v.type;
           elems.push(v);
@@ -289,24 +332,24 @@ function analyze(statements, opts = {}) {
         return { type: "dict", keyType: keyType ?? "str", valType: valType ?? "int", keys };
       }
       case "tuple": {
-        node.items.forEach((it) => evalExpr(it));
+        node.items.forEach((it) => evalExpr(it, IN_EXPR));
         if (node.items.length === 1) emit(TAG.tupleByComma, "row56", node.line);
         else emit(TAG.tuplePackPrint, "row53", node.line);
         return { type: "tuple" };
       }
       case "unaryop": {
         if (node.op === "not") {
-          const v = evalExpr(node.operand, ctx);
+          const v = evalExpr(node.operand, { ...ctx, ...IN_EXPR });
           emit(TAG.boolOps, "row38", node.line);
           if (v.type !== "bool") emit(TAG.truthinessEmptyFalsy, "rule10", node.line);
           return { type: "bool" };
         }
-        const v = evalExpr(node.operand);
+        const v = evalExpr(node.operand, IN_EXPR);
         if (!isNumeric(v.type)) throw new AnalyzerError("unmapped-syntax", `unary minus on ${v.type} is outside the subset`, node.line);
         return { type: v.type === "bool" ? "int" : v.type };
       }
       case "boolop": {
-        const vals = node.values.map((v) => evalExpr(v, ctx));
+        const vals = node.values.map((v) => evalExpr(v, { ...ctx, ...IN_EXPR }));
         emit(TAG.boolOps, "row38", node.line);
         const anyNonBool = vals.some((v) => v.type !== "bool");
         if (anyNonBool) emit(TAG.truthinessEmptyFalsy, "rule10", node.line);
@@ -317,10 +360,10 @@ function analyze(statements, opts = {}) {
         return { type: resultType };
       }
       case "compare": {
-        const left = evalExpr(node.left);
+        const left = evalExpr(node.left, IN_EXPR);
         const parts = [left];
         node.ops.forEach((op, k) => {
-          const right = evalExpr(node.comparators[k]);
+          const right = evalExpr(node.comparators[k], IN_EXPR);
           parts.push(right);
           if (op === "in" || op === "not in") {
             if (right.type === "dict") {
@@ -343,8 +386,8 @@ function analyze(statements, opts = {}) {
         return { type: "bool" };
       }
       case "binop": {
-        const l = evalExpr(node.left);
-        const r = evalExpr(node.right);
+        const l = evalExpr(node.left, IN_EXPR);
+        const r = evalExpr(node.right, IN_EXPR);
         if (mixesPrecedence(node)) emit(TAG.opPrecedence, "row13", node.line);
         // A statically-known str/number mix raises TypeError — EXCEPT str * int,
         // which is the legal repeat (design §4.4). bool operands are left to the
@@ -394,12 +437,12 @@ function analyze(statements, opts = {}) {
         throw new AnalyzerError("unmapped-syntax", `${node.op} on ${l.type}/${r.type} is outside the subset`, node.line);
       }
       case "subscript": {
-        const container = evalExpr(node.value);
+        const container = evalExpr(node.value, IN_EXPR);
         const nestedContainer = node.value.kind === "subscript";
         if (node.index.kind === "slice") {
           return evalSlice(container, node.index, node.line);
         }
-        const idx = evalExpr(node.index);
+        const idx = evalExpr(node.index, IN_EXPR);
         if (container.type === "dict") {
           emit(TAG.dictLookup, "row49", node.line);
           const k = literalKey(node.index);
@@ -461,15 +504,25 @@ function analyze(statements, opts = {}) {
     const f = node.func;
     if (f === "print") {
       for (const a of node.args) {
-        const v = evalExpr(a, {});
+        const v = evalExpr(a, { consumed: true });
         if (v.type === "bool") emit(TAG.boolValues, "rule13", node.line);
       }
       if (node.args.length >= 2) emit(TAG.printMultiArgs, "row11", node.line);
       emit(TAG.printText, "row10", node.line);
+      if (frame) frame.printed = true;
       return { type: "none" };
     }
+    // input(prompt?) — the stdin rendezvous (expansion ladder §R4a). At most
+    // one argument, the prompt, and it must be a str; the typed line always
+    // enters the state as a str.
+    if (f === "input") {
+      if (node.args.length > 1) throw new AnalyzerError("unmapped-syntax", "input() takes at most one prompt", node.line);
+      if (node.args.length === 1 && evalExpr(node.args[0]).type !== "str") throw new AnalyzerError("unmapped-syntax", "input()'s prompt must be text", node.line);
+      emit(TAG.inputPauses, "rule-input", node.line);
+      return { type: "str" };
+    }
     if (f === "len" || f === "sum" || f === "max" || f === "min") {
-      const v = evalExpr(node.args[0]);
+      const v = evalExpr(node.args[0], IN_EXPR);
       if (v.type !== "list" && v.type !== "range") throw new AnalyzerError("unmapped-syntax", `${f}() of a ${v.type} is outside the subset`, node.line);
       emit(TAG.aggregateBuiltins, "row29", node.line);
       if (f === "len") return { type: "int" };
@@ -478,7 +531,7 @@ function analyze(statements, opts = {}) {
     }
     if (f === "range") {
       node.args.forEach((a) => {
-        const v = evalExpr(a);
+        const v = evalExpr(a, IN_EXPR);
         if (!isNumeric(v.type)) throw new AnalyzerError("unmapped-syntax", "range() takes whole numbers", node.line);
       });
       emit(TAG.rangeStopExcluded, "row43", node.line);
@@ -488,26 +541,121 @@ function analyze(statements, opts = {}) {
       return { type: "range", elem: "int" };
     }
     if (f === "list") {
-      const v = evalExpr(node.args[0]);
+      const v = evalExpr(node.args[0], IN_EXPR);
       if (v.type === "range") return newList("int");
       // list(a) is the same SHALLOW copy as a[:] — element identity shared.
       if (v.type === "list") { emit(TAG.sliceCopies, "row35", node.line); return newList(v.elem ?? "int", v.elems); }
       throw new AnalyzerError("unmapped-syntax", `list() of a ${v.type} is outside the subset`, node.line);
     }
     if (f === "str") {
-      const v = evalExpr(node.args[0]);
+      const v = evalExpr(node.args[0], IN_EXPR);
       if (isNumeric(v.type)) emit(TAG.strOfInt, "row17", node.line);
       else if (v.type === "str") warnings.push({ code: "pointless-conversion" });
       return { type: "str" };
     }
     if (f === "int") {
-      const v = evalExpr(node.args[0]);
+      const v = evalExpr(node.args[0], IN_EXPR);
       if (v.type === "str") emit(TAG.intOfStr, "row17", node.line);
       else if (v.type === "int") warnings.push({ code: "pointless-conversion" });
       return { type: "int" };
     }
-    throw new AnalyzerError("unmapped-syntax", `call ${f}() is outside the subset`, node.line);
-    void ctx;
+    // Not a builtin the subset models. A name bound to a user FUNCTION is a
+    // call (ladder §R4b A1); anything else is judged here rather than in the
+    // parser: an unbound name is a NameError (call-before-def), a bound
+    // non-function is a TypeError, and a real Python builtin the subset does
+    // not model stays unmapped-syntax (the grammar is still closed).
+    if (env.has(f) && env.get(f).type === "function") return evalUserCall(env.get(f), node, ctx);
+    if (UNSUPPORTED_BUILTINS.has(f)) {
+      throw new AnalyzerError("unmapped-syntax", `call ${f}() is outside the subset`, node.line);
+    }
+    if (!env.has(f)) {
+      throw new AnalyzerError("would-raise", `name ${f} called before it is defined`, node.line, "name-unbound");
+    }
+    throw new AnalyzerError("would-raise", `${f} is a ${env.get(f).type}, not a function`, node.line, "not-callable");
+  }
+
+  // Is this argument expression atomic (a literal or a bare name)? A
+  // NON-atomic argument is the args-evaluated-first witness (002F): the
+  // caller computes it down to a value before the body starts.
+  function isAtomicArg(node) {
+    if (node.kind === "group") return isAtomicArg(node.expr);
+    return ["int", "float", "str", "bool", "none", "name"].includes(node.kind);
+  }
+
+  // One abstract call frame (ladder §R4b A1/A2). Params are bound LEFT TO
+  // RIGHT after every argument has been evaluated (the 002F witness);
+  // reads are local-first with read-through to the module env; writes are
+  // ALWAYS local, so the frame simply vanishes at return.
+  function evalUserCall(fnVal, node, ctx = {}) {
+    const def = fnVal.def;
+    if (frame) {
+      throw new AnalyzerError("unmapped-syntax", "calling a function from inside a function body is outside the subset", node.line);
+    }
+    emit(TAG.callRunsBody, "rule-call", node.line);
+    // Arguments first, left to right — and each non-atomic one is 002F.
+    const argVals = [];
+    for (const a of node.args) {
+      if (!isAtomicArg(a)) emit(TAG.argsEvaluatedFirst, "rule-args-first", node.line);
+      argVals.push(evalExpr(a, IN_EXPR));
+    }
+    if (argVals.length !== def.params.length) {
+      throw new AnalyzerError("would-raise", `${def.name}() takes ${def.params.length} arguments but ${argVals.length} were given`, node.line, "arity");
+    }
+    if (def.params.length >= 1) emit(TAG.defParamsBindArgs, "rule-param-bind", node.line);
+
+    // Pre-scan: every name the body ASSIGNS is local for the whole call.
+    const assigned = new Set();
+    for (const st of def.body) {
+      if (st.kind === "assign" && st.target.kind === "name") assigned.add(st.target.id);
+      if (st.kind === "assign" && st.target.kind === "tuple") for (const n of st.target.names) assigned.add(n);
+      if (st.kind === "augassign") assigned.add(st.target);
+    }
+    const savedEnv = env;
+    env = new Map(savedEnv);           // read-through copy: writes stay local
+    frame = { assigned, bound: new Set(), printed: false, discarded: false };
+    let ret = { type: "none" };
+    let returnedValue = false, bareReturn = false;
+    let printedInBody = false, discardedInBody = false;
+    try {
+      def.params.forEach((pname, i) => { bind(pname, argVals[i]); frame.bound.add(pname); });
+      for (let i = 0; i < def.body.length; i++) {
+        const st = def.body[i];
+        if (st.kind === "return") {
+          if (st.value) { ret = evalExpr(st.value, { consumed: true }); returnedValue = true; }
+          else bareReturn = true;
+          // Statements AFTER an executed return never run (002C).
+          if (i < def.body.length - 1) emit(TAG.returnExitsFunction, "rule-return-exits", st.line);
+          break;
+        }
+        if (st.kind === "expr") {
+          const v = evalExpr(st.value, {});
+          // A value computed and thrown away is the none-fallthrough witness
+          // when the caller then consumes the None (002H, below).
+          if (v.type !== "none") frame.discarded = true;
+          continue;
+        }
+        execStatement(st);
+        if (st.kind === "assign" && st.target.kind === "name") frame.bound.add(st.target.id);
+        if (st.kind === "assign" && st.target.kind === "tuple") for (const n of st.target.names) frame.bound.add(n);
+        if (st.kind === "augassign") frame.bound.add(st.target);
+      }
+    } finally {
+      printedInBody = frame.printed;
+      discardedInBody = frame.discarded;
+      frame = null;
+      env = savedEnv;
+    }
+    if (ctx.consumed) {
+      if (returnedValue) emit(TAG.returnHandsBackValue, "rule-return-value", node.line);
+      // A body that only PRINTS hands back None — the classic confusion.
+      if (!returnedValue && printedInBody) emit(TAG.returnVsPrint, "rule-return-vs-print", node.line);
+      // A consumed None from a body that computed-and-discarded a value, or
+      // used a bare return: nothing comes back by itself (002H).
+      if (!returnedValue && (discardedInBody || bareReturn)) emit(TAG.noneWhenNoReturn, "rule-none-fallthrough", node.line);
+      // The call took part in a bigger expression (002G).
+      if (ctx.inExpr) emit(TAG.callInExpression, "rule-call-in-expr", node.line);
+    }
+    return ret;
   }
 
   function evalMethod(node) {
@@ -571,7 +719,7 @@ function analyze(statements, opts = {}) {
         return;
       case "augassign": {
         const cur = requireBound(stmt.target, stmt.line);
-        const rhs = evalExpr(stmt.value);
+        const rhs = evalExpr(stmt.value, IN_EXPR);
         if (isNumeric(cur.type)) {
           if (!isNumeric(rhs.type)) throw new AnalyzerError("unmapped-syntax", "+= mixing numbers and non-numbers", stmt.line);
           emit(TAG.arithOnInts, "rule3-aug", stmt.line);
@@ -594,6 +742,17 @@ function analyze(statements, opts = {}) {
       case "assign":
         execAssign(stmt);
         return;
+      case "def": {
+        // A def BINDS; it does not run (0027). The body is parsed for
+        // totality but executed only at call time — which is exactly what
+        // makes an un-called function's body emit NOTHING.
+        if (env.has(stmt.name)) {
+          throw new AnalyzerError("unmapped-syntax", `redefining ${stmt.name} is outside the subset`, stmt.line);
+        }
+        emit(TAG.defDefinesNotRuns, "rule-def", stmt.line);
+        env.set(stmt.name, { type: "function", def: stmt });
+        return;
+      }
       case "if":
         execIf(stmt);
         return;
@@ -649,8 +808,17 @@ function analyze(statements, opts = {}) {
       return;
     }
     const id = stmt.target.id;
-    const wasBound = env.has(id);
-    const val = evalExpr(stmt.value);
+    // Inside a call frame, a name the body assigns is a FRESH local the first
+    // time it is bound — never a rebind of the module name it happens to
+    // shadow (the read-through copy would otherwise report one).
+    const wasBound = frame ? frame.bound.has(id) : env.has(id);
+    if (wasBound && env.get(id).type === "function") {
+      throw new AnalyzerError("unmapped-syntax", `rebinding the function name ${id} is outside the subset`, stmt.line);
+    }
+    const val = evalExpr(stmt.value, { consumed: true });
+    if (val.type === "function") {
+      throw new AnalyzerError("unmapped-syntax", "using a function as a value is outside the subset", stmt.line);
+    }
     if (stmt.value.kind === "name") {
       if (val.type !== "list" && val.type !== "dict") emit(TAG.nameFromName, "rule1", stmt.line);
       if (val.type === "str") strCopy.set(id, stmt.value.id);
@@ -803,6 +971,11 @@ function walkExpr(node, cb) {
     case "expr":
       walkExpr(node.value, cb);
       return;
+    case "return":
+      if (node.value) walkExpr(node.value, cb);
+      return;
+    case "def":
+      return; // a def BINDS; its body is walked only when a call runs it
     case "if":
       for (const c of node.clauses) { walkExpr(c.test, cb); c.body.forEach((s) => walkExpr(s, cb)); }
       if (node.orelse) node.orelse.forEach((s) => walkExpr(s, cb));

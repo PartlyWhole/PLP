@@ -170,6 +170,42 @@ export function createPracticeUI({ layout, getCode }) {
     return ctx;
   }
 
+  // predict-io (expansion ladder §R4a): the stdin script, shown as chips.
+  // The typing is deliberately scaffolded — WHERE the typed text lands in the
+  // transcript is what the question tests, not what the learner invents. Sits
+  // with the program (the spot-the-difference context block is the precedent).
+  function buildStdinBlock(script) {
+    const wrap = document.createElement("div");
+    wrap.className = "pr-stdin";
+    const label = document.createElement("span");
+    label.className = "pr-reveal-label";
+    label.textContent = "someone types:";
+    wrap.appendChild(label);
+    const row = document.createElement("span");
+    row.className = "pr-stdin-row";
+    script.forEach((line, i) => {
+      if (i) {
+        const sep = document.createElement("span");
+        sep.className = "pr-stdin-then hint";
+        sep.textContent = "then";
+        row.appendChild(sep);
+      }
+      const chip = document.createElement("span");
+      chip.className = "pr-stdin-chip";
+      const code = document.createElement("code");
+      code.textContent = line;
+      chip.append(code);
+      const enter = document.createElement("span");
+      enter.className = "pr-stdin-enter";
+      enter.textContent = "\u23ce";
+      enter.title = "Enter";
+      chip.appendChild(enter);
+      row.appendChild(chip);
+    });
+    wrap.appendChild(row);
+    return wrap;
+  }
+
   // The proof block: what the program really did (live reveals and reviews).
   function buildRevealBlock({ kind, text, correct }) {
     const block = document.createElement("div");
@@ -178,7 +214,8 @@ export function createPracticeUI({ layout, getCode }) {
     label.className = "pr-reveal-label";
     label.textContent = kind === "predict-state" ? "it really holds"
       : kind === "trace-table" ? "your table, graded"
-        : kind === "predict-the-error" ? "it really stopped with" : "it printed";
+        : kind === "predict-the-error" ? "it really stopped with"
+          : kind === "predict-io" ? "the console really showed" : "it printed";
     const pre = document.createElement("pre");
     pre.textContent = text ?? "";
     block.append(label, pre);
@@ -196,6 +233,7 @@ export function createPracticeUI({ layout, getCode }) {
     "trace-table": "fill every box, then check — the trace grades each step",
     "order-the-lines": "move the lines with ↑ and ↓, then check — it really runs",
     "predict-the-error": "tap the line it stops on, then the kind — it really runs",
+    "predict-io": "type the WHOLE console — prompts, the typed lines, and the output",
   };
   function mechanicsLineFor(form) {
     let seen;
@@ -211,7 +249,7 @@ export function createPracticeUI({ layout, getCode }) {
   // escape): forms whose widget IS the program — order-the-lines, where the
   // dealt arrangement lives in the rows themselves — would otherwise show the
   // same lines twice, once uneditable.
-  function addInteractiveCard({ prompt, render, teach, context, form, program = true }) {
+  function addInteractiveCard({ prompt, render, teach, context, form, stdinScript, program = true }) {
     const el = document.createElement("div");
     el.className = "pr-question tutor-question";
     const code = getCode();
@@ -228,6 +266,7 @@ export function createPracticeUI({ layout, getCode }) {
       // Escape hatch: the real IDE is one tap away, program loaded. If the
       // learner edits it there and comes back, a chip offers to restore the
       // question's program (grade-what-runs stays the philosophy either way).
+      if (stdinScript?.length) programBlock.insertAdjacentElement("afterend", buildStdinBlock(stdinScript));
       const openLink = document.createElement("button");
       openLink.type = "button";
       openLink.className = "pr-quiet pr-open-editor";
@@ -629,7 +668,10 @@ export function createPracticeUI({ layout, getCode }) {
     el.appendChild(head);
 
     if (desc.context?.code) el.appendChild(buildContextBlock(desc.context));
-    if (desc.code) mountProgram(el, desc.code);
+    if (desc.code) {
+      const block = mountProgram(el, desc.code);
+      if (desc.stdinScript?.length) block.insertAdjacentElement("afterend", buildStdinBlock(desc.stdinScript));
+    }
     // The table lives in a slot so a retry can swap it out (blank attempt)
     // and back (graded view) without touching the rest of the card.
     let tableSlot = null;
@@ -916,8 +958,12 @@ export function createPracticeUI({ layout, getCode }) {
     } else if (desc.onRetry) {
       const wrap = document.createElement("div");
       wrap.className = "pr-retry";
-      const input = document.createElement("input");
+      // predict-io's answer is a whole transcript — several lines — so its
+      // retry widget must be the textarea, like its live card.
+      const multiline = desc.kind === "predict-io";
+      const input = document.createElement(multiline ? "textarea" : "input");
       input.className = "tutor-output-input";
+      if (multiline) input.rows = 4;
       input.placeholder = "have another go…";
       const btn = document.createElement("button");
       btn.type = "button";
@@ -945,7 +991,7 @@ export function createPracticeUI({ layout, getCode }) {
         }
       };
       btn.addEventListener("click", go);
-      input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !input.readOnly) go(); });
+      if (!multiline) input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !input.readOnly) go(); });
       wrap.append(input, btn, verdictOut, note);
       el.appendChild(wrap);
     }

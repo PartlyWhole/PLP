@@ -20,6 +20,7 @@ const TOPICS = [
   ["logic", "Conditions & logic"],
   ["loops", "Loops & ranges"],
   ["structures", "Dicts & tuples"],
+  ["functions", "Functions"],
 ];
 
 const byTag = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -48,6 +49,15 @@ export function docSamples(kb) {
       // and Pyodide, so the reference never records message text — only the
       // type and the line, which both writers agree on.
       specs.push({ key: `${ex.id}|raise`, run: prog.code, expectError: true });
+    } else if (ex.form === "predict-io") {
+      // The input boundary (expansion ladder §R4a). The sample carries its
+      // stdin script; the executor pipes it in. CPython with PIPED stdin
+      // prints the prompts but never echoes what was typed, while the browser
+      // transcript adds a local echo chunk — so the reference records the
+      // PROGRAM-EMITTED output only (the browser writer reads the console's
+      // echo-excluding accessor) plus a labeled "someone types:" line. Both
+      // writers then agree byte for byte.
+      specs.push({ key: `${ex.id}|io`, run: prog.code, stdin: [...prog.stdinScript] });
     } else if (ex.form === "order-the-lines") {
       // The deal is shuffled at compile time; the reference records the
       // CANONICAL order (the exercise's ground truth) and what it prints.
@@ -211,6 +221,11 @@ export function renderReference(kb, outputs, waivers = []) {
       L.push(fence(prog.lines.join("\n")));
       L.push("prints:");
       L.push(outBlock(get(`${ex.id}|out`)));
+    } else if (ex.form === "predict-io") {
+      L.push(fence(prog.code));
+      L.push(`someone types: ${prog.stdinScript.map((l) => `\`${l}\``).join(", then ")}`);
+      L.push("the program emits (prompts + output, without the typed lines):");
+      L.push(outBlock(get(`${ex.id}|io`)));
     } else if (ex.form === "fill-one-blank") {
       L.push(`Filled with the intended token \`${prog.blank.target}\`:`);
       L.push(fence(prog.code));

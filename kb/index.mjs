@@ -19,6 +19,8 @@ import logicConcepts from "./concepts/logic.mjs";
 import loopConcepts from "./concepts/loops.mjs";
 import structureConcepts from "./concepts/structures.mjs";
 import errorConcepts from "./concepts/errors.mjs";
+import functionConcepts from "./concepts/functions.mjs";
+import ioConcepts from "./concepts/io.mjs";
 import stateExercises from "./exercises/state.mjs";
 import numberExercises from "./exercises/numbers.mjs";
 import listExercises from "./exercises/lists.mjs";
@@ -30,13 +32,15 @@ import errorExercises from "./exercises/errors.mjs";
 import formExercises from "./exercises/forms.mjs";
 import challengeExercises from "./exercises/challenges.mjs";
 import orderExercises from "./exercises/order.mjs";
+import functionExercises from "./exercises/functions.mjs";
+import ioExercises from "./exercises/io.mjs";
 import { footprint } from "./analyzer/footprint.mjs";
 
 const TAG_RE = /^[0-9A-HJKMNP-TV-Z]{4}$/; // Crockford base-32: no I L O U
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 export function loadKB() {
-  const allConcepts = [...roots, ...stateConcepts, ...numberConcepts, ...listConcepts, ...stringConcepts, ...logicConcepts, ...loopConcepts, ...structureConcepts, ...errorConcepts];
+  const allConcepts = [...roots, ...stateConcepts, ...numberConcepts, ...listConcepts, ...stringConcepts, ...logicConcepts, ...loopConcepts, ...structureConcepts, ...errorConcepts, ...ioConcepts, ...functionConcepts];
   const concepts = new Map();
   const bySlug = new Set();
   for (const c of allConcepts) {
@@ -65,7 +69,7 @@ export function loadKB() {
 
   const structural = new Set([...concepts.values()].filter((c) => c.kind === "structural").map((c) => c.tag));
 
-  const exercises = [...stateExercises, ...numberExercises, ...listExercises, ...stringExercises, ...logicExercises, ...loopExercises, ...structureExercises, ...errorExercises, ...formExercises, ...challengeExercises, ...orderExercises];
+  const exercises = [...stateExercises, ...numberExercises, ...listExercises, ...stringExercises, ...logicExercises, ...loopExercises, ...structureExercises, ...errorExercises, ...formExercises, ...challengeExercises, ...orderExercises, ...ioExercises, ...functionExercises];
   const exIds = new Set();
   for (const ex of exercises) {
     if (exIds.has(ex.id)) throw new Error(`kb: duplicate exercise id ${ex.id}`);

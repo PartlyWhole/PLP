@@ -28,8 +28,8 @@ test.describe("PLP tutor (T-series)", () => {
     // "Start here" on-ramp, which leads the menu into the first guided unit).
     await expect(page.locator("#practice .pr-static .tutor-card")).toHaveCount(1);
     await expect(page.locator("#practice [data-role=pr-controls] button").first()).toContainText("Start here");
-    await expect(page.locator("#practice [data-role=pr-controls] button:not(.t-endless-mini)")).toHaveCount(11); // start-here + all + endless + map + 7 topics
-    await expect(page.locator("#practice [data-role=pr-controls] .t-endless-mini")).toHaveCount(7); // ∞ per topic
+    await expect(page.locator("#practice [data-role=pr-controls] button:not(.t-endless-mini)")).toHaveCount(12); // start-here + all + endless + map + 8 topics
+    await expect(page.locator("#practice [data-role=pr-controls] .t-endless-mini")).toHaveCount(8); // ∞ per topic
     await page.reload();
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
     await expect(page.locator("body")).toHaveClass(/practice/); // persisted
@@ -421,7 +421,7 @@ test.describe("PLP tutor (T-series)", () => {
 
     // The map view renders on the stage with matching chip states.
     await page.evaluate(() => { window.plp.tutor.showMap(); });
-    await expect(page.locator("#practice .cm-lane")).toHaveCount(7);
+    await expect(page.locator("#practice .cm-lane")).toHaveCount(8);
     await expect(page.locator("#practice .cm-node.frontier")).toHaveCount(1);
     expect(await page.evaluate(() => document.querySelectorAll("#practice .cm-node.met").length)).toBe(0);
 
@@ -556,6 +556,18 @@ test.describe("PLP tutor (T-series)", () => {
     await page.evaluate(() => window.plp.provideInput("Ada"));
     expect((await page.evaluate(() => window.__p)).terminal_reason).toBe("completed");
     await page.evaluate(() => window.plp.tutor.continue()); // input card
+
+    // (b) The int(input()) bridge — a predict-io ask focused on 0026
+    // (expansion ladder §R4a). Answered CLEANLY on the first attempt, so it
+    // grants met from a lesson: the input-boundary gap of
+    // design/lesson-kb-binding.md §3 is closed.
+    expect(await page.evaluate(() => window.plp.tutor.ask())).toEqual({ kind: "predict-io" });
+    await page.evaluate(() => window.plp.tutor.lockPrediction("Pick a number: 7\n8"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
+    const ioMet = await page.evaluate(() => window.plp.tutor.met());
+    expect(Object.keys(ioMet)).toEqual(["0026"]);
+    expect(ioMet["0026"].source).toBe("lesson");
+
     await page.evaluate(() => window.plp.tutor.continue()); // output card
     expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
 
@@ -563,7 +575,7 @@ test.describe("PLP tutor (T-series)", () => {
     // grants met with source "lesson".
     await page.evaluate(() => window.plp.tutor.lockPrediction("total: 15"));
     const met = await page.evaluate(() => window.plp.tutor.met());
-    expect(Object.keys(met)).toEqual(["000B"]);
+    expect(Object.keys(met).sort()).toEqual(["0026", "000B"].sort());
     expect(met["000B"].source).toBe("lesson");
     expect(met["000B"].at).toBeGreaterThan(0);
     // 0009 stayed ungranted (it was answered wrong).
@@ -575,7 +587,7 @@ test.describe("PLP tutor (T-series)", () => {
     expect(frontier.length).toBeGreaterThan(0);
     await page.evaluate(() => window.plp.tutor.exit());
     await expect(page.locator("#practice [data-role=pr-controls] button").first()).toContainText("Drill what you just learned");
-    await expect(page.locator("#practice [data-role=pr-controls] button:not(.t-endless-mini)")).toHaveCount(11); // frontier entry + all + endless + map + 7 topics
+    await expect(page.locator("#practice [data-role=pr-controls] button:not(.t-endless-mini)")).toHaveCount(12); // frontier entry + all + endless + map + 8 topics
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
@@ -657,6 +669,24 @@ test.describe("PLP tutor (T-series)", () => {
     s = await page.evaluate(() => window.plp.tutor.state());
     expect(s.waiting).toBe("pause");
     await page.evaluate(() => window.plp.tutor.continue()); // input card
+
+    // The int(input()) bridge (expansion ladder §R4a): a predict-io ask on
+    // the stage, auto-answered from its stdinScript. Its focus is 0026, so a
+    // clean first-attempt transcript closes the input-boundary met gap
+    // (design/lesson-kb-binding.md §3).
+    s = await page.evaluate(() => window.plp.tutor.state());
+    expect(s.waiting).toBe("ask");
+    expect(await page.evaluate(() => window.plp.tutor.ask())).toEqual({ kind: "predict-io" });
+    expect(await page.evaluate(() => window.plp.editor.getValue())).toContain("int(answer)");
+    await page.evaluate(() => window.plp.tutor.lockPrediction("Pick a number: 7\n8"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
+    s = await page.evaluate(() => window.plp.tutor.state());
+    expect(s.lastAnswer).toBe("correct");
+    expect(await page.evaluate(() => window.plp.console.text())).toBe("Pick a number: 7\n8\n");
+    const u1met = await page.evaluate(() => window.plp.tutor.met());
+    expect(Object.keys(u1met)).toEqual(["0026"]);
+    expect(u1met["0026"].source).toBe("lesson");
+
     await page.evaluate(() => window.plp.tutor.continue()); // output card
 
     // Mastery prediction, correct → correct-branch → pocket → done.
@@ -1718,7 +1748,7 @@ test.describe("PLP tutor (T-series)", () => {
     await page.evaluate(() => window.plp.tutor.exit());
     // ← from the map: the menu; ← from the menu: the IDE.
     await page.evaluate(() => window.plp.tutor.showMap());
-    await expect(page.locator("#practice .cm-lane")).toHaveCount(7);
+    await expect(page.locator("#practice .cm-lane")).toHaveCount(8);
     await page.locator("#practice [data-role=pr-leave]").click();
     await expect(page.locator("#practice .cm-lane")).toHaveCount(0);
     await expect(page.locator("#practice [data-role=pr-controls] button", { hasText: "Everything" })).toBeVisible();
@@ -1730,7 +1760,7 @@ test.describe("PLP tutor (T-series)", () => {
     await page.locator("#practice .cm-detail button.primary").click();
     await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
     await page.locator("#practice [data-role=pr-exit-lesson]").click();
-    await expect(page.locator("#practice .cm-lane")).toHaveCount(7);
+    await expect(page.locator("#practice .cm-lane")).toHaveCount(8);
   });
 
   test("summary: the look-back button opens the first miss's review; Back returns to the summary; miss dots read ✗", async ({ page }) => {
@@ -1797,6 +1827,156 @@ test.describe("PLP tutor (T-series)", () => {
     });
     expect(r.wrong).toBe(false);
     expect(r.right).toBe(true);
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  // ---- predict-io: the input boundary (expansion ladder §R4a) -------------
+  // Fixture: a FOCUS round on 0026 (input-pauses-for-value). Seed 0 deals
+  // greet-and-echo's bind-then-print shape (ONE rendezvous); seed 2 deals
+  // two-questions' reverse-order shape (TWO). Re-derive by scanning
+  // buildKBSession("state", { seed, count: 1, focus: "0026" }).
+  async function startIORound(page, seed) {
+    await page.evaluate(() => {
+      localStorage.removeItem("plp.kb.v1");
+      localStorage.removeItem("plp.kb.met.v1");
+      localStorage.removeItem("plp.kb.tmpl.v1");
+      localStorage.removeItem("plp.tutor.v1");
+      localStorage.removeItem("plp.practice.v1");
+    });
+    const id = await page.evaluate((s) =>
+      window.plp.tutor.startDrill("state", { focus: "0026", seed: s, count: 1 }), seed);
+    expect(id).toBe(`drill-state-0026-${seed}`);
+    return page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
+      return { ask: s.drillLesson.steps.find((x) => x.ask)?.ask, code: window.plp.editor.getValue() };
+    });
+  }
+
+  test("predict-io: the ask carries its stdin script, the card shows it as chips, and the auto-answered run produces the real transcript", async ({ page }) => {
+    await setup(page);
+    expect(await page.evaluate(() => window.plp.tutor.lintLesson({
+      id: "io-lint", steps: [{ ask: { kind: "predict-io" } }],
+    }))).toEqual([]);
+
+    const { ask, code } = await startIORound(page, 0);
+    expect(ask.kind).toBe("predict-io");
+    expect(ask.template).toBe("greet-and-echo");
+    expect(ask.stdinScript).toEqual(["blue"]);
+    expect(ask.multiline).toBe(true);
+    expect(code).toBe('print("moon")\nword = input("Your name? ")\nprint(word)\n');
+
+    // The typing is SCAFFOLDED and shown: one chip per scripted line, beside
+    // the program, plus this form's first-time mechanics line.
+    await expect(page.locator("#practice .pr-question .pr-stdin")).toHaveCount(1);
+    await expect(page.locator("#practice .pr-stdin .pr-reveal-label")).toHaveText("someone types:");
+    await expect(page.locator("#practice .pr-stdin-chip code")).toHaveText(["blue"]);
+    await expect(page.locator("#practice .pr-mechanics")).toContainText("type the WHOLE console");
+    // The answer widget is the multiline textarea (a transcript is not one line).
+    await expect(page.locator("#practice .pr-answer textarea")).toHaveCount(1);
+
+    // A wrong answer — the concept's own misconception: output with no pause,
+    // no prompt and no typed line.
+    await page.evaluate(() => window.plp.tutor.lockPrediction("moon\nblue"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("wrong");
+    // The run really happened, answered from the script — a single echo of
+    // the typed line, in the right place (invariant 4).
+    expect(await page.evaluate(() => window.plp.console.text())).toBe("moon\nYour name? blue\nblue\n");
+    expect(await page.evaluate(() => window.plp.console.engineText())).toBe("moon\nYour name? blue\n");
+    await expect(page.locator("#practice .pr-reveal .pr-reveal-label")).toHaveText("the console really showed");
+    await expect(page.locator("#practice .pr-reveal pre")).toContainText("Your name? blue");
+    expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0026": { seen: 1, missed: 1 } });
+    expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("predict-io: the full transcript grades right and GRANTS met; the echo-stripped reading is accepted too", async ({ page }) => {
+    await setup(page);
+    await startIORound(page, 0);
+    await page.evaluate(() => window.plp.tutor.lockPrediction("moon\nYour name? blue\nblue"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
+    await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("Exactly right");
+    // MET GRANT (lesson-kb-binding §4): predicting the transcript of a program
+    // that pauses for the outside world is the §2.8 evidence class.
+    expect(Object.keys(await page.evaluate(() => window.plp.tutor.met()))).toEqual(["0026"]);
+    expect((await page.evaluate(() => window.plp.tutor.met()))["0026"].source).toBe("drill");
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+
+    // Two rendezvous, answered in order — and the echo-STRIPPED reading (what
+    // the program alone emits) is accepted: the local echo is a presentation
+    // choice, not the concept.
+    const { ask } = await startIORound(page, 2);
+    expect(ask.template).toBe("two-questions");
+    expect(ask.stdinScript).toEqual(["tree", "hi"]);
+    await expect(page.locator("#practice .pr-stdin-chip code")).toHaveText(["tree", "hi"]);
+    await expect(page.locator("#practice .pr-stdin-then")).toHaveText(["then"]);
+    await page.evaluate(() => window.plp.tutor.lockPrediction("What shall I say? Say a word: hi\ntree"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
+    expect(await page.evaluate(() => window.plp.console.text()))
+      .toBe("What shall I say? tree\nSay a word: hi\nhi\ntree\n");
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("predict-io: a script the program out-asks INTERRUPTS and skips — the run always reaches a terminal (invariant 2)", async ({ page }) => {
+    await setup(page);
+    await startIORound(page, 2); // two rendezvous
+    // Starve the stored round's script, then let the tutor rebuild the ask
+    // from it on reload — the ask re-arms with a script too short to finish.
+    await page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
+      s.drillLesson.steps.find((x) => x.ask).ask.stdinScript = ["tree"];
+      localStorage.setItem("plp.tutor.v1", JSON.stringify(s));
+    });
+    await setup(page);
+    await page.waitForFunction(() => window.plp.tutor.ask()?.kind === "predict-io", null, { timeout: 30_000 });
+
+    await page.evaluate(() => window.plp.tutor.lockPrediction("anything at all"));
+    // The point of the test: this RESOLVES. A run left waiting at the stdin
+    // rendezvous would wedge the buttons (and, in a room, everybody).
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("skipped");
+    const rec = await page.evaluate(() => window.plp.tutor.feed().findLast((c) => c.type === "question-frozen"));
+    expect(rec.verdict).toBe("couldn't grade this run");
+    expect(rec.ok).toBe(false);
+    // The engine really stopped, and the app is runnable again.
+    expect(await page.evaluate(() => window.plp.runner.summary()?.terminal_reason)).toBe("interrupted");
+    expect(await page.evaluate(() => window.plp.runner.isRunning())).toBe(false);
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("predict-io review + retry: the script comes back with the program, and the retry re-runs deterministically", async ({ page }) => {
+    await setup(page);
+    await startIORound(page, 0);
+    await page.evaluate(() => window.plp.tutor.lockPrediction("moon\nblue"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
+    const liveCode = await page.evaluate(() => window.plp.editor.getValue());
+
+    const rec = await page.evaluate(() => window.plp.tutor.feed().findLast((c) => c.type === "question-frozen"));
+    expect(rec.review.kind).toBe("predict-io");
+    expect(rec.review.stdinScript).toEqual(["blue"]);
+    expect(rec.review.expectedText).toBe("moon\nYour name? blue\nblue\n");
+
+    await page.evaluate(() => window.plp.tutor.review(0));
+    await expect(page.locator("#practice .pr-review .pr-stdin-chip code")).toHaveText(["blue"]);
+    // The retry widget is the textarea, not the one-line input.
+    await expect(page.locator("#practice .pr-review .pr-retry textarea")).toHaveCount(1);
+
+    const res = await page.evaluate(() => window.plp.tutor.retry(0, "moon\nYour name? blue\nblue"));
+    expect(res.ok).toBe(true);
+    expect(res.expectedText).toBe("moon\nYour name? blue\nblue\n");
+    const after = await page.evaluate(() => ({
+      rec: (() => { const r = window.plp.tutor.feed().find((c) => c.type === "question-frozen"); return { ok: r.ok, retry: r.retry }; })(),
+      stats: window.plp.tutor.drillStats(),
+      met: window.plp.tutor.met(),
+      editor: window.plp.editor.getValue(),
+    }));
+    expect(after.rec).toEqual({ ok: false, retry: { ok: true, tries: 1 } });
+    expect(after.stats).toEqual({ "0026": { seen: 1, missed: 1 } });
+    expect(after.met).toEqual({}); // a retry never grants
+    expect(after.editor).toBe(liveCode);
+    await page.evaluate(() => window.plp.tutor.closeReview());
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 });

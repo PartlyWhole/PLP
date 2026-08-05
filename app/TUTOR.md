@@ -265,14 +265,47 @@ prediction of the program's observable effect — here, its crash site.
 Review shows the picker with the pick and the truth marked; the retry
 re-picks and re-runs the same (deterministic) program.
 
+**predict-io** (expansion ladder §R4a) is the seventh kind, and the one
+whose program does not merely run — it **pauses**. The ask carries a
+`stdinScript`, the card SHOWS it as chips beside the program ("someone
+types: `7` ⏎ then `3` ⏎") because the typing is deliberately scaffolded:
+WHERE the typed text lands in the transcript is what is tested, not what
+the learner invents. The answer widget is the multiline textarea — a
+transcript is several lines by construction.
+
+Execution goes through `runner.traceWithScript(lines)`, the single scripted
+-input driver (also exposed as `plp.traceWithStdin` for the K-series, so
+what the learner is graded against and what K-10/K-doc record are the same
+execution). It subscribes to the new `input-requested` event — emitted by
+the runner at the existing `event === "input"` step record, in `onRecord`
+rather than `renderRecordToUI`, so a collab follower replaying the driver's
+records never claims an input request it cannot answer — and answers each
+rendezvous with `queueMicrotask(provideInput(next))` (the event fires from
+inside the live run's record fan-out; provideInput must not re-enter it).
+**If the program asks for more lines than the script holds, the run is
+INTERRUPTED** and the question takes the "couldn't grade this run" skip
+path. That is invariant 2, not politeness: a run left waiting at the stdin
+rendezvous never reaches a terminal, and `canRun()` is false for a live run
+— it would wedge the buttons solo and the whole room in collab.
+
+Grading compares the whole console transcript, and accepts the
+echo-stripped reading too: a learner who predicts only what the PROGRAM
+emits (prompts + output, no typed lines) has understood the same thing —
+the local echo is a presentation choice, not a concept. A clean
+first-attempt correct answer before the final hint GRANTS met
+(design/lesson-kb-binding.md §4). Review re-shows the chips with the
+program; the retry re-runs the same script, which is deterministic.
+
 **One question at a time**: every generated program produces exactly one
 line of output (single-line input, Enter to submit); the one
 `multiline: true` exception is `loop-for-visits-each`, where several
 lines ARE the concept. Forms beyond predict-exact-output — predict-state,
 fill-one-blank, spot-the-difference, trace-table, order-the-lines,
-predict-the-error — plug in per exercise (design §5.2, expansion ladder
-§R2/§R3). A predict-the-error program is the ONE deliberate exception to
-"runs clean": it stops, and at most one line is printed before it does.
+predict-the-error, predict-io — plug in per exercise (design §5.2,
+expansion ladder §R2/§R3/§R4a). A predict-the-error program is the ONE
+deliberate exception to "runs clean": it stops, and at most one line is
+printed before it does. predict-io is structurally `multiline: true`: its
+answer is a transcript.
 
 A drill round compiles a seeded, stats-weighted sequence into an
 ordinary lesson script, so drills reuse the whole machinery (popup

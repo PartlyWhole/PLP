@@ -90,7 +90,10 @@ const jsAst = (source) => `(mod ${parse(source).map(jsNorm).join(" ")})`;
 // hand-written parser's real risk. Compound statements (if/for/while) carry
 // no precedence subtlety and are covered by inv 9 + inv 10 instead, so their
 // programs skip the ast diff.
-const hasCompound = (source) => parse(source).some((s) => ["if", "for", "while"].includes(s.kind));
+// "def" joins them (ladder §R4b): a def carries no expression precedence of
+// its own, and Python's ast normal form for a FunctionDef has no counterpart
+// in jsNorm — same precedent, same inv-9/inv-10 backstop.
+const hasCompound = (source) => parse(source).some((s) => ["if", "for", "while", "def"].includes(s.kind));
 
 // The subset program(s) whose footprints a generated sample must keep inside
 // the closure. Most forms have one; spot-the-difference has two (both A and
@@ -117,6 +120,9 @@ function footprintSources(ex, prog) {
   // list (the shuffle is drawn at compile time), so the canonical join is the
   // program whose footprint must stay inside the closure.
   if (ex.form === "order-the-lines") return [canonicalOrderCode(prog)];
+  // predict-io: the program IS the whole story — the typed lines are data
+  // arriving from outside, never source the analyzer could see.
+  if (ex.form === "predict-io") return [prog.code];
   // predict-the-error: the program IS the whole story (it raises); there is
   // no probe to append — a read of a name after the crash never happens.
   return [prog.code];
@@ -411,6 +417,118 @@ test.describe("PLP knowledge base (K-series)", () => {
     expect(kb.footprint('d = {"a": 1}\nd["b"] = 2\nprint(d["b"])\n').error).toBeUndefined();
   });
 
+  test("K-5b: def/call/return frames — the ladder §R4b anchor cases (inv 6 anchor)", () => {
+    const tags = (src) => {
+      const r = kb.footprint(src);
+      expect(r.error, `analyzer error on:\n${src}`).toBeUndefined();
+      return r.tags;
+    };
+    // --- the 11 positive cases (rule → tag, ladder §R4b) ----------------
+    // 1. A def BINDS; an un-called body emits NOTHING (0027 rule-def). This
+    //    is what makes 0027's intro footprint-clean.
+    expect(tags('def greet():\n    print("hi")\nprint("done")\n')).toEqual(["0005", "0027"]);
+    // 2. A call runs the body — once per call (0028 rule-call).
+    expect(tags('def greet():\n    print("hi")\ngreet()\ngreet()\n')).toEqual(["0005", "0027", "0028"]);
+    // 3. A call of a function WITH a parameter binds the argument (0029).
+    expect(tags("def double(n):\n    print(n * 2)\ndouble(5)\n"))
+      .toEqual(["0003", "0005", "0006", "0008", "0027", "0028", "0029"]);
+    // 4. Parameters bind LEFT TO RIGHT; two of them is still one 0029.
+    expect(tags("def pair(a, b):\n    print(a)\npair(1, 2)\n"))
+      .toEqual(["0003", "0005", "0006", "0027", "0028", "0029"]);
+    // 5. A consumed `return <expr>` is 002A (rule-return-value).
+    expect(tags("def size():\n    return 3 + 4\nx = size()\nprint(x)\n"))
+      .toEqual(["0003", "0005", "0006", "0008", "0009", "0027", "0028", "002A"]);
+    // 6. A non-atomic ARGUMENT is computed first (002F rule-args-first).
+    expect(tags("def double(n):\n    return n * 2\nprint(double(2 + 3))\n"))
+      .toEqual(["0003", "0005", "0006", "0008", "0027", "0028", "0029", "002A", "002F"]);
+    // 7. A call inside a larger expression is 002G (rule-call-in-expr) —
+    //    and NOT 002F: `3` is an atomic argument.
+    expect(tags("def double(n):\n    return n * 2\nprint(double(3) + 1)\n"))
+      .toEqual(["0003", "0005", "0006", "0008", "0027", "0028", "0029", "002A", "002G"]);
+    // 8. A body that only PRINTS hands back None (002B rule-return-vs-print).
+    expect(tags('def shout():\n    print("hi")\nx = shout()\nprint(x)\n'))
+      .toEqual(["0005", "0006", "0027", "0028", "002B"]);
+    // 9. Statements after an executed return never run (002C).
+    expect(tags('def f():\n    return 1\n    print("never")\nprint(f())\n'))
+      .toEqual(["0003", "0005", "0027", "0028", "002A", "002C"]);
+    // 10. A computed-and-discarded value + a consumed None is 002H, and NOT
+    //     002B (nothing was printed).
+    expect(tags("def f(n):\n    n * 2\nprint(f(3))\n"))
+      .toEqual(["0003", "0005", "0006", "0008", "0027", "0028", "0029", "002H"]);
+    // 11. A bare return is the same fall-through (002H), still not 002B.
+    expect(tags("def f():\n    return\nprint(f())\n")).toEqual(["0005", "0027", "0028", "002H"]);
+
+    // --- scope: the frame VANISHES, and a function is not a value --------
+    // A local that shadows a module name leaves the outer one untouched — and
+    // is a fresh local binding, never a rebind of the module name (no 000A).
+    expect(tags("x = 1\ndef f():\n    x = 99\nf()\nprint(x)\n"))
+      .toEqual(["0003", "0005", "0006", "0027", "0028"]);
+    // Locals never survive the call, and a function value is not concrete —
+    // neither appears in the end-state store the inv-9 oracle probes.
+    const scoped = kb.footprint("v = 2\ndef f():\n    inside = 5\n    print(inside)\nf()\n");
+    expect(scoped.finalTypes).toEqual({ v: "int" });
+
+    // --- the negatives ---------------------------------------------------
+    const err = (src) => kb.footprint(src).error;
+    // return at the top level is not a statement of the subset.
+    expect(err("return 1\n")?.code).toBe("unmapped-syntax");
+    // A def is top-level only: inside a compound (or nested) it is unmapped.
+    expect(err("if True:\n    def f():\n        print(1)\n")?.code).toBe("unmapped-syntax");
+    expect(err("def f():\n    def g():\n        print(1)\n")?.code).toBe("unmapped-syntax");
+    // Calling before the def RUNS is a NameError, not a syntax gap.
+    expect(err("f()\ndef f():\n    print(1)\n")).toEqual({ code: "would-raise", message: expect.any(String), line: 1 });
+    // Reading a name the body assigns LATER is UnboundLocalError — the
+    // pre-scan makes it a would-raise so the module value can never be read
+    // through the frame by accident.
+    expect(err("y = 1\ndef f():\n    print(y)\n    y = 2\nf()\n")?.code).toBe("would-raise");
+    // A bound non-function is not callable; an unsupported builtin is still a
+    // closed-grammar gap (the parser now parses a call of ANY name).
+    expect(err("x = 3\nx()\n")?.code).toBe("would-raise");
+    expect(err("print(abs(3))\n")?.code).toBe("unmapped-syntax");
+    // Out of subset by design: control flow in a body, a call from inside a
+    // body (recursion), redefining a def, and using a function as a value.
+    expect(err("def f():\n    if True:\n        print(1)\nf()\n")?.code).toBe("unmapped-syntax");
+    expect(err("def g():\n    print(1)\ndef h():\n    g()\nh()\n")?.code).toBe("unmapped-syntax");
+    expect(err("def g():\n    print(1)\ndef g():\n    print(2)\n")?.code).toBe("unmapped-syntax");
+    expect(err("def g():\n    print(1)\nh = g\n")?.code).toBe("unmapped-syntax");
+  });
+
+  test("K-fnattr: a trace-table row over a CALL is attributed to the callee's line (why frame-aware tables are deferred)", async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.goto(SITE);
+    await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    // The wave-3 `two-calls-chain` table (ladder §R4b) would watch MODULE
+    // names across two calls. The VALUES are right, but the row's line is the
+    // callee's `return` line, not the `x = double(v)` line the binding
+    // belongs to — so the table would label rows with a line the watched name
+    // is not assigned on. This test PINS that behavior: when it changes,
+    // frame-aware tables (and the deferred exercise) can be revisited.
+    const code = "def double(n):\n    return n * 2\nv = 4\nx = double(v)\ny = double(x)\nprint(y)\n";
+    const got = await page.evaluate(async (src) => {
+      window.plp.editor.setValue(src);
+      const summary = await window.plp.trace();
+      const q = window.plp.questions.generateQuestion("trace-table", {
+        source: src,
+        steps: window.plp.memory.steps(),
+        positions: window.plp.memory.linePositions(),
+      }, { names: ["x", "y"], maxBlanks: 8 });
+      return {
+        reason: summary?.terminal_reason,
+        rows: (q?.rows ?? []).map((r) => ({ line: r.line, cells: r.cells.map((c) => `${c.name}=${c.value}`) })),
+        errors: window.plp.checkErrors(),
+      };
+    }, code);
+    expect(got.reason).toBe("completed");
+    expect(got.errors).toEqual([]);
+    // Values: correct. Line attribution: the callee's `return` line (2), NOT
+    // the call lines (4 and 5).
+    expect(got.rows).toEqual([
+      { line: 2, cells: ["x=8", "y=—"] },
+      { line: 2, cells: ["x=8", "y=16"] },
+    ]);
+  });
+
   test("K-6: generators and selection are deterministic (inv 16)", () => {
     const kb2 = loadKB();
     for (const ex of kb.exercises) {
@@ -483,7 +601,7 @@ test.describe("PLP knowledge base (K-series)", () => {
   });
 
   test("K-10: every exercise generates clean, gradable, one-line programs under real execution (inv 10)", async ({ page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(420_000);
     await page.goto(SITE);
     await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
@@ -538,6 +656,17 @@ test.describe("PLP knowledge base (K-series)", () => {
             { code: join(swapped), form: "predict-output", name: null, target: null, mustMissTarget: prog.targetOutput },
           ];
         }
+        // predict-io (expansion ladder §R4a): the program is traced with its
+        // stdin script answered line by line. Three things must hold: the run
+        // completes clean, the script length EXACTLY matches the number of
+        // rendezvous (no leftover line, no starvation), and the transcript is
+        // gradable.
+        if (ex.form === "predict-io") {
+          return [{
+            code: prog.code, form: "predict-io", name: null, target: null,
+            stdin: [...prog.stdinScript], mis: prog.misconception ?? null,
+          }];
+        }
         // predict-the-error: the program must REALLY raise — with the declared
         // exception type on the declared line (expansion ladder §R3). The
         // "one printed line" law becomes "at most one line before the crash":
@@ -560,8 +689,23 @@ test.describe("PLP knowledge base (K-series)", () => {
 
       const results = await page.evaluate(async (progs) => {
         const out = [];
-        for (const { code, form, name, names, maxBlanks, target } of progs) {
+        for (const { code, form, name, names, maxBlanks, target, stdin } of progs) {
           window.plp.editor.setValue(code);
+          if (form === "predict-io") {
+            const res = await window.plp.traceWithStdin(stdin);
+            const transcript = window.plp.console.text();
+            out.push({
+              reason: res?.summary?.terminal_reason,
+              gradable: transcript.trim() !== "",
+              expected: transcript.replace(/\n+$/, ""),
+              // Exactly consumed: every scripted line was asked for, and the
+              // program never asked for one the script did not hold.
+              used: res?.used, exhausted: res?.exhausted,
+              matchesTarget: true,
+              errors: window.plp.checkErrors(),
+            });
+            continue;
+          }
           const summary = await window.plp.trace();
           if (form === "predict-the-error") {
             // The exception comes off the trace stream's terminal record —
@@ -650,6 +794,11 @@ test.describe("PLP knowledge base (K-series)", () => {
           expect(r.errors).toEqual([]);
           return;
         }
+        if (programs[i].stdin) {
+          expect(r.exhausted, `${ex.id} program ${i}: the stdin script must not be starved`).toBe(false);
+          expect(r.used, `${ex.id} program ${i}: every scripted line must be consumed (no leftover)`)
+            .toBe(programs[i].stdin.length);
+        }
         expect(r.reason, `${ex.id} program ${i} must run clean`).toBe("completed");
         expect(r.gradable, `${ex.id} program ${i} must print something gradable`).toBe(true);
         // One printed line, unless the exercise is the flagged multi-line
@@ -675,7 +824,7 @@ test.describe("PLP knowledge base (K-series)", () => {
   });
 
   test("K-oracles: parser fidelity (inv 8), type fidelity (inv 9), discrimination (inv 11)", async ({ page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(420_000);
     await page.goto(SITE);
     await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
@@ -700,7 +849,12 @@ test.describe("PLP knowledge base (K-series)", () => {
         // the printed-answer forms; spot-the-difference (graded against B)
         // and predict-state (graded against the probed value) are checked in
         // K-10 instead, where their real expected answer is in hand.
-        const misCheckable = !["spot-the-difference", "predict-state", "trace-table", "fill-one-blank"].includes(ex.form);
+        // predict-io joins the parse-only tier: its program CANNOT run here
+        // (it stops at input(), and this probe supplies no stdin), so real
+        // output is unavailable — K-10 carries its discrimination floor
+        // instead, where the real transcript is in hand.
+        const scripted = ex.form === "predict-io";
+        const misCheckable = !["spot-the-difference", "predict-state", "trace-table", "fill-one-blank", "predict-io"].includes(ex.form);
         items.push({
           id: ex.id, seed: k, source,
           jsAst: jsAst(source),
@@ -713,7 +867,8 @@ test.describe("PLP knowledge base (K-series)", () => {
           // The crash rendering the reference and the reveal both use: a
           // wrongAnswer equal to THIS would be no wrong answer at all.
           crashRendering: raising ? `${prog.expectedError.type} (line ${prog.expectedError.line})` : null,
-          probe: raising ? buildParseOnlyProbe(source) : buildOracleProbe(source, names),
+          scripted,
+          probe: (raising || scripted) ? buildParseOnlyProbe(source) : buildOracleProbe(source, names),
         });
       }
     }
@@ -759,6 +914,9 @@ test.describe("PLP knowledge base (K-series)", () => {
           .not.toBe(it.crashRendering);
         continue;
       }
+      // predict-io: parser fidelity only (asserted above). The output and
+      // type floors need a run this probe deliberately cannot perform.
+      if (it.scripted) continue;
       expect(it.wrongAnswer.trim(), `${it.id} seed ${it.seed}: wrongAnswer must differ from real output`)
         .not.toBe(realOut.trim());
 
@@ -955,7 +1113,7 @@ test.describe("PLP knowledge base (K-series)", () => {
   });
 
   test("K-doc: curriculum/KB-REFERENCE.md is byte-identical to a fresh regeneration with real outputs (inv 15)", async ({ page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(420_000);
     await page.goto(SITE);
     await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
@@ -963,7 +1121,8 @@ test.describe("PLP knowledge base (K-series)", () => {
     // Every recorded sample's output is obtained by REAL execution (Pyodide);
     // KB_UPDATE_FIXTURES=1 is the ONLY writer of the committed reference.
     const specs = docSamples(kb);
-    const results = await page.evaluate(async (samples) => {
+    const stdinByKey = Object.fromEntries(specs.filter((sp) => sp.stdin).map((sp) => [sp.key, sp.stdin]));
+    const results = await page.evaluate(async ({ samples, samplesStdin }) => {
       const out = {};
       for (const { key, run, expectError } of samples) {
         window.plp.editor.setValue(run);
@@ -983,11 +1142,20 @@ test.describe("PLP knowledge base (K-series)", () => {
           };
           continue;
         }
+        if (samplesStdin[key]) {
+          // predict-io (§R4a): scripted stdin, and the ECHO-EXCLUDING
+          // transcript — engineText() is exactly what the engine wrote, which
+          // is byte-for-byte what CPython with piped stdin prints (the
+          // system-python3 writer in tools/kb-docgen.mjs).
+          const res = await window.plp.traceWithStdin(samplesStdin[key]);
+          out[key] = { output: window.plp.console.engineText(), reason: res?.summary?.terminal_reason };
+          continue;
+        }
         const summary = await window.plp.run(); // untraced: output flushes on completion
         out[key] = { output: window.plp.console.text(), reason: summary?.terminal_reason };
       }
       return out;
-    }, specs);
+    }, { samples: specs, samplesStdin: stdinByKey });
 
     const outputs = {};
     for (const { key, run } of specs) {

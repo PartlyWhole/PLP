@@ -77,7 +77,7 @@ Line discipline (`term.onData`):
 | `showInput()` / `hideInput()` | enter/leave line mode |
 | `fit()` | refit to container (called on gutter drag, maximize, window resize) |
 | `text()` | transcript: stdout + stderr + echo |
-| `engineText()` | stdout + stderr only — comparable to stream-check reconstruction |
+| `engineText()` | stdout + stderr only — comparable to stream-check reconstruction. Because the engine writes the `input()` prompt itself and the echo is ours, this is byte-identical to what CPython prints with PIPED stdin, which is what makes the predict-io reference (expansion ladder §R4a) agree between the browser and system-python3 doc writers |
 | `buffer()` | screen text via xterm buffer API (tests; trailing blank lines trimmed) |
 | `isWaiting()` | line-mode flag (tests wait on this) |
 | `term` | raw xterm instance (cell attributes, cols/rows — test/debug only) |

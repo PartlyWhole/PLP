@@ -649,6 +649,17 @@ export const questionGenerators = {
     needsTrace: false,
     generate: () => null,
   },
+  "predict-io": {
+    // The input boundary (expansion ladder §R4a). Graded by the tutor's async
+    // scripted-input path — the program is really traced with its stdin
+    // script answered line by line, and the learner's answer is compared with
+    // the real console transcript (ctx.consoleText / ctx.consoleTextNoEcho) —
+    // so, like fill-one-blank and order-the-lines, this entry exists only so
+    // lessons can declare the kind and lint accepts it.
+    label: "Predict the console transcript",
+    needsTrace: false,
+    generate: () => null,
+  },
   "expression-sequence": {
     label: "Build expression evaluation",
     needsTrace: false,
@@ -671,7 +682,9 @@ export const questionGenerators = {
   },
 };
 
-// ctx = { source, steps, positions } (positions = memory.linePositions()).
+// ctx = { source, steps, positions, consoleText?, consoleTextNoEcho? }
+// (positions = memory.linePositions(); the console fields are plain strings —
+// this module never touches the DOM).
 export function generateQuestion(kind, ctx, opts = {}) {
   const gen = questionGenerators[kind];
   if (!gen) throw new Error(`unknown question kind: ${kind}`);
