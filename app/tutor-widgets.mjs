@@ -88,7 +88,7 @@ export function verdictSpan(ok, text) {
 // Build a static card element from a serializable descriptor. Shared by
 // the stage's feed/popup rebuilds and the practice surface's summary and
 // explain faces.
-export function buildStaticCard(desc, { onTryIt } = {}) {
+export function buildStaticCard(desc, { onTryIt, onReviewMiss } = {}) {
   let card;
   const make = (cls) => {
     const div = document.createElement("div");
@@ -165,6 +165,18 @@ export function buildStaticCard(desc, { onTryIt } = {}) {
       p.className = "t-summary-missed hint";
       p.textContent = `Coming back for you: ${desc.missed.map((m) => m.label).join(", ")}.`;
       card.appendChild(p);
+    }
+    // Explicit review entry point (the dots alone were too subtle): opens
+    // the first miss's review. Only where a review handler exists (the
+    // practice surface) and only when something was actually missed.
+    const firstMiss = (desc.perQuestion ?? []).findIndex((q) => !q.ok);
+    if (onReviewMiss && firstMiss !== -1) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "t-summary-review";
+      btn.textContent = "🔍 Look back at the ones you missed";
+      btn.addEventListener("click", () => onReviewMiss(firstMiss));
+      card.appendChild(btn);
     }
   } else if (desc.type === "context") {
     // Review aid, never persisted: the program an old step was about,

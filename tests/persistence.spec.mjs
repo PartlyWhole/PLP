@@ -6,7 +6,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const SITE = new URL("/PLP/", process.env.PLP_BASE_URL ?? "http://127.0.0.1:8633").href;
+const SITE = new URL("/PLP/", process.env.PLP_BASE_URL
+  ?? `http://127.0.0.1:${Number(process.env.PLP_PORT) || 8633}`).href;
 
 async function openApp(profile) {
   const context = await chromium.launchPersistentContext(profile, { headless: true });

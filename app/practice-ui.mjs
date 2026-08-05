@@ -15,13 +15,15 @@ import { buildStaticCard, buildControlButton, renderInline, verdictSpan } from "
 export function createPracticeUI({ layout, getCode }) {
   let onExit = null;
   let onTryIt = null;
+  let onBack = null;      // "one level up" (← / Esc); falls back to hide()
+  let onLeaveToIDE = null; // world-switch links (open in editor / see memory)
 
   const root = document.createElement("div");
   root.id = "practice";
   root.hidden = true;
   root.innerHTML = `
     <div class="pr-top">
-      <button type="button" data-role="pr-leave" title="Back to the editor (your round is saved)">←</button>
+      <button type="button" data-role="pr-leave" title="Back — one level up (your round is saved)">←</button>
       <span class="pr-title" data-role="pr-title">Exercises</span>
       <span class="pr-dots" data-role="pr-dots"></span>
       <span class="pr-score" data-role="pr-score" hidden></span>
@@ -59,17 +61,20 @@ export function createPracticeUI({ layout, getCode }) {
   }
   notesBtn.addEventListener("click", () => toggleNotes());
 
-  root.querySelector("[data-role=pr-leave]").addEventListener("click", () => hide());
+  // ← and Esc are the same gesture: progressive dismissal (notes drawer,
+  // then a review), then "one level up" — the tutor's onBack routes
+  // round/summary → menu, map → menu, menu → IDE. Rounds stay resumable.
+  function levelUp() {
+    if (!notesDrawer.hidden) { toggleNotes(false); return; }
+    if (reviewState) { closeReview(); return; }
+    (onBack ?? hide)();
+  }
+  root.querySelector("[data-role=pr-leave]").addEventListener("click", () => levelUp());
   exitBtn.addEventListener("click", () => onExit?.());
-  // Esc leaves practice back to the IDE (symmetric with the 🎓 toggle);
-  // the round stays resumable from the persisted store.
   document.addEventListener("keydown", (e) => {
     if (!document.body.classList.contains("practice")) return;
     if (e.key === "Escape") {
-      // Progressive dismissal: notes drawer, then a review, then the surface.
-      if (!notesDrawer.hidden) { toggleNotes(false); return; }
-      if (reviewState) { closeReview(); return; }
-      hide();
+      levelUp();
       return;
     }
     // Drill cadence: after grading the card freezes and its input goes
@@ -218,7 +223,7 @@ export function createPracticeUI({ layout, getCode }) {
     openLink.type = "button";
     openLink.className = "pr-quiet pr-open-editor";
     openLink.textContent = "open in editor";
-    openLink.addEventListener("click", () => hide());
+    openLink.addEventListener("click", () => { hide(); onLeaveToIDE?.(); });
     programBlock.insertAdjacentElement("afterend", openLink);
     handleMeta.set(el, { capturedCode: code });
 
@@ -352,7 +357,7 @@ export function createPracticeUI({ layout, getCode }) {
           link.textContent = kind === "predict-state"
             ? "🔬 see it in the memory model"
             : "🔬 step through this run";
-          link.addEventListener("click", () => hide());
+          link.addEventListener("click", () => { hide(); onLeaveToIDE?.(); });
           block.appendChild(link);
         }
         revealSlot.appendChild(block);
@@ -360,6 +365,34 @@ export function createPracticeUI({ layout, getCode }) {
     };
     handle.setActions([]);
     return handle;
+  }
+
+  // ---- round stash: "one level up" from a live round -----------------------
+  // ← from a round steps aside to the menu WITHOUT ending anything: the
+  // round's DOM (live card, controls, `current`) is stashed verbatim and
+  // restored by unstashRound — the runtime's waiting closures never notice.
+  // View-level only: all round STATE stays in the tutor's persisted store.
+  // Discarded whenever a new round/lesson claims the surface.
+  let roundStash = null;
+  function stashRound() {
+    if (roundStash) return;
+    if (reviewState) closeReview(); // resume lands on the live view, not a review
+    roundStash = { saved: [...body.children], savedControls: [...controlsHost.children], current };
+  }
+  function unstashRound() {
+    if (!roundStash) return false;
+    discardReview();
+    const { saved, savedControls, current: cur } = roundStash;
+    roundStash = null;
+    body.textContent = "";
+    for (const el of saved) body.appendChild(el);
+    controlsHost.textContent = "";
+    for (const el of savedControls) controlsHost.appendChild(el);
+    current = cur;
+    requestAnimationFrame(() => {
+      body.querySelectorAll(".CodeMirror").forEach((el) => el.CodeMirror?.refresh());
+    });
+    return true;
   }
 
   // ---- review: go back to an answered question -----------------------------
@@ -716,7 +749,12 @@ export function createPracticeUI({ layout, getCode }) {
     body.textContent = "";
     const wrap = document.createElement("div");
     wrap.className = "pr-static";
-    for (const desc of descs) wrap.appendChild(buildStaticCard(desc, { onTryIt: onTryIt ?? undefined }));
+    for (const desc of descs) {
+      wrap.appendChild(buildStaticCard(desc, {
+        onTryIt: onTryIt ?? undefined,
+        onReviewMiss: (i) => onReview?.(i), // summary's "look back" button
+      }));
+    }
     body.appendChild(wrap);
     current = { type: "static" };
   }
@@ -823,6 +861,12 @@ export function createPracticeUI({ layout, getCode }) {
     setOnExit(fn) { onExit = fn; },
     setOnTryIt(fn) { onTryIt = fn; },
     setOnReview(fn) { onReview = fn; },
+    setOnBack(fn) { onBack = fn; },
+    setOnLeaveToIDE(fn) { onLeaveToIDE = fn; },
+    stashRound,
+    unstashRound,
+    hasRoundStash: () => Boolean(roundStash),
+    discardRoundStash() { roundStash = null; },
     showReview,
     closeReview,
     setReviewContext() {}, // no history UI in practice

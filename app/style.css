@@ -54,6 +54,23 @@ body {
 
 header { display: flex; gap: 10px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--line); }
 header h1 { font-size: 15px; margin: 0 8px 0 0; }
+
+/* World switch: [⌨ Code] [🌱 Learn] (+ [📖 Lesson]) at the header's left. */
+.world-switch { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; flex: none; }
+.world-switch button { border: none; border-radius: 0; margin: 0; padding: 3px 10px; background: transparent; color: var(--fg); }
+.world-switch button + button { border-left: 1px solid var(--line); }
+.world-switch button[aria-pressed="true"] { background: var(--t-accent-soft); color: var(--t-accent-ink); font-weight: 600; }
+.world-switch button[hidden] { display: none; }
+.continue-badge { font-size: 11px; color: var(--t-accent-ink); margin-left: 4px; }
+
+/* Continue chip: one dismissible line under the header. */
+#continue-chip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 12px; border-bottom: 1px solid var(--line);
+  background: var(--t-accent-soft); font-size: 13px;
+}
+#continue-chip .chip-dismiss { margin-left: auto; background: transparent; border: none; color: var(--dim); cursor: pointer; }
+body.practice > #continue-chip { display: none; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; background: var(--line); font-size: 12px; }
 .badge.good { background: #1d4429; color: #9fe8b9; }
 .badge.bad { background: #55201f; color: #ffb4b0; }
@@ -516,6 +533,7 @@ button.has-meter {
 .t-chip.met { background: var(--t-accent-soft); border: 1px solid var(--t-accent); color: var(--t-accent-ink); }
 .t-summary-new { margin-top: var(--sp-2); }
 .t-summary-missed { font-size: var(--fs-meta); }
+.t-summary-review { margin-top: var(--sp-3); }
 
 /* ---- practice card surface --------------------------------------------
    Full-viewport, one card at a time: program, question, input, proof —
@@ -542,11 +560,17 @@ body.practice > header, body.practice > #layout { display: none; }
   transition: background-color var(--dur-2) var(--ease-out);
 }
 .pr-dot.done, .pr-dot.hit { background: var(--t-success); }
-.pr-dot.miss { background: var(--t-miss); }
+.pr-dot.miss {
+  background: var(--t-miss);
+  width: 13px; height: 13px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pr-dot.miss::after { content: "✗"; font-size: 8px; line-height: 1; color: var(--t-surface-0); }
 .pr-dot.miss.retried { box-shadow: 0 0 0 2px var(--t-success); }
 .pr-dot.active { box-shadow: 0 0 0 1px var(--t-ink-dim); }
 button.pr-dot { border: none; padding: 0; cursor: pointer; }
 button.pr-dot:hover { transform: scale(1.4); }
+button.pr-dot:focus-visible { outline: 2px solid var(--t-accent); outline-offset: 2px; }
 .pr-body {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
   display: flex; flex-direction: column; align-items: center;

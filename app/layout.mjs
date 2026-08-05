@@ -121,14 +121,23 @@ export function initLayout({ onResize }) {
     persist();
   }
 
-  // Maximize toggles.
+  // Maximize toggles. While a pane is maximized its button reads ⤡ /
+  // "Restore (Esc)" so the way back is visible, not remembered.
   let maximized = null;
+  function refreshMaxButtons() {
+    for (const btn of document.querySelectorAll(".max-btn")) {
+      const on = Boolean(maximized) && btn.dataset.max === maximized.id;
+      btn.textContent = on ? "⤡" : "⤢";
+      btn.title = on ? "Restore (Esc)" : "Maximize pane";
+    }
+  }
   function toggleMax(id) {
     const pane = document.getElementById(id);
     if (maximized && maximized !== pane) maximized.classList.remove("maximized");
     const on = !pane.classList.contains("maximized");
     pane.classList.toggle("maximized", on);
     maximized = on ? pane : null;
+    refreshMaxButtons();
     onResize?.();
   }
   for (const btn of document.querySelectorAll(".max-btn")) {
@@ -138,6 +147,7 @@ export function initLayout({ onResize }) {
     if (e.key === "Escape" && maximized) {
       maximized.classList.remove("maximized");
       maximized = null;
+      refreshMaxButtons();
       onResize?.();
     }
   });

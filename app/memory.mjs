@@ -479,6 +479,10 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
   new ResizeObserver(scheduleBindingArrows).observe(els.canvas);
   els.names.addEventListener("scroll", scheduleBindingArrows, { passive: true });
 
+  // Context-aware empty-state message (e.g. "that untraced run left no
+  // steps"); reset() reverts to the default line.
+  let emptyNote = null;
+
   function show(i) {
     // A redraw replaces every Names cell. End any active hover first so
     // Director dwell triggers cannot survive after their visual target did.
@@ -489,7 +493,7 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
       els.event.textContent = "";
       els.flags.innerHTML = "";
       els.canvas.classList.add("is-empty");
-      els.names.innerHTML = '<div class="memory-empty">Run your program to see names bind to values.</div>';
+      els.names.innerHTML = `<div class="memory-empty">${esc(emptyNote ?? "Run your program to see names bind to values.")}</div>`;
       els.objects.innerHTML = "";
       els.lines.innerHTML = "";
       els.slider.max = "0";
@@ -916,8 +920,11 @@ export function createMemoryModel({ root, editor, onUserScrub }) {
       scopeInfo = null;
       surfacedUid = null;
       expandedUids.clear();
+      emptyNote = null;
       show(0);
     },
+    // After an untraced run the empty pane can say WHY it's empty.
+    setEmptyNote(text) { emptyNote = text ?? null; if (!steps.length) show(0); },
     // Position-space API (positions = executed lines in line-step mode,
     // raw engine steps otherwise).
     goTo: (i, opts) => userShow(i, opts),

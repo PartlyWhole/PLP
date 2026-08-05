@@ -76,7 +76,10 @@ export function lintLesson(lesson) {
   return errors;
 }
 
-export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI, actions, curriculum, isCollabActive }) {
+export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI, actions, curriculum, isCollabActive, nav }) {
+  // History routing is optional wiring (main.mjs owns the hash): a no-op
+  // nav keeps every other construction path working unchanged.
+  nav ??= { go() {}, parse: () => "code" };
   let lesson = null;
   let stepIndex = -1;
   let waiting = null;   // { type: "pause"|"action"|"ask", off? }
@@ -109,6 +112,15 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     if (wasVisible) cur().show?.();
   }
   const layoutVisible = () => Boolean(actions.isExercisesVisible?.());
+  // Which VIEW the practice surface currently shows ("menu" | "map" |
+  // "round"; a summary counts as round). Drives the unified ← ("one level
+  // up") and the hash route.
+  let practiceView = "menu";
+  const currentRoute = () => (!layoutVisible() ? "code"
+    : surface === "stage" ? "lesson"
+      : practiceView === "map" ? "learn/map"
+        : practiceView === "round" ? "learn/round"
+          : "learn");
 
   function loadStore() {
     try { return JSON.parse(localStorage.getItem(STORE_KEY)) ?? {}; } catch { return {}; }
@@ -183,6 +195,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
   // ---- idle state: unit menu ---------------------------------------------
   function showMenu() {
     setSurface("practice");
+    practiceView = "menu";
     ui.clear();
     ui.setProgress("");
     ui.setExitVisible(false);
@@ -225,6 +238,12 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     // is exactly when the topic grid reads as a wall of unknowns.
     const brandNew = met.length === 0 && answeredEver === 0;
     ui.setControls([
+      // A stashed live round (← stepped up to the menu) resumes first.
+      ...(practiceUI?.hasRoundStash?.() ? [{
+        label: "▶ Continue your round",
+        primary: true,
+        onClick: resumeRound,
+      }] : []),
       ...(brandNew ? [{
         label: "🌱 Start here — your first lesson",
         primary: true,
@@ -244,6 +263,69 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         onEndless: () => startDrill(t.id, { endless: true }),
       })),
     ]);
+    if (layoutVisible()) nav.go("learn");
+  }
+
+  // Resume a round the ← stepped aside from: the practice surface restores
+  // the stashed DOM verbatim; state never left the runtime.
+  function resumeRound() {
+    if (!practiceUI?.hasRoundStash?.()) return false;
+    setSurface("practice");
+    practiceUI.unstashRound();
+    practiceView = "round";
+    ui.setExitVisible(true);
+    pushProgress();
+    nav.go("learn/round");
+    return true;
+  }
+
+  // "One level up" (the surface's ← and Esc, after its own progressive
+  // dismissal): round/summary → menu (round stays resumable via the DOM
+  // stash), map → menu, menu → the IDE.
+  function goUp() {
+    if (practiceView === "map") { showMenu(); return; }
+    if (practiceView === "round") {
+      if (lesson && store.drillLesson) practiceUI?.stashRound?.();
+      showMenu();
+      return;
+    }
+    cur().hide?.();
+    nav.go("code");
+  }
+
+  // popstate (and boot reconciliation) lands here: route the VIEW through
+  // the same handlers the buttons use — no parallel navigation machinery.
+  function applyRoute(route) {
+    if (isCollabActive?.()) return;
+    if (route === "code") {
+      if (layoutVisible()) cur().hide?.();
+      return;
+    }
+    if (route === "lesson") {
+      if (lesson && !store.drillLesson) {
+        setSurface("stage");
+        cur().show?.();
+        actions.enterFocus?.();
+      } else if (layoutVisible()) cur().hide?.();
+      return;
+    }
+    if (route === "learn/map") { showMap(); return; }
+    if (route === "learn/round") {
+      if (practiceView === "round" && lesson && store.drillLesson) {
+        setSurface("practice");
+        cur().show?.();
+        return;
+      }
+      if (resumeRound()) { cur().show?.(); return; }
+      // Nothing to resume (round ended / fresh load without one): the menu.
+      showMenu();
+      cur().show?.();
+      return;
+    }
+    // "learn": the menu. A live round on screen steps aside resumably.
+    if (practiceView === "round" && lesson && store.drillLesson) practiceUI?.stashRound?.();
+    showMenu();
+    cur().show?.();
   }
 
   // The concept map view: the whole DAG as topic lanes with met/frontier/
@@ -251,16 +333,21 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
   // round on that one concept.
   function showMap() {
     setSurface("practice");
+    // Stepping onto the map over a live round keeps the round resumable.
+    if (practiceView === "round" && lesson && store.drillLesson) practiceUI?.stashRound?.();
+    practiceView = "map";
     ui.show(); // callable from anywhere (debug API included) — the map implies visibility
     ui.clear();
     ui.setProgress("My map");
     ui.setExitVisible(false);
     const host = document.createElement("div");
     renderConceptMap(host, mapModel(Object.keys(loadMetStore())), {
-      onPractice: (tag) => startDrill(conceptTopics().get(tag) ?? "all", { focus: tag }),
+      // Map-launched rounds remember their origin: ending one returns HERE.
+      onPractice: (tag) => startDrill(conceptTopics().get(tag) ?? "all", { focus: tag, origin: "map" }),
     });
     ui.showCustom(host);
     ui.setControls([{ label: "← Back to topics", onClick: showMenu }]);
+    nav.go("learn/map");
   }
 
   // ---- sequencing ---------------------------------------------------------
@@ -916,6 +1003,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         score: store.score,
       }
       : null;
+    const origin = store.origin; // map-launched rounds return to the map
     waiting?.off?.();
     waiting = null;
     restoreLearnerCode();
@@ -925,8 +1013,13 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     batch = [];
     store = {};
     persist();
+    practiceUI?.discardRoundStash?.(); // the old round can no longer resume
+    // A replacement start renders its own view next — no menu flash, and
+    // no stray history entry between the old round and the new one.
+    if (reason === "replaced") return;
     if (endlessSummary) {
       setSurface("practice");
+      practiceView = "round"; // the run summary still belongs to the round
       ui.clear();
       ui.setProgress("Endless run");
       ui.setExitVisible(false);
@@ -938,6 +1031,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       ]);
       return;
     }
+    if (origin === "map") { showMap(); return; }
     showMenu();
   }
 
@@ -995,6 +1089,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     const errors = lintLesson(unit.lesson);
     if (errors.length) throw new Error(`lesson ${unitId} failed lint:\n${errors.join("\n")}`);
     if (lesson) endLesson("replaced");
+    practiceUI?.discardRoundStash?.();
     lesson = unit.lesson;
     stepIndex = -1;
     batch = [];
@@ -1004,6 +1099,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     ui.setControls([]);
     ui.setExitVisible(true);
     ui.show();
+    nav.go("lesson");
     events.emit("lesson-started", { lessonId: unit.lesson.id });
     advance();
     return unit.lesson.id;
@@ -1028,19 +1124,23 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     const errors = lintLesson(built);
     if (errors.length) throw new Error(`drill ${topic} failed lint:\n${errors.join("\n")}`);
     if (lesson) endLesson("replaced");
+    practiceUI?.discardRoundStash?.();
     lesson = built;
     stepIndex = -1;
     batch = [];
+    practiceView = "round";
     store = {
       lessonId: built.id, drillLesson: built, resumeIndex: 0, cards: [],
       score: { answered: 0, right: 0, streak: 0, best: 0 },
       ...(opts.endless ? { endless: true, drillTopic: topic, endlessCount: opts.count, chunkBase: 0 } : {}),
+      ...(opts.origin ? { origin: opts.origin } : {}),
     };
     persist();
     ui.clear();
     ui.setControls([]);
     ui.setExitVisible(true);
     ui.show();
+    nav.go("learn/round");
     events.emit("lesson-started", { lessonId: built.id });
     advance();
     return built.id;
@@ -1057,6 +1157,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       ?? curriculum.units.find((u) => u.id === store.lessonId)?.lesson;
     if (!restored || lintLesson(restored).length) { store = {}; persist(); showMenu(); showIfVisible(); return false; }
     setSurface(store.drillLesson ? "practice" : "stage");
+    if (store.drillLesson) practiceView = "round";
     showIfVisible();
     lesson = restored;
     batch = [];
@@ -1162,6 +1263,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
   for (const s of new Set(Object.values(surfaces))) {
     s.setOnExit(() => endLesson("exited"));
     s.setOnReview?.((i) => reviewQuestion(i));
+    s.setOnBack?.(() => goUp());
+    // World-switch links (open in editor / see it in the memory model)
+    // already hid the surface; recording the hop makes Back return to the card.
+    s.setOnLeaveToIDE?.(() => nav.go("code"));
     s.setOnTryIt((code) => {
       if (store.stash === undefined) store.stash = editor.getValue();
       editor.setValue(code);
@@ -1195,16 +1300,22 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     mapModel: () => mapModel(Object.keys(loadMetStore())),
     showMap,
     exit: () => { if (lesson) endLesson("exited"); },
-    // Surface visibility (the header 🎓 toggle and the collab go-live hook).
-    // Hiding never ends a round — it stays resumable from the store.
-    hideSurface: () => cur().hide?.(),
+    // Surface visibility (the header world switch and the collab go-live
+    // hook). Hiding never ends a round — it stays resumable from the store.
+    hideSurface: () => { cur().hide?.(); nav.go("code"); },
     toggleSurface() {
-      if (layoutVisible()) { cur().hide?.(); return false; }
+      if (layoutVisible()) { cur().hide?.(); nav.go("code"); return false; }
       cur().show?.();
       // Re-entering the stage surface must restore its focus layout.
       if (surface === "stage") actions.enterFocus?.();
+      nav.go(currentRoute());
       return true;
     },
+    // Hash-route plumbing (main.mjs): popstate application + route readout.
+    applyRoute,
+    currentRoute,
+    isGuidedActive: () => Boolean(lesson && !store.drillLesson),
+    resumeRound,
     state: () => ({
       lessonId: lesson?.id ?? null,
       stepIndex,

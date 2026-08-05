@@ -1259,6 +1259,174 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
+  test("history: transitions push entries; Back walks round → menu → IDE; Forward resumes the live round", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.clear(); location.reload(); });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await page.locator("#btn-tutor").click(); // IDE → menu
+    await page.waitForFunction(() => location.hash === "#learn");
+    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 8, count: 2 }));
+    await page.waitForFunction(() => location.hash === "#learn/round");
+    await expect(page.locator("#practice .tutor-output-input")).toBeVisible();
+    // Back mid-round: the menu, with the round still live and resumable.
+    await page.goBack();
+    await page.waitForFunction(() => location.hash === "#learn");
+    await expect(page.locator("body")).toHaveClass(/practice/);
+    await expect(page.locator("#practice [data-role=pr-controls] button", { hasText: "Continue your round" })).toBeVisible();
+    const st = await page.evaluate(() => window.plp.tutor.state());
+    expect(st.lessonId).toBe("drill-numbers-8");
+    expect(st.waiting).toBe("ask");
+    // Back again: the IDE.
+    await page.goBack();
+    await expect(page.locator("body")).not.toHaveClass(/practice/);
+    await expect(page.locator("#layout")).toBeVisible();
+    // Forward, forward: menu, then the round's live card intact.
+    await page.goForward();
+    await page.waitForFunction(() => location.hash === "#learn");
+    await page.goForward();
+    await page.waitForFunction(() => location.hash === "#learn/round");
+    await expect(page.locator("#practice .tutor-output-input")).toBeVisible();
+    expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
+    // Reload keeps the hash and the hash restores the round view.
+    await page.reload();
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    expect(await page.evaluate(() => location.hash)).toBe("#learn/round");
+    await expect(page.locator("body")).toHaveClass(/practice/);
+    await expect(page.locator("#practice .tutor-output-input")).toBeVisible();
+  });
+
+  test("a first visit to #learn survives the COI-shim reload and opens the menu", async ({ page }) => {
+    await page.goto(SITE + "#learn");
+    await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await expect(page.locator("body")).toHaveClass(/practice/);
+    await expect(page.locator("#practice .pr-static .tutor-card")).toHaveCount(1);
+    expect(await page.evaluate(() => location.hash)).toBe("#learn");
+  });
+
+  test("continue signal: a persisted round badges Learn and offers a chip; Continue opens it; dismiss is session-only", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.clear(); location.reload(); });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 8, count: 2 }));
+    await page.evaluate(() => window.plp.tutor.hideSurface()); // round persists
+    await page.reload();
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await expect(page.locator("#btn-tutor .continue-badge")).toBeVisible();
+    await expect(page.locator("#continue-chip")).toContainText("mid-round");
+    await page.locator("#continue-chip button", { hasText: "Continue" }).click();
+    await expect(page.locator("body")).toHaveClass(/practice/);
+    await expect(page.locator("#continue-chip")).toHaveCount(0);
+    await expect(page.locator("#btn-tutor .continue-badge")).toHaveCount(0);
+    expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
+    // Dismiss: the ✕ hides both for the session (nothing persisted).
+    await page.evaluate(() => window.plp.tutor.hideSurface());
+    await page.reload();
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await expect(page.locator("#continue-chip")).toBeVisible();
+    await page.locator("#continue-chip .chip-dismiss").click();
+    await expect(page.locator("#continue-chip")).toHaveCount(0);
+    await expect(page.locator("#btn-tutor .continue-badge")).toHaveCount(0);
+  });
+
+  test("world switch: segments carry active states; the Lesson segment appears during a guided lesson", async ({ page }) => {
+    await setup(page);
+    await expect(page.locator("#btn-code")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#btn-tutor")).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator("#btn-lesson")).toBeHidden();
+    await page.evaluate(() => window.plp.tutor.start("u1-state-io"));
+    await expect(page.locator("#btn-lesson")).toBeVisible();
+    await expect(page.locator("#btn-lesson")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#btn-code")).toHaveAttribute("aria-pressed", "false");
+    // Code segment: back to the IDE; the lesson stays live so its segment stays.
+    await page.locator("#btn-code").click();
+    await expect(page.locator("#layout")).not.toHaveClass(/focus/);
+    await expect(page.locator("#btn-code")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#btn-lesson")).toBeVisible();
+    await expect(page.locator("#btn-lesson")).toHaveAttribute("aria-pressed", "false");
+    // Lesson segment: resumes the stage.
+    await page.locator("#btn-lesson").click();
+    await expect(page.locator(".tutor-stage")).toBeVisible();
+    await expect(page.locator("#btn-lesson")).toHaveAttribute("aria-pressed", "true");
+    await page.evaluate(() => window.plp.tutor.exit());
+    await expect(page.locator("#btn-lesson")).toBeHidden();
+  });
+
+  test("unified ←: round → menu keeps the round live; map → menu; a map-launched round ends back at the map", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.clear(); location.reload(); });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 8, count: 2 }));
+    await expect(page.locator("body")).toHaveClass(/practice/);
+    // ← from the round: the menu, round resumable (still the ask of record).
+    await page.locator("#practice [data-role=pr-leave]").click();
+    await expect(page.locator("body")).toHaveClass(/practice/);
+    await expect(page.locator("#practice [data-role=pr-controls] button", { hasText: "Continue your round" })).toBeVisible();
+    expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
+    await page.locator("#practice [data-role=pr-controls] button", { hasText: "Continue your round" }).click();
+    await expect(page.locator("#practice .tutor-output-input")).toBeVisible();
+    await page.evaluate(() => window.plp.tutor.exit());
+    // ← from the map: the menu; ← from the menu: the IDE.
+    await page.evaluate(() => window.plp.tutor.showMap());
+    await expect(page.locator("#practice .cm-lane")).toHaveCount(7);
+    await page.locator("#practice [data-role=pr-leave]").click();
+    await expect(page.locator("#practice .cm-lane")).toHaveCount(0);
+    await expect(page.locator("#practice [data-role=pr-controls] button", { hasText: "Everything" })).toBeVisible();
+    await page.locator("#practice [data-role=pr-leave]").click();
+    await expect(page.locator("body")).not.toHaveClass(/practice/);
+    // A round launched from the map ends (✕) back on the map, not the menu.
+    await page.evaluate(() => window.plp.tutor.showMap());
+    await page.locator("#practice .cm-node.frontier").click();
+    await page.locator("#practice .cm-detail button.primary").click();
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    await page.locator("#practice [data-role=pr-exit-lesson]").click();
+    await expect(page.locator("#practice .cm-lane")).toHaveCount(7);
+  });
+
+  test("summary: the look-back button opens the first miss's review; Back returns to the summary; miss dots read ✗", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
+    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 8, count: 2 }));
+    await page.evaluate(() => window.plp.tutor.lockPrediction("definitely wrong"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 30_000 });
+    await page.evaluate(() => window.plp.tutor.continue());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 15_000 });
+    // The miss dot renders its ✗ glyph (CSS ::after over the styled class).
+    await expect(page.locator("#practice button.pr-dot.miss")).toHaveCount(1);
+    await page.evaluate(() => window.plp.tutor.skip());
+    await page.evaluate(() => window.plp.tutor.continue());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === null, null, { timeout: 15_000 });
+    await expect(page.locator("#practice .tutor-summary")).toBeVisible();
+    await expect(page.locator("#practice .t-summary-review")).toContainText("Look back");
+    await page.locator("#practice .t-summary-review").click();
+    await expect(page.locator("#practice .pr-review")).toBeVisible();
+    await expect(page.locator("#practice .pr-review .pr-review-answer")).toContainText("definitely wrong");
+    await page.locator("#practice .pr-review .pr-actions button").click(); // ↩ Back to the round
+    await expect(page.locator("#practice .tutor-summary")).toBeVisible();
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("chrome minors: maximize glyph swaps to restore; untraced-run memory note; the stage shows ✕ End lesson", async ({ page }) => {
+    await setup(page);
+    // m3: ⤢ becomes ⤡ "Restore (Esc)" while maximized; Esc restores both.
+    const maxBtn = page.locator('.max-btn[data-max="editor-pane"]');
+    await maxBtn.click();
+    await expect(maxBtn).toHaveText("⤡");
+    await expect(maxBtn).toHaveAttribute("title", "Restore (Esc)");
+    await page.keyboard.press("Escape");
+    await expect(maxBtn).toHaveText("⤢");
+    // m4: after an untraced Run the empty memory pane says why.
+    await page.evaluate(() => window.plp.editor.setValue("print(1)\n"));
+    await page.evaluate(() => window.plp.run());
+    await expect(page.locator("#memory-pane .memory-empty")).toContainText("goes full speed", { timeout: 60_000 });
+    // m5: the stage header carries a visible End lesson.
+    await page.evaluate(() => window.plp.tutor.start("u1-state-io"));
+    await expect(page.locator(".tutor-stage [data-role=stage-exit]")).toBeVisible();
+    await page.locator(".tutor-stage [data-role=stage-exit]").click();
+    await expect(page.locator(".tutor-stage")).toBeHidden();
+    expect((await page.evaluate(() => window.plp.tutor.state())).lessonId).toBeNull();
+  });
+
   test("generated ask retries: wrong first try keeps the card live, second resolves", async ({ page }) => {
     await setup(page);
     // Drive an ask directly through a tiny inline lesson via the quiz-less

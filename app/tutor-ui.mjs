@@ -66,6 +66,7 @@ export function createTutorUI({ root, layout }) {
       <span class="spacer"></span>
       <button data-role="stage-history" type="button" title="Show or hide the transcript">📜 History</button>
       <button data-role="popup-close" type="button" title="Back to the editor layout (Exercises stays open in the corner)">⇱ Back to editor</button>
+      <button data-role="stage-exit" type="button" hidden title="End the lesson">✕ End lesson</button>
     </div>
     <div class="tutor-popup-body" data-role="popup-body"></div>
     <div class="tutor-popup-foot" data-role="popup-foot"></div>`;
@@ -77,6 +78,8 @@ export function createTutorUI({ root, layout }) {
     if (layout.isFocused?.()) layout.exitFocus({ pane: true }); // classic dock, transcript back
     else closePopup();
   });
+  const stageExitBtn = popup.querySelector("[data-role=stage-exit]");
+  stageExitBtn.addEventListener("click", () => onExit?.());
   popup.querySelector("[data-role=stage-history]").addEventListener("click", () => {
     layout.setFocusFlags?.({ history: !layoutEl.classList.contains("focus-history") });
   });
@@ -304,7 +307,9 @@ export function createTutorUI({ root, layout }) {
       progressEl.textContent = text ?? "";
       popup.querySelector("[data-role=popup-title]").textContent = text ? `Exercises — ${text}` : "Exercises";
     },
-    setExitVisible(v) { exitBtn.hidden = !v; },
+    // Both exits mirror: the transcript pane's button and the stage
+    // header's visible "✕ End lesson" (the stage is where the learner is).
+    setExitVisible(v) { exitBtn.hidden = !v; stageExitBtn.hidden = !v; },
     setOnExit(fn) { onExit = fn; },
     setOnTryIt(fn) { onTryIt = fn; },
     setReviewContext(fn) { reviewContext = fn; },

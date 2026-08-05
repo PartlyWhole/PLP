@@ -68,6 +68,44 @@ const memory = createMemoryModel({
 // Layout first: collab (hide-tutor-in-rooms) and the tutor pane need it.
 const layoutApi = initLayout({ onResize: () => { editor.refresh(); consoleUI.fit(); } });
 
+// ---- hash routing (#learn / #learn/round / #learn/map / #lesson) ----------
+// Browser history mirrors which world the learner is in, so Back walks
+// round → menu → IDE instead of destroying the session. The collab room
+// link (#room=…, app/collab.mjs) owns the fragment while present — routing
+// never reads or writes it. Relative URLs only (invariant 1): route URLs
+// are pure fragments or pathname+search, never root-absolute. The COI shim
+// reload preserves the hash, so a first visit to #learn still lands there.
+const nav = (() => {
+  let applying = true; // suppressed until boot reconciliation below
+  let onRoute = null;
+  const ROUTES = new Set(["code", "learn", "learn/round", "learn/map", "lesson"]);
+  const parse = () => {
+    const h = location.hash.replace(/^#/, "");
+    if (h.startsWith("room=")) return null; // collab owns the hash
+    return ROUTES.has(h) ? h : "code";
+  };
+  const go = (route, { replace = false } = {}) => {
+    if (applying) return; // popstate/boot is applying a route right now
+    if (location.hash.startsWith("#room=")) return;
+    if (parse() === route) return; // never stack duplicate entries
+    const url = route === "code" ? location.pathname + location.search : `#${route}`;
+    if (replace) history.replaceState(null, "", url);
+    else history.pushState(null, "", url);
+  };
+  addEventListener("popstate", () => {
+    const route = parse();
+    if (route === null) return; // a room link — collab's hashchange handles it
+    applying = true;
+    try { onRoute?.(route); } finally { applying = false; }
+  });
+  return {
+    go,
+    parse,
+    setOnRoute: (fn) => { onRoute = fn; },
+    ready: () => { applying = false; },
+  };
+})();
+
 const statusEl = document.getElementById("run-status");
 const coiEl = document.getElementById("coi-badge");
 const runBtn = document.getElementById("btn-run");
@@ -144,6 +182,11 @@ const runner = createRunner({
       coiEl.className = "badge " + (caps.cross_origin_isolated ? "good" : "bad");
     } else if (s.type === "done") {
       setStatus(s.summary.terminal_reason, s.summary.terminal_reason === "completed" ? "good" : "");
+      // A finished run that produced no trace steps was the untraced path:
+      // tell the empty memory pane why it's empty and what to do instead.
+      if (memory.steps().length === 0) {
+        memory.setEmptyNote("Run ▶ goes full speed and skips the memory model — press Trace to watch names bind.");
+      }
     } else if (s.type === "error") setStatus("run failed", "bad");
   },
 });
@@ -197,15 +240,104 @@ const tutor = createTutor({
   },
   curriculum,
   isCollabActive: () => collab.isActive(),
+  nav,
 });
 tutorRef = tutor;
-document.getElementById("btn-tutor").addEventListener("click", () => {
+
+// ---- world switch ([⌨ Code] [🌱 Learn] (+ [📖 Lesson])) -------------------
+// Segments route through the existing toggle/surface APIs; #btn-tutor keeps
+// its id (and its toggle handler) on the Learn segment. The temporary
+// Lesson segment appears while a guided lesson is live.
+const codeBtn = document.getElementById("btn-code");
+const tutorBtn = document.getElementById("btn-tutor");
+const lessonBtn = document.getElementById("btn-lesson");
+function updateWorldSwitch() {
+  const route = tutor.currentRoute();
+  codeBtn.setAttribute("aria-pressed", String(route === "code"));
+  tutorBtn.setAttribute("aria-pressed", String(route.startsWith("learn")));
+  lessonBtn.hidden = !tutor.isGuidedActive();
+  lessonBtn.setAttribute("aria-pressed", String(route === "lesson"));
+}
+tutorBtn.addEventListener("click", () => {
   if (collab.isActive()) { setStatus("exercises are unavailable in a shared room", ""); return; }
   // The tutor routes to the right surface (practice card view for drills
   // and the menu; the focus stage for a mid-guided-lesson resume).
   tutor.toggleSurface();
   if (layoutApi.isTutorVisible()) { editor.refresh(); consoleUI.fit(); }
+  updateWorldSwitch();
 });
+codeBtn.addEventListener("click", () => {
+  if (layoutApi.isTutorVisible()) tutor.hideSurface();
+  updateWorldSwitch();
+});
+lessonBtn.addEventListener("click", () => {
+  if (collab.isActive()) return;
+  if (!layoutApi.isTutorVisible()) tutor.toggleSurface(); // resumes the stage
+  updateWorldSwitch();
+});
+events.on((e) => {
+  if (e.type === "lesson-started" || e.type === "lesson-ended") updateWorldSwitch();
+});
+
+// ---- boot route reconciliation --------------------------------------------
+// The persistence already restored surface STATE; the hash restores the
+// VIEW. A non-code hash wins (reload with #learn opens the menu); with no
+// hash, the URL is aligned to whatever the persisted state shows.
+nav.setOnRoute((r) => { tutor.applyRoute(r); updateWorldSwitch(); });
+{
+  const hashRoute = nav.parse(); // null inside a collab room link
+  if (hashRoute !== null && hashRoute !== "code" && hashRoute !== tutor.currentRoute()) {
+    tutor.applyRoute(hashRoute);
+  }
+  nav.ready();
+  const actual = tutor.currentRoute();
+  if (hashRoute !== null && actual !== nav.parse()) nav.go(actual, { replace: true });
+}
+updateWorldSwitch();
+
+// ---- continue signal --------------------------------------------------------
+// A persisted mid-round drill greets the returning learner: a small badge
+// on the Learn segment plus a one-line chip whose Continue takes the same
+// toggle path. Dismissal is session-only (module state, nothing stored).
+let continueHint = null;
+function clearContinueHint() {
+  if (!continueHint) return;
+  continueHint.badge.remove();
+  continueHint.chip.remove();
+  continueHint = null;
+}
+(function bootContinueHint() {
+  if (document.body.classList.contains("practice")) return; // already there
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem("plp.tutor.v1")); } catch { return; }
+  if (!s?.drillLesson) return;
+  const badge = document.createElement("span");
+  badge.className = "continue-badge";
+  badge.textContent = "· continue ▶";
+  tutorBtn.appendChild(badge);
+  const chip = document.createElement("div");
+  chip.id = "continue-chip";
+  const label = document.createElement("span");
+  label.textContent = `You're mid-round in ${s.drillLesson.title ?? "a practice round"} — `;
+  const go = document.createElement("button");
+  go.type = "button";
+  go.className = "primary";
+  go.textContent = "Continue";
+  go.addEventListener("click", () => { clearContinueHint(); tutorBtn.click(); });
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "chip-dismiss";
+  dismiss.textContent = "✕";
+  dismiss.title = "Dismiss for this session";
+  dismiss.addEventListener("click", clearContinueHint);
+  chip.append(label, go, dismiss);
+  document.querySelector("header").after(chip);
+  continueHint = { badge, chip };
+  // The moment the surface opens by ANY path, the hint has done its job.
+  new MutationObserver(() => {
+    if (document.body.classList.contains("practice")) clearContinueHint();
+  }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+})();
 
 window.addEventListener("resize", () => consoleUI.fit());
 

@@ -21,12 +21,16 @@
 </head>
 <body>
 <header>
+  <div class="world-switch" role="group" aria-label="Switch view">
+    <button id="btn-code" type="button" aria-pressed="true" title="The code editor">⌨ Code</button>
+    <button id="btn-tutor" type="button" aria-pressed="false" title="Open guided lessons and drills">🌱 Learn</button>
+    <button id="btn-lesson" type="button" hidden aria-pressed="false" title="Back to your guided lesson">📖 Lesson</button>
+  </div>
   <h1>Python Learning Platform</h1>
   <span class="badge" id="run-status">idle</span>
   <span class="badge" id="coi-badge">isolation: …</span>
   <span class="spacer"></span>
   <span class="badge" id="collab-badge" hidden>● <span id="collab-peers">1</span></span>
-  <button id="btn-tutor" type="button" title="Open guided lessons and drills">🎓 Exercises</button>
   <button id="btn-share" type="button">Share session</button>
   <button id="btn-leave" type="button" hidden>Leave</button>
 </header>

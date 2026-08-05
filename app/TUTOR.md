@@ -22,7 +22,8 @@ direction is exercises-first). Design and trajectory:
 
 The pane is the leftmost, full-height column (`#tutor-pane`,
 `--col-tutor`), collapsible; visibility and width persist in `plp.layout`.
-The header 🎓 button toggles it. **Collab: v1 is solo-only** — the pane
+The header's 🌱 Learn segment (`#btn-tutor`, part of the world switch)
+toggles it. **Collab: v1 is solo-only** — the pane
 hides when a room goes live and `start()` refuses while active.
 
 ## Audience: younger students (style contract)
@@ -123,17 +124,46 @@ screen the moment the retry starts — otherwise it would be copying),
 grades the refilled cells against a real re-run, then re-renders the
 table graded; a quiet "never mind" restores the recorded graded view.
 
-Escape hatches: **←**/Esc hide the surface back to the IDE (the round
-stays resumable — collab go-live uses the same hide-not-end path);
-"open in editor" on every program block; a "put the question's program
-back" chip appears if the code was edited outside; predict-state reveals
-link to the memory model, and any **miss** links "🔬 step through this
-run" — the graded trace is already scrubbable in the IDE. A **📝 scratch
+Escape hatches: **←**/Esc are one gesture, "**one level up**", after the
+progressive dismissal (notes drawer → review): round/summary → the menu,
+map → the menu, menu → the IDE. Stepping up from a live round never ends
+it — the practice surface **stashes the round's DOM** (`stashRound` /
+`unstashRound`; view-level only, all round state stays in the persisted
+store) and the menu leads with "▶ Continue your round". `hideSurface`
+(collab go-live) keeps the same hide-not-end contract. Ending a round
+that was launched from the map ("Practice this ▶"/"Try it anyway ▶")
+returns to the **map** (`store.origin`), not the menu. "open in editor"
+on every program block; a "put the question's program back" chip appears
+if the code was edited outside; predict-state reveals link to the memory
+model, and any **miss** links "🔬 step through this run" — the graded
+trace is already scrubbable in the IDE; these world switches record a
+history entry so browser Back returns to the card. A **📝 scratch
 notes** drawer (persisted in `plp.notes.v1`, nothing reads it) rides the
-top bar; Esc dismisses progressively (notes → review → surface). A
-**surface router** in tutor.mjs dispatches every ui call: drills/menu/map
-→ practice; guided lessons → the stage below (the IDE is *their*
-content).
+top bar. A **surface router** in tutor.mjs dispatches every ui call:
+drills/menu/map → practice; guided lessons → the stage below (the IDE is
+*their* content). The round **summary** adds an explicit "🔍 Look back
+at the ones you missed" button (practice surface only) opening the first
+miss's review; miss dots render larger with an ✗ glyph and a visible
+focus ring.
+
+## History routing and the world switch
+
+The header's top-left **world switch** (`[⌨ Code] [🌱 Learn]`, plus a
+temporary `[📖 Lesson]` segment while a guided lesson is live) routes
+through the existing toggle/surface APIs; `#btn-tutor` keeps its id on
+the Learn segment. Surfaces are **hash-routed** (`#learn`, `#learn/round`,
+`#learn/map`, `#lesson`; no hash = the IDE): main.mjs owns a tiny `nav`
+(pushState per user-level transition, never inside loops — endless chunk
+chaining stays on `#learn/round` and adds nothing), and `popstate` routes
+through `tutor.applyRoute`, the same handlers ←/Esc use. Browser Back
+mid-round lands on the menu with the round resumable; Back again reaches
+the IDE. Reload with a hash restores the matching view (persistence
+restores the state; the hash only routes the VIEW), and the COI shim's
+first-visit reload preserves the hash. The collab room link (`#room=…`)
+owns the fragment while present — nav never reads or writes it. On boot,
+a persisted mid-round drill shows a **continue signal**: a small badge on
+Learn plus a dismissible chip ("You're mid-round in <topic> — Continue");
+dismissal is session-only, and both vanish the moment the surface opens.
 
 ## The stage, the history rail, and focus mode (guided lessons)
 
