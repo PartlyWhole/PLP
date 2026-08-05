@@ -4,36 +4,10 @@
 // {focus} ∪ Structural (checked across 40 seeds in tests/kb.spec.mjs).
 
 import { mulberry32, int, pick } from "../rng.mjs";
-import { words, phrases, names, strNames } from "../pools.mjs";
+import { words, phrases, names } from "../pools.mjs";
 import { orderPair } from "../contrast.mjs";
 
 export default [
-  {
-    id: "digit-text",
-    topic: "state",
-    focus: "000K", // str-literal-vs-number
-    assumed: ["0005", "0006", "0007", "000Y"],
-    role: "intro",
-    form: "predict-exact-output",
-    generator: {
-      shapes: ["two-digit-strings", "three-digit-strings", "name-digit"],
-      variants: ["plain"],
-      generate(seed) {
-        const rng = mulberry32(seed);
-        const shape = pick(rng, ["two-digit-strings", "three-digit-strings", "name-digit"]);
-        const a = int(rng, 1, 9), b = int(rng, 1, 9), c = int(rng, 1, 9);
-        if (shape === "two-digit-strings") {
-          return {
-            code: `print("${a}" + "${b}")\n`, shape, variant: "plain",
-            variantCard: `\`"${a}"\` and \`"${b}"\` are text, so \`+\` joins them into \`${a}${b}\` — not the number ${a + b}.`,
-          };
-        }
-        if (shape === "three-digit-strings") return { code: `print("${a}" + "${b}" + "${c}")\n`, shape, variant: "plain" };
-        const nm = pick(rng, strNames);
-        return { code: `${nm} = "${a}"\nprint(${nm} + "${b}")\n`, shape, variant: "plain" };
-      },
-    },
-  },
   {
     id: "hello-print",
     topic: "state",
@@ -72,10 +46,14 @@ export default [
         const i1 = int(rng, 0, names.length - 1);
         const i2 = (i1 + 1 + int(rng, 0, names.length - 2)) % names.length;
         const n1 = names[i1], n2 = names[i2];
-        const v = int(rng, 2, 9), w = int(rng, 10, 20);
-        if (pick(rng, ["bind-and-print", "two-binds"]) === "two-binds") {
+        let v = int(rng, 2, 9);
+        const w = int(rng, 10, 20);
+        const shape = pick(rng, ["bind-and-print", "two-binds"]);
+        if (shape === "two-binds") {
           return { code: `${n1} = ${v}\n${n2} = ${w}\nprint(${n1})\n`, shape: "two-binds", variant: "plain" };
         }
+        // E7: never reproduce name-holds-value's own card example `x = 4; print(x)`.
+        while (n1 === "x" && v === 4) v = int(rng, 2, 9);
         return { code: `${n1} = ${v}\nprint(${n1})\n`, shape: "bind-and-print", variant: "plain" };
       },
     },
@@ -142,10 +120,12 @@ export default [
         const rng = mulberry32(seed);
         const name = pick(rng, names);
         const shape = pick(rng, ["bind-sum", "bind-product", "bind-three-terms"]);
-        const a = int(rng, 2, 6), b = int(rng, 2, 6), c = int(rng, 2, 6);
+        const a = int(rng, 2, 6); let b = int(rng, 2, 6); const c = int(rng, 2, 6);
         if (shape === "bind-three-terms") {
           return { code: `${name} = ${a} + ${b} + ${c}\nprint(${name})\n`, shape, variant: "plain" };
         }
+        // E7: never reproduce evaluate-before-bind's own card example `2 + 3`.
+        while (shape === "bind-sum" && a === 2 && b === 3) b = int(rng, 2, 6);
         const op = shape === "bind-sum" ? "+" : "*";
         return { code: `${name} = ${a} ${op} ${b}\nprint(${name})\n`, shape, variant: "plain" };
       },
@@ -305,13 +285,15 @@ export default [
     role: "intro",
     form: "predict-exact-output",
     generator: {
-      shapes: ["copy-then-rebind-source", "copy-of-copy", "read-source-after-copy"],
+      shapes: ["copy-then-rebind-source", "copy-of-copy", "read-source-after-copy", "rebind-read-new"],
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
-        const a = int(rng, 2, 9);
-        const b = int(rng, 10, 20);
-        const shape = pick(rng, ["copy-then-rebind-source", "copy-of-copy", "read-source-after-copy"]);
+        // Overlapping ranges (both 2..20, distinct) so "answer the first/smaller
+        // number" is no longer a shortcut.
+        const a = int(rng, 2, 20);
+        const b = ((a - 2 + int(rng, 1, 18)) % 19) + 2; // in [2, 20], ≠ a
+        const shape = pick(rng, ["copy-then-rebind-source", "copy-of-copy", "read-source-after-copy", "rebind-read-new"]);
         if (shape === "copy-of-copy") {
           return {
             code: `a = ${a}\nb = a\nc = b\nb = ${b}\nprint(c)\n`,
@@ -326,6 +308,16 @@ export default [
             shape, variant: "plain",
             variantCard: `\`b = a\` copied the VALUE; the names stay separate. Rebinding `
               + `\`b\` to ${b} leaves \`a\` at ${a}.`,
+          };
+        }
+        if (shape === "rebind-read-new") {
+          // The REBOUND name is the one printed, so the answer is the NEW value
+          // — the counter to "the answer is always the first number".
+          return {
+            code: `a = ${a}\nb = a\na = ${b}\nprint(a)\n`,
+            shape, variant: "plain",
+            variantCard: `\`a\` was rebound to ${b}, so \`print(a)\` shows ${b}. The copy \`b\` `
+              + `still holds the old ${a} — but you asked for \`a\`.`,
           };
         }
         return {
@@ -508,6 +500,37 @@ export default [
           probeNames: ["x"],
           shape, variant: "plain",
           variantCard: "Each line rebinds `x` using its CURRENT value — walk it one step at a time; the order of the steps is the whole story.",
+        };
+      },
+    },
+  },
+
+  {
+    // Ramp (review): quoted-vs-name in one moved line. A reads the bare name
+    // (its value); B prints the quoted name (the letters). NOTE: B keeps the
+    // `x = v` bind so the quoted literal is a BOUND name — that is what makes
+    // quoted-vs-name (0007) salient; a bare `print("x")` would fold into
+    // print-text.
+    id: "quoted-vs-name-spot",
+    topic: "state",
+    focus: "0007", // quoted-vs-name
+    assumed: ["0005", "0006"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["bare-vs-quoted"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const name = pick(rng, names);
+        const v = int(rng, 2, 20);
+        return {
+          code: `${name} = ${v}\nprint(${name})\n`,
+          aOutput: String(v),
+          contrastCode: `${name} = ${v}\nprint("${name}")\n`,
+          shape: "bare-vs-quoted", variant: "plain",
+          variantCard: `Bare \`${name}\` looks up the value it holds: ${v}. Quote it and \`"${name}"\` `
+            + `is just the letters \`${name}\` — the quotes decide which you get.`,
         };
       },
     },

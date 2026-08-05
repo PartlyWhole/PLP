@@ -13,12 +13,25 @@ export default [
     assumed: ["0005"],
     role: "intro",
     form: "predict-exact-output",
+    // Multiline: the `both` shape prints True then False so BOTH spellings-as-
+    // written are the concept. (Third shape restores the ≥3 core-shape floor
+    // after the transcription-only `fill-bool` was retired — a pure bool print
+    // can only be `print(True)` / `print(False)`, so the floor must come from
+    // the intro itself.)
+    multiline: true,
     generator: {
-      shapes: ["true", "false"],
-      variants: ["true", "false"],
+      shapes: ["true", "false", "both"],
+      variants: ["true", "false", "both"],
       generate(seed) {
         const rng = mulberry32(seed);
-        const v = pick(rng, ["true", "false"]);
+        const v = pick(rng, ["true", "false", "both"]);
+        if (v === "both") {
+          return {
+            code: `print(True)\nprint(False)\n`,
+            shape: "both", variant: "both",
+            variantCard: "Each yes-or-no value prints exactly as spelled: `True`, then `False` — capital first letter, no quotes.",
+          };
+        }
         return { code: `print(${v === "true" ? "True" : "False"})\n`, shape: v, variant: v };
       },
     },
@@ -37,7 +50,13 @@ export default [
       generate(seed) {
         const rng = mulberry32(seed);
         const shape = pick(rng, ["less", "greater", "equal"]);
-        const a = int(rng, 2, 9), b = int(rng, 2, 9);
+        const a = int(rng, 2, 9);
+        let b = int(rng, 2, 9);
+        // E7: never reproduce compare-ops' own card example `3 < 5`.
+        while (shape === "less" && a === 3 && b === 5) b = int(rng, 2, 9);
+        // E6: the equal shape lands `b === a` on a coin flip, so ~half the
+        // seeds are genuinely True — not a constant-False meta.
+        if (shape === "equal" && pick(rng, [true, false])) b = a;
         const op = shape === "less" ? "<" : shape === "greater" ? ">" : "==";
         const truth = op === "<" ? a < b : op === ">" ? a > b : a === b;
         return {
@@ -80,26 +99,47 @@ export default [
     generator: {
       // Bool-literal tests isolate the if-mechanics; the compare-test shape
       // is legal because compare-ops is 0017's parent in the corrected DAG.
-      shapes: ["runs", "skips", "compare-test"],
+      // The *-before shapes put the unconditional print BEFORE a skipped `if`,
+      // so the LAST quoted literal is never the answer (defeats a last-literal
+      // guess).
+      shapes: ["runs", "skips", "compare-test", "skips-before", "compare-skips-before"],
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
-        const shape = pick(rng, ["runs", "skips", "compare-test"]);
-        const w = pick(rng, words), after = pick(rng, words);
+        const shape = pick(rng, ["runs", "skips", "compare-test", "skips-before", "compare-skips-before"]);
+        // Two DISTINCT words (splice-draw, like elif-chain) so the skipped
+        // branch's word can never equal the unconditional word.
+        const pool = words.slice();
+        const w = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
+        const after = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
         if (shape === "runs") return { code: `if True:\n    print("${w}")\n`, shape, variant: "plain" };
+        if (shape === "skips") return { code: `if False:\n    print("${w}")\nprint("${after}")\n`, shape, variant: "plain" };
         if (shape === "compare-test") {
           const a = int(rng, 2, 9), b = int(rng, 2, 9);
           const runs = a > b;
           return {
-            code: `if ${a} > ${b}:\n    print("${w}")\nprint("${after}")\n`,
-            shape, variant: "plain",
             // Two lines when the branch runs — keep it one-line: only emit
             // the after-print when the branch is skipped.
-            ...(runs ? { code: `if ${a} > ${b}:\n    print("${w}")\n` } : {}),
+            code: runs ? `if ${a} > ${b}:\n    print("${w}")\n` : `if ${a} > ${b}:\n    print("${w}")\nprint("${after}")\n`,
+            shape, variant: "plain",
             variantCard: `\`${a} > ${b}\` is ${runs ? "True, so the block runs" : "False, so the block is skipped"}.`,
           };
         }
-        return { code: `if False:\n    print("${w}")\nprint("${after}")\n`, shape, variant: "plain" };
+        if (shape === "skips-before") {
+          return {
+            code: `print("${after}")\nif False:\n    print("${w}")\n`,
+            shape, variant: "plain",
+            variantCard: `\`${after}\` prints first; the \`if False\` block is skipped, so \`${w}\` never prints.`,
+          };
+        }
+        // compare-skips-before: plain print first, then an always-False compare
+        // test (a < b), so the last literal \`${w}\` is again not the answer.
+        const a = int(rng, 2, 5), b = a + int(rng, 1, 4);
+        return {
+          code: `print("${after}")\nif ${a} > ${b}:\n    print("${w}")\n`,
+          shape, variant: "plain",
+          variantCard: `\`${after}\` prints first; \`${a} > ${b}\` is False, so \`${w}\` is skipped.`,
+        };
       },
     },
   },
@@ -175,16 +215,51 @@ export default [
     role: "intro",
     form: "predict-exact-output",
     generator: {
-      shapes: ["empty-list", "zero", "empty-string"],
+      shapes: ["empty-list", "zero", "empty-string", "truthy-list", "truthy-int", "truthy-string", "falsy-before"],
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
-        const shape = pick(rng, ["empty-list", "zero", "empty-string"]);
-        // Distinct words so the skipped-branch word can never equal the
-        // after-line word (a collision would leak the answer). Same 2 draws.
+        const shape = pick(rng, ["empty-list", "zero", "empty-string", "truthy-list", "truthy-int", "truthy-string", "falsy-before"]);
+        // Distinct words so the branch word can never equal the after-line
+        // word (a collision would leak the answer).
         const pool = words.slice();
         const w = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
         const after = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
+        // Truthy shapes: the block RUNS and there is no after-line (one-line
+        // law), so the answer is the branch word.
+        if (shape === "truthy-list") {
+          const n = int(rng, 1, 9);
+          return {
+            code: `x = [${n}]\nif x:\n    print("${w}")\n`,
+            shape, variant: "plain",
+            variantCard: `\`[${n}]\` has an item, so it counts as true and the block runs.`,
+          };
+        }
+        if (shape === "truthy-int") {
+          const n = int(rng, 1, 9);
+          return {
+            code: `x = ${n}\nif x:\n    print("${w}")\n`,
+            shape, variant: "plain",
+            variantCard: `\`${n}\` is not zero, so it counts as true and the block runs.`,
+          };
+        }
+        if (shape === "truthy-string") {
+          const s = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
+          return {
+            code: `x = "${s}"\nif x:\n    print("${w}")\n`,
+            shape, variant: "plain",
+            variantCard: `\`"${s}"\` is not empty, so it counts as true and the block runs.`,
+          };
+        }
+        if (shape === "falsy-before") {
+          // Unconditional print BEFORE a falsy `if`, so the answer is the
+          // first line, not the skipped branch word.
+          return {
+            code: `print("${after}")\nx = []\nif x:\n    print("${w}")\n`,
+            shape, variant: "plain",
+            variantCard: `\`${after}\` prints first; \`[]\` counts as false, so the block is skipped and \`${w}\` never prints.`,
+          };
+        }
         const val = shape === "empty-list" ? "[]" : shape === "zero" ? "0" : '""';
         return {
           code: `x = ${val}\nif x:\n    print("${w}")\nprint("${after}")\n`,
@@ -308,6 +383,43 @@ export default [
           probeNames: ["big", "n"],
           shape, variant: "plain",
           variantCard: "First work out `big` — that True/False picks the branch, and only the branch that runs gets to rebind `n`. The row's line number tells you which one won.",
+        };
+      },
+    },
+  },
+
+  {
+    // Ramp (review): one line moved across the branch boundary. In A the extra
+    // print sits INSIDE a skipped `if`, so it never runs; move it out (B) and
+    // it becomes unconditional. Multiline: B prints one more line than A.
+    id: "branch-boundary-order",
+    topic: "logic",
+    focus: "0017", // if-runs-or-skips
+    assumed: ["0005", "0015"],
+    role: "review",
+    form: "spot-the-difference",
+    multiline: true,
+    generator: {
+      shapes: ["move-out-of-skip"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const pool = words.slice();
+        const w0 = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
+        const w1 = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
+        const w2 = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
+        const a = int(rng, 2, 5), b = a + int(rng, 1, 4); // a < b, so the if is skipped
+        return {
+          // A: both branch prints are INSIDE the skipped if; only the after
+          // line runs.
+          code: `if ${a} > ${b}:\n    print("${w1}")\n    print("${w2}")\nprint("${w0}")\n`,
+          aOutput: w0,
+          // B: print("${w2}") moved OUT of the if — now it always runs.
+          contrastCode: `if ${a} > ${b}:\n    print("${w1}")\nprint("${w2}")\nprint("${w0}")\n`,
+          shape: "move-out-of-skip", variant: "plain",
+          variantCard: `\`${a} > ${b}\` is False, so everything indented under the \`if\` is skipped — `
+            + `A prints just \`${w0}\`. Move \`print("${w2}")\` out from under the \`if\` and it runs no `
+            + `matter what: B prints \`${w2}\` then \`${w0}\`.`,
         };
       },
     },

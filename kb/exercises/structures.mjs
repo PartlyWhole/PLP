@@ -10,6 +10,15 @@ const twoKeys = (rng) => {
   return [dictKeys[i], dictKeys[j]];
 };
 
+// Local copy of the forms.mjs blank helper, so this module stays self-contained.
+function blankFrom(template, token) {
+  const idx = template.indexOf("\x00");
+  const before = template.slice(0, idx);
+  const line = before.split("\n").length;
+  const col = idx - (before.lastIndexOf("\n") + 1);
+  return { code: template.replace("\x00", token), blank: { line, col, len: token.length, target: token } };
+}
+
 export default [
   {
     id: "dict-lookup",
@@ -280,6 +289,61 @@ export default [
           probeNames: ["d"],
           shape: "build-two-keys", variant: "plain",
           variantCard: "The dict grows one store at a time — each row is the whole dict as it stood after that line.",
+        };
+      },
+    },
+  },
+
+  {
+    // Ramp (review) fill-one-blank: two-pair dict; the blank is the KEY, and
+    // the two values differ, so exactly one key yields the shown target.
+    id: "fill-dict-key",
+    topic: "structures",
+    focus: "001R", // dict-lookup-by-key
+    assumed: ["0005", "0006", "0007", "000E"],
+    role: "review",
+    form: "fill-one-blank",
+    generator: {
+      shapes: ["fill-key"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const [k1, k2] = twoKeys(rng);
+        const v1 = int(rng, 1, 9), v2 = int(rng, 10, 20); // distinct → one key fits
+        const first = pick(rng, [true, false]);
+        const key = first ? k1 : k2, val = first ? v1 : v2, other = first ? v2 : v1;
+        const { code, blank } = blankFrom(`d = {"${k1}": ${v1}, "${k2}": ${v2}}\nprint(d[\x00])\n`, `"${key}"`);
+        return {
+          code, blank, targetOutput: String(val),
+          shape: "fill-key", variant: "plain",
+          variantCard: `\`d["${key}"]\` looks up \`"${key}"\`, which maps to ${val}. The other key maps to ${other}.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Ramp (review) spot-the-difference: unpacking spreads the pair into names
+    // (A prints one number); packing keeps it whole (B prints the tuple).
+    id: "unpack-vs-pack-spot",
+    topic: "structures",
+    focus: "001X", // tuple-unpack
+    assumed: ["0005", "0006", "001W"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["unpack-vs-pack"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const a = int(rng, 1, 9), b = int(rng, 10, 20);
+        return {
+          code: `x, y = (${a}, ${b})\nprint(x)\n`,
+          aOutput: String(a),
+          contrastCode: `t = (${a}, ${b})\nprint(t)\n`,
+          shape: "unpack-vs-pack", variant: "plain",
+          variantCard: `Unpacking spreads the pair into names: \`x\` gets ${a}. Packing keeps it whole: `
+            + `\`t\` is the tuple \`(${a}, ${b})\`.`,
         };
       },
     },

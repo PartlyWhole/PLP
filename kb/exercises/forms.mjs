@@ -135,24 +135,38 @@ export default [
   },
 
   {
-    id: "fill-bool",
+    // Replaces the retired `fill-bool` (which spelled `True`/`False` into a
+    // blank whose token WAS the shown target — a transcription, E5). Here the
+    // filled token is COMPUTED against by `not`/`and`, so it never equals the
+    // shown target.
+    id: "fill-bool-op",
     topic: "logic",
-    focus: "0016", // bool-values — spell the value that prints True/False
-    assumed: ["0005"],
+    focus: "001A", // bool-ops
+    assumed: ["0005", "0016"],
     role: "review",
     form: "fill-one-blank",
     generator: {
-      shapes: ["fill-bool-value"],
-      variants: ["true", "false"],
+      shapes: ["not", "and-false"],
+      variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
+        const shape = pick(rng, ["not", "and-false"]);
+        if (shape === "and-false") {
+          // Fill `True`; `True and False` still prints `False` — token ≠ target.
+          const { code, blank } = blankFrom(`print(\x00 and False)\n`, "True");
+          return {
+            code, blank, targetOutput: "False",
+            shape, variant: "plain",
+            variantCard: "`and` needs BOTH sides true. Filling `True` gives `True and False`, which is still `False`.",
+          };
+        }
         const want = pick(rng, ["True", "False"]);
-        const { code, blank } = blankFrom(`print(\x00)\n`, want);
+        const out = want === "True" ? "False" : "True";
+        const { code, blank } = blankFrom(`print(not \x00)\n`, want);
         return {
-          code, blank, targetOutput: want,
-          shape: "fill-bool-value", variant: want.toLowerCase(),
-          variantCard: `The yes-or-no values are spelled \`True\` and \`False\` — capital `
-            + `first letter, no quotes. \`${want}\` prints exactly \`${want}\`.`,
+          code, blank, targetOutput: out,
+          shape, variant: "plain",
+          variantCard: `\`not\` flips it: \`not ${want}\` is \`${out}\` — the fill is the opposite of what prints.`,
         };
       },
     },
@@ -361,7 +375,9 @@ export default [
       generate(seed) {
         const rng = mulberry32(seed);
         const w = pick(rng, ["hi", "cat", "sun", "ab"]);
-        const n = int(rng, 2, 3);
+        // n ∈ {3, 4} only: at n = 2 the repeat `"w" * 2` equals the concat
+        // `"w" + "w"`, collapsing A and B — draw n so they always differ.
+        const n = pick(rng, [3, 4]);
         return {
           code: `print("${w}" + "${w}")\n`,
           aOutput: w + w,
@@ -495,14 +511,19 @@ export default [
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
+        // Vary program A across the bool pairs so its output isn't a constant
+        // `True` — the shown A must not telegraph a fixed answer.
+        const [l, r] = pick(rng, [["True", "False"], ["False", "True"], ["False", "False"]]);
+        const aOut = (l === "True" || r === "True") ? "True" : "False";
         const n = int(rng, 2, 9);
         return {
-          code: `print(True or False)\n`,
-          aOutput: "True",
+          code: `print(${l} or ${r})\n`,
+          aOutput: aOut,
           contrastCode: `print(${n} or 0)\n`,
           shape: "bool-or-vs-value-or", variant: "plain",
-          variantCard: `With plain values, \`or\` does not convert anything: \`${n}\` counts `
-            + `as true, so \`or\` hands back \`${n}\` ITSELF — not \`True\`.`,
+          variantCard: `With plain \`True\`/\`False\`, \`or\` gives back \`True\`/\`False\`. But with plain `
+            + `values it does not convert anything: \`${n}\` counts as true, so \`or\` hands back `
+            + `\`${n}\` ITSELF — not \`True\`.`,
         };
       },
     },
@@ -516,11 +537,25 @@ export default [
     role: "review",
     form: "predict-state",
     generator: {
-      shapes: ["copy-rebind-probe-copy"],
+      shapes: ["copy-rebind-probe-copy", "probe-source-after-rebind"],
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
-        const p = int(rng, 2, 9), q = int(rng, 10, 20);
+        // Overlapping ranges (both 2..20, distinct) so the answer isn't always
+        // the smaller value.
+        const p = int(rng, 2, 20);
+        const q = ((p - 2 + int(rng, 1, 18)) % 19) + 2; // in [2, 20], ≠ p
+        const shape = pick(rng, ["copy-rebind-probe-copy", "probe-source-after-rebind"]);
+        if (shape === "probe-source-after-rebind") {
+          // Probe the REBOUND source: it holds the NEW value, not the copy's —
+          // the counter to "the answer is always the first number".
+          return {
+            code: `a = ${p}\nb = a\na = ${q}\n`,
+            probeName: "a",
+            shape, variant: "plain",
+            variantCard: `\`a\` was rebound to ${q}, so it now holds ${q}. The copy \`b\` kept the old ${p}.`,
+          };
+        }
         return {
           code: `a = ${p}\nb = a\na = ${q}\n`,
           probeName: "b",
@@ -771,6 +806,43 @@ export default [
           shape: "fill-start-index", variant: "plain",
           variantCard: `The list starts at ${a} and steps by ${s}, stopping before ${b} — so the start `
             + `argument must be ${a}: [${seq.join(", ")}].`,
+        };
+      },
+    },
+  },
+
+  {
+    // fill-one-blank: reverse-engineer the OPERATOR whose precedence lands the
+    // shown target. Values chosen so exactly ONE operator fits (E5/E6).
+    id: "fill-precedence-op",
+    topic: "numbers",
+    focus: "000N", // op-precedence
+    assumed: ["0005", "0008"],
+    role: "review",
+    form: "fill-one-blank",
+    generator: {
+      shapes: ["fill-op"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        let a, b, c, cand;
+        do {
+          a = int(rng, 2, 9); b = int(rng, 2, 6); c = int(rng, 2, 6);
+          cand = {
+            "+": a + b * c,
+            "-": a - b * c,
+            "*": a * b * c,
+            "//": Math.floor(a / b) * c,
+            "%": (a % b) * c,
+          };
+        } while (Object.values(cand).filter((v) => v === cand["+"]).length !== 1);
+        const target = cand["+"];
+        const { code, blank } = blankFrom(`print(${a} \x00 ${b} * ${c})\n`, "+");
+        return {
+          code, blank, targetOutput: String(target),
+          shape: "fill-op", variant: "plain",
+          variantCard: `\`${b} * ${c}\` happens first (${b * c}), then \`+\` makes \`${a} + ${b * c}\` = ${target}. `
+            + `Filling \`*\` would group as \`(${a} * ${b}) * ${c}\` = ${a * b * c} instead.`,
         };
       },
     },

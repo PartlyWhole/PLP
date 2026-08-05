@@ -190,11 +190,36 @@ export default [
     role: "intro",
     form: "predict-exact-output",
     generator: {
-      shapes: ["capital-vs-lower", "lower-descending"],
+      shapes: ["capital-vs-lower", "lower-descending", "capital-on-right", "lower-ascending"],
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
-        const shape = pick(rng, ["capital-vs-lower", "lower-descending"]);
+        const shape = pick(rng, ["capital-vs-lower", "lower-descending", "capital-on-right", "lower-ascending"]);
+        if (shape === "capital-on-right") {
+          // Capital on the RIGHT, so `low < cap` is False even though a capital
+          // is present — defeats the "capital ⇒ True" meta.
+          const cap = pick(rng, capWords), low = pick(rng, lowWords);
+          return {
+            code: `print("${low}" < "${cap}")\n`,
+            shape, variant: "plain",
+            variantCard: `Lowercase \`${low[0]}\` has a LARGER code than capital \`${cap[0]}\`, so \`"${low}"\` `
+              + `sorts AFTER \`"${cap}"\` — \`"${low}" < "${cap}"\` is \`False\`.`,
+          };
+        }
+        if (shape === "lower-ascending") {
+          // Two lowercase words in ASCENDING order → True, with no capital in
+          // sight — defeats the "capital present ⇒ True" meta.
+          const pool = lowWords.slice();
+          const p = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
+          const q = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
+          const [lo, hi] = p < q ? [p, q] : [q, p];
+          return {
+            code: `print("${lo}" < "${hi}")\n`,
+            shape, variant: "plain",
+            variantCard: `Both are lowercase and \`${lo}\` comes first: \`${lo[0]}\` has a SMALLER code than `
+              + `\`${hi[0]}\`, so \`"${lo}" < "${hi}"\` is \`True\`.`,
+          };
+        }
         if (shape === "lower-descending") {
           // Two lowercase words in DESCENDING order, so `<` is really False —
           // the answer isn't always True. Distinct picks, then the larger word

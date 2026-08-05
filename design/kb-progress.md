@@ -313,6 +313,30 @@ uncommitted, so tags are not yet permanent; K-2 returns early.
   leaves the screen — otherwise it's copying), grades a real re-run
   per-cell, "never mind" restores; score-of-record semantics identical to
   single-input retries. Pool 105→108, concepts 69→70 wired.
+- Quality-bar codification + systematic sweep (owner: "compile the
+  properties we iterated and review everything"): the accumulated bar now
+  lives in design/exercise-quality-bar.md (C1–C7 concepts, E1–E14
+  exercises, each traced to its origin, machine- vs judgment-enforced).
+  Mechanical sweep (12–60 seeds real execution) + two judgment reviewers
+  over all exercises/concepts adjudicated every flag: 29-item fix wave —
+  highs: if-runs last-literal meta (27/60 seeds now break it),
+  empty-is-falsy never-ran branch (truthy shapes added), repeat-vs-concat
+  A==B on n=2 (half of seeds! n now 3..4), fill-bool retired (provably
+  unfixable in ancestors(0016): every legal variant is transcription or
+  ungradable) → replaced by fill-bool-op at 001A; bool-values' review-tier
+  gap is DOCUMENTED as open (needs a future mint). Mediums: while-count-down
+  constant-0 landing (varied step), for-else-runs dead `if False:` (real
+  search shapes), copy first-number meta (rebound-read counter-shapes),
+  floor-div/bool-arith/text-compare spreads, precedence-mix card misstating
+  the misconception. Ramp: +9 review-tier exercises (fill-aggregate where
+  exactly one builtin fits, in-list-spot mirrored pairs, fill-dict-key,
+  unpack-vs-pack, branch-boundary-order, quoted-vs-name-spot,
+  floordiv-divisor-spot, fill-precedence-op, concat-vs-append→legal 0021
+  single-concept redesign). Four closure-wall deviations documented (000G/
+  000P sibling contrasts illegal — redesigned inside closure). 000K lane
+  state→numbers. All concept cards' example claims execution-verified
+  TRUE. Pool 119→128. Sweep re-run post-fix: remaining flags all
+  adjudicated-inherent classes.
 - Full KB review (3 parallel audit agents: DAG structure, exercise depth,
   learner journey) → update wave. Verdicts: graph SOUND, reorganization
   not worth append-only churn; depth and selection were the real gaps.

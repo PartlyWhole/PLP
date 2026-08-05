@@ -229,11 +229,15 @@ export default [
             variantCard: `\`n\` doubles each pass and stops the moment \`n < ${stop}\` fails: ${n}.`,
           };
         }
-        const start = int(rng, 3, 7);
+        // A varied step means the landing value is no longer always 0: it is
+        // start%step (when it divides evenly) or start%step − step otherwise.
+        const step = int(rng, 2, 3);
+        const start = int(rng, 4, 9);
+        let n = start; while (n > 0) n -= step;
         return {
-          code: `n = ${start}\nwhile n > 0:\n    n = n - 1\nprint(n)\n`,
+          code: `n = ${start}\nwhile n > 0:\n    n = n - ${step}\nprint(n)\n`,
           shape: "count-down", variant: "plain",
-          variantCard: `\`n\` goes ${start} down to 0, then \`n > 0\` is false, so the loop stops at \`0\`.`,
+          variantCard: `\`n\` starts at ${start} and drops by ${step} each pass until \`n > 0\` fails, landing on \`${n}\`.`,
         };
       },
     },
@@ -261,7 +265,7 @@ export default [
           };
         }
         if (shape === "break-then-after") {
-          const w = "done";
+          const w = pick(rng, ["done", "clear", "found", "ready"]);
           return {
             code: `for x in [${a}, ${a + 1}, ${a + 2}]:\n    if x > ${a - 1}:\n        break\nprint("${w}")\n`,
             shape, variant: "plain",
@@ -319,20 +323,35 @@ export default [
     id: "for-else-runs",
     topic: "loops",
     focus: "001Q", // for-else-no-break
-    assumed: ["0005", "0006", "000D", "0016", "0017", "001E", "001N"],
+    assumed: ["0005", "0006", "000D", "0015", "0016", "0017", "001E", "001N"],
     role: "intro",
     form: "predict-exact-output",
     generator: {
-      shapes: ["no-break"],
+      shapes: ["no-break", "break-fires"],
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
-        const items = Array.from({ length: 3 }, () => int(rng, 1, 9));
+        const shape = pick(rng, ["no-break", "break-fires"]);
+        const items = [];
+        while (items.length < 3) { const v = int(rng, 1, 9); if (!items.includes(v)) items.push(v); }
         const word = pick(rng, ["done", "clear", "found", "ready"]);
+        if (shape === "break-fires") {
+          // The probe IS one of the items, so `break` fires and the loop's
+          // `else` is skipped — the number prints, never the word.
+          const t = items[int(rng, 0, 2)];
+          return {
+            code: `for x in [${items.join(", ")}]:\n    if x == ${t}:\n        print(x)\n        break\nelse:\n    print("${word}")\n`,
+            shape, variant: "plain",
+            variantCard: `\`${t}\` IS in the list, so \`break\` fires and the loop's \`else\` is SKIPPED — only \`${t}\` prints, never \`${word}\`.`,
+          };
+        }
+        // The probe is NOT among the items, so `break` never fires and the
+        // `else` runs.
+        const t = int(rng, 10, 19);
         return {
-          code: `for x in [${items.join(", ")}]:\n    if False:\n        break\nelse:\n    print("${word}")\n`,
+          code: `for x in [${items.join(", ")}]:\n    if x == ${t}:\n        print(x)\n        break\nelse:\n    print("${word}")\n`,
           shape: "no-break", variant: "plain",
-          variantCard: `No \`break\` happens, so the loop's \`else\` runs and prints \`${word}\`.`,
+          variantCard: `No item equals \`${t}\`, so \`break\` never fires and the loop's \`else\` runs, printing \`${word}\`.`,
         };
       },
     },
@@ -451,7 +470,7 @@ export default [
       generate(seed) {
         const rng = mulberry32(seed);
         const shape = pick(rng, ["sum", "count"]);
-        const items = Array.from({ length: 3 }, () => int(rng, 1, 6));
+        const items = Array.from({ length: int(rng, 3, 5) }, () => int(rng, 1, 6));
         let running, header, step, finalLine;
         if (shape === "count") {
           let c = 0; running = items.map(() => (c += 1));
@@ -531,7 +550,10 @@ export default [
       generate(seed) {
         const rng = mulberry32(seed);
         const shape = pick(rng, ["sum-steps", "count-steps"]);
-        const items = Array.from({ length: 3 }, () => int(rng, 1, 6));
+        // count-steps varies its length so the counted answer is not a
+        // constant 3; sum-steps keeps 3 (no extra draw → byte-identical).
+        const len = shape === "count-steps" ? int(rng, 3, 4) : 3;
+        const items = Array.from({ length: len }, () => int(rng, 1, 6));
         if (shape === "count-steps") {
           return {
             code: `count = 0\nfor x in [${items.join(", ")}]:\n    count = count + 1\nprint(count)\n`,

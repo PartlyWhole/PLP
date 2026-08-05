@@ -165,6 +165,6 @@ export default [
       + "```py\nxs = [3, 8, 5]\nprint(8 in xs)\nprint(4 in xs)\n```\n\n"
       + "This prints `True` then `False`. It answers the yes-or-no "
       + "question only — it never tells you WHERE the item is. Text "
-      + "works too: `\"a\" in \"cat\"` is `True`.",
+      + "works too: `\"u\" in \"sun\"` is `True`.",
   },
 ];

@@ -169,27 +169,27 @@ test.describe("PLP tutor (T-series)", () => {
       localStorage.setItem("plp.kb.v1", JSON.stringify({ "0005": { seen: 24, missed: 0 } }));
       localStorage.removeItem("plp.tutor.v1");
     });
-    // Seed 162 of a warm lists round opens with the += vs + [x] contrast (the
+    // Seed 41 of a warm lists round opens with the += vs + [x] contrast (the
     // seed is a fixture — re-derive it if the lists exercise pool changes;
     // derivation: scan buildKBSession("lists", {seed, count: 1, stats: warm})
     // for the first seed whose ask.context.code contains "+= [").
-    const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 162, count: 1 }));
-    expect(id).toBe("drill-lists-162");
+    const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 41, count: 1 }));
+    expect(id).toBe("drill-lists-41");
     // The contrast rides ON the ask (ask.context): program A (uses +=) with
     // its real output — reload-safe — and the card renders it above B.
     const ctx = await page.evaluate(() => {
       const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
       return s.drillLesson.steps.find((x) => x.ask)?.ask.context;
     });
-    expect(ctx.code).toContain("b += [55]");   // program A mutates the shared list
-    expect(ctx.output).toBe("[5, 6, 55]");     // …and its real output is shown
-    await expect(page.locator("#practice .pr-context")).toContainText("b += [55]");
-    await expect(page.locator("#practice .pr-context .pr-out")).toContainText("[5, 6, 55]");
+    expect(ctx.code).toContain("b += [87]");   // program A mutates the shared list
+    expect(ctx.output).toBe("[3, 6, 87]");     // …and its real output is shown
+    await expect(page.locator("#practice .pr-context")).toContainText("b += [87]");
+    await expect(page.locator("#practice .pr-context .pr-out")).toContainText("[3, 6, 87]");
     // The editor holds program B (the one to predict — a is left untouched).
     expect((await page.evaluate(() => window.plp.editor.getValue())).trim())
-      .toBe("a = [5, 6]\nb = a\nb = b + [55]\nprint(a)");
+      .toBe("a = [3, 6]\nb = a\nb = b + [87]\nprint(a)");
     // Predicting B's output correctly grades right and records the focus tag.
-    await page.evaluate(() => window.plp.tutor.lockPrediction("[5, 6]"));
+    await page.evaluate(() => window.plp.tutor.lockPrediction("[3, 6]"));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
     expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({

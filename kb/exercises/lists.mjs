@@ -6,6 +6,18 @@ import { mulberry32, int, pick } from "../rng.mjs";
 import { words, listNames } from "../pools.mjs";
 import { orderPair } from "../contrast.mjs";
 
+// A blank is authored by writing the program with a NUL marker where the hole
+// goes; this returns the full (correct) code plus the hole's position (mirrors
+// the helper in exercises/forms.mjs — kept local so this module stays
+// self-contained).
+function blankFrom(template, token) {
+  const idx = template.indexOf("\x00");
+  const before = template.slice(0, idx);
+  const line = before.split("\n").length;
+  const col = idx - (before.lastIndexOf("\n") + 1);
+  return { code: template.replace("\x00", token), blank: { line, col, len: token.length, target: token } };
+}
+
 export default [
   {
     id: "list-shows-brackets",
@@ -579,7 +591,7 @@ export default [
         const rng = mulberry32(seed);
         const shape = pick(rng, ["found", "not-found", "in-text"]);
         if (shape === "in-text") {
-          const word = pick(rng, ["cat", "dog", "sun", "map"]);
+          const word = pick(rng, ["dog", "map", "fog", "log"]);
           const hit = pick(rng, [true, false]);
           const ch = hit ? word[int(rng, 0, 2)] : pick(rng, ["z", "q", "x"]);
           return {
@@ -598,11 +610,121 @@ export default [
             variantCard: `${target} IS one of the items, so \`in\` answers \`True\` — it never says where.`,
           };
         }
-        let miss = int(rng, 10, 19);
+        // Draw the not-found probe from the SAME 1..9 band, excluded from the
+        // items (do/while) — so a "big number ⇒ not there" shortcut fails.
+        let miss = int(rng, 1, 9);
+        while (items.includes(miss)) miss = int(rng, 1, 9);
         return {
           code: `xs = [${items.join(", ")}]\nprint(${miss} in xs)\n`,
           shape: "not-found", variant: "plain",
           variantCard: `${miss} is not among the items, so the answer is \`False\` — \`in\` asks membership, nothing more.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Ramp (review) fill-one-blank: exactly ONE of len/sum/max/min produces the
+    // target — items are re-drawn until the intended function's value is unique
+    // among all four (so the fill has one right answer, E5/E6).
+    id: "fill-aggregate",
+    topic: "lists",
+    focus: "001Z", // aggregate-builtins
+    assumed: ["0005", "000D"],
+    role: "review",
+    form: "fill-one-blank",
+    generator: {
+      shapes: ["len", "sum", "max", "min"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const fn = pick(rng, ["len", "sum", "max", "min"]);
+        let items, vals;
+        do {
+          items = Array.from({ length: int(rng, 3, 4) }, () => int(rng, 1, 12));
+          vals = {
+            len: items.length,
+            sum: items.reduce((a, b) => a + b, 0),
+            max: Math.max(...items),
+            min: Math.min(...items),
+          };
+        } while (["len", "sum", "max", "min"].filter((f) => vals[f] === vals[fn]).length !== 1);
+        const { code, blank } = blankFrom(`print(\x00([${items.join(", ")}]))\n`, fn);
+        return {
+          code, blank, targetOutput: String(vals[fn]),
+          shape: fn, variant: "plain",
+          variantCard: `Only \`${fn}\` of [${items.join(", ")}] gives ${vals[fn]} — len is ${vals.len}, `
+            + `sum ${vals.sum}, max ${vals.max}, min ${vals.min}.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Ramp (review) spot-the-difference: `in` answers membership, not position.
+    // A hits an item (True); B probes an excluded same-band value (False).
+    id: "in-list-spot",
+    topic: "lists",
+    focus: "002M", // in-checks-membership
+    assumed: ["0005", "0006", "000D", "0016"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      // Mirrored shapes so B's answer varies across seeds ("opposite of A"
+      // is not a winning meta): half the pairs show the hit and probe the
+      // miss, half show the miss and probe the hit. A ≠ B always holds.
+      shapes: ["hit-vs-miss", "miss-vs-hit"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["hit-vs-miss", "miss-vs-hit"]);
+        const items = [];
+        while (items.length < 3) { const v = int(rng, 1, 9); if (!items.includes(v)) items.push(v); }
+        const hit = items[int(rng, 0, 2)];
+        let miss = int(rng, 1, 9);
+        while (items.includes(miss)) miss = int(rng, 1, 9);
+        const [shown, probed, aOut] = shape === "hit-vs-miss"
+          ? [hit, miss, "True"]
+          : [miss, hit, "False"];
+        return {
+          code: `xs = [${items.join(", ")}]\nprint(${shown} in xs)\n`,
+          aOutput: aOut,
+          contrastCode: `xs = [${items.join(", ")}]\nprint(${probed} in xs)\n`,
+          shape, variant: "plain",
+          variantCard: `\`${hit}\` is one of the items, so \`${hit} in xs\` is \`True\`; \`${miss}\` is not, so `
+            + `\`${miss} in xs\` is \`False\`. Same band, different membership.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Ramp (review) spot-the-difference: concat builds a NEW list (original
+    // unchanged) — A prints the untouched original, B prints the new list.
+    // DEVIATION from the plan's B `a.append(v)`: append-mutates (000G) is a
+    // SIBLING of list-concat-new (0021), not an ancestor, so an append B would
+    // footprint 000G outside the closure (K-5). This legal version keeps both
+    // programs on 0021.
+    id: "concat-vs-append-spot",
+    topic: "lists",
+    focus: "0021", // list-concat-new
+    assumed: ["0005", "0006", "000D"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["original-vs-new"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const items = [int(rng, 1, 5), int(rng, 6, 9)];
+        const v = int(rng, 10, 99);
+        return {
+          code: `a = [${items.join(", ")}]\nb = a + [${v}]\nprint(a)\n`,
+          aOutput: `[${items.join(", ")}]`,
+          contrastCode: `a = [${items.join(", ")}]\nb = a + [${v}]\nprint(b)\n`,
+          shape: "original-vs-new", variant: "plain",
+          variantCard: `\`a + [${v}]\` builds a brand-new list for \`b\`, leaving \`a\` as [${items.join(", ")}]. `
+            + `Print \`b\` instead and you see the new list: [${[...items, v].join(", ")}].`,
         };
       },
     },

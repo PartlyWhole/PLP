@@ -1,7 +1,7 @@
 // Numbers & bools intro exercises (phase-1 slice).
 
 import { mulberry32, int, pick } from "../rng.mjs";
-import { words } from "../pools.mjs";
+import { words, strNames } from "../pools.mjs";
 
 // Float pairs whose sum shows a rounding tail in IEEE-754 (same in JS and
 // Python), so float-inexact's "long tail" is always visible.
@@ -33,7 +33,7 @@ export default [
           return {
             code: `print(${a} * ${b} + ${c})\n`, shape, variant: "plain",
             variantCard: `\`${a} * ${b}\` happens first (\`${a * b}\`), then \`${a * b} + ${c}\` `
-              + `is ${a * b + c}. Going left to right would wrongly give ${a * (b + c)}.`,
+              + `is ${a * b + c}. Doing the \`+\` first would wrongly give ${a * (b + c)}.`,
           };
         }
         const big = a + 8; // keep the subtraction non-negative
@@ -71,11 +71,15 @@ export default [
           };
         }
         if (shape === "big-floordiv") {
+          // A wider quotient (k up to 40) so the chained result spreads well
+          // beyond {0, 1}: `a // b` lands in 12..40 before the two more //s.
+          const kBig = int(rng, 12, 40);
+          const aBig = b * kBig + r;
           const c = int(rng, 2, 3), d = 2;
-          const step1 = Math.floor(a / b), step2 = Math.floor(step1 / c);
+          const step1 = Math.floor(aBig / b), step2 = Math.floor(step1 / c);
           return {
-            code: `print(${a} // ${b} // ${c} // ${d})\n`, shape, variant: "plain",
-            variantCard: `Left to right: \`${a} // ${b}\` is ${step1}, \`// ${c}\` is ${step2}, \`// ${d}\` is ${Math.floor(step2 / d)}.`,
+            code: `print(${aBig} // ${b} // ${c} // ${d})\n`, shape, variant: "plain",
+            variantCard: `Left to right: \`${aBig} // ${b}\` is ${step1}, \`// ${c}\` is ${step2}, \`// ${d}\` is ${Math.floor(step2 / d)}.`,
           };
         }
         return {
@@ -292,17 +296,85 @@ export default [
     role: "intro",
     form: "predict-exact-output",
     generator: {
-      shapes: ["true-plus-true", "true-plus-int", "false-plus-int"],
+      shapes: ["bool-plus-bool", "true-plus-int", "false-plus-int"],
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
-        const shape = pick(rng, ["true-plus-true", "true-plus-int", "false-plus-int"]);
+        const shape = pick(rng, ["bool-plus-bool", "true-plus-int", "false-plus-int"]);
         const n = int(rng, 2, 9);
-        if (shape === "true-plus-true") {
-          return { code: `print(True + True)\n`, shape, variant: "plain", variantCard: `Each \`True\` counts as 1, so \`True + True\` is 2.` };
+        if (shape === "bool-plus-bool") {
+          // Both operands drawn from {True, False}, so the answer is 0, 1, or 2
+          // — no constant program.
+          const x = pick(rng, ["True", "False"]), y = pick(rng, ["True", "False"]);
+          const out = (x === "True" ? 1 : 0) + (y === "True" ? 1 : 0);
+          return { code: `print(${x} + ${y})\n`, shape, variant: "plain", variantCard: `\`${x}\` counts as ${x === "True" ? 1 : 0} and \`${y}\` as ${y === "True" ? 1 : 0}, so \`${x} + ${y}\` is ${out}.` };
         }
         if (shape === "true-plus-int") return { code: `print(True + ${n})\n`, shape, variant: "plain", variantCard: `\`True\` counts as 1, so \`True + ${n}\` is ${n + 1}.` };
         return { code: `print(False + ${n})\n`, shape, variant: "plain", variantCard: `\`False\` counts as 0, so \`False + ${n}\` is ${n}.` };
+      },
+    },
+  },
+
+  {
+    // Lane fix: str-literal-vs-number (000K) is a Numbers-lane concept — its
+    // whole point is "text that looks like a number is not a number". Moved
+    // here from state.mjs; footprint unchanged.
+    id: "digit-text",
+    topic: "numbers",
+    focus: "000K", // str-literal-vs-number
+    assumed: ["0005", "0006", "0007", "000Y"],
+    role: "intro",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["two-digit-strings", "three-digit-strings", "name-digit"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["two-digit-strings", "three-digit-strings", "name-digit"]);
+        const a = int(rng, 1, 9), b = int(rng, 1, 9), c = int(rng, 1, 9);
+        if (shape === "two-digit-strings") {
+          return {
+            code: `print("${a}" + "${b}")\n`, shape, variant: "plain",
+            variantCard: `\`"${a}"\` and \`"${b}"\` are text, so \`+\` joins them into \`${a}${b}\` — not the number ${a + b}.`,
+          };
+        }
+        if (shape === "three-digit-strings") return { code: `print("${a}" + "${b}" + "${c}")\n`, shape, variant: "plain" };
+        const nm = pick(rng, strNames);
+        return { code: `${nm} = "${a}"\nprint(${nm} + "${b}")\n`, shape, variant: "plain" };
+      },
+    },
+  },
+
+  {
+    // Ramp (review): floordiv drops the remainder, so a different divisor gives
+    // a different whole count. DEVIATION from the plan's "000Q-vs-000P"
+    // (`//` vs `/`): div-yields-float (000P) is a SIBLING of 000Q, not an
+    // ancestor, so a `print(a / b)` contrast program footprints 000P outside
+    // the closure (K-5). This legal single-concept spot-diff stays on 000Q.
+    id: "floordiv-divisor-spot",
+    topic: "numbers",
+    focus: "000Q", // floordiv-quotient
+    assumed: ["0005", "0008"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["divisor-change"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const b = int(rng, 2, 3);
+        let c = b + int(rng, 1, 3); // c > b, distinct divisor
+        let a = int(rng, 13, 40);
+        // Ensure the two quotients genuinely differ on every seed.
+        while (Math.floor(a / b) === Math.floor(a / c)) a = int(rng, 13, 40);
+        return {
+          code: `print(${a} // ${b})\n`,
+          aOutput: String(Math.floor(a / b)),
+          contrastCode: `print(${a} // ${c})\n`,
+          shape: "divisor-change", variant: "plain",
+          variantCard: `\`${a} // ${b}\` is ${Math.floor(a / b)} — how many whole \`${b}\`s fit. `
+            + `Divide the same ${a} by ${c} instead and only ${Math.floor(a / c)} fit; the remainder is dropped either way.`,
+        };
       },
     },
   },

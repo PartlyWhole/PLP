@@ -9,13 +9,13 @@
 ## Overview
 
 - **71 concepts** — 4 structural / 49 core / 18 edge.
-- **119 exercises** across 7 topics.
+- **128 exercises** across 7 topics.
 - **Forms:** fill-one-blank, predict-exact-output, predict-state, spot-the-difference, trace-table.
 
 ## Topics
 
-- **State & I/O** (`state`): 0005, 0006, 0007, 0009, 000A, 000B, 000C, 000J, 000K, 000M
-- **Numbers & bools** (`numbers`): 0008, 000N, 000P, 000Q, 000R, 000S, 000T, 000V, 000W, 000X
+- **State & I/O** (`state`): 0005, 0006, 0007, 0009, 000A, 000B, 000C, 000J, 000M
+- **Numbers & bools** (`numbers`): 0008, 000K, 000N, 000P, 000Q, 000R, 000S, 000T, 000V, 000W, 000X
 - **Strings** (`strings`): 000E, 000Y, 000Z, 0010, 0011, 0012, 0013, 0014
 - **Lists & aliasing** (`lists`): 000D, 000F, 000G, 000H, 001Z, 0020, 0021, 0022, 0023, 0024, 0025, 002M
 - **Conditions & logic** (`logic`): 0015, 0016, 0017, 0018, 0019, 001A, 001B, 001C, 001D, 002K
@@ -45,11 +45,11 @@ graph TD
   000B["000B accumulate-rebind"]
   000C["000C name-from-name"]
   000J["000J print-multi-args"]
-  000K["000K str-literal-vs-number"]
   000M("000M swap-right-side-first")
   end
   subgraph numbers [Numbers & bools]
   0008["0008 arith-on-ints"]
+  000K["000K str-literal-vs-number"]
   000N["000N op-precedence"]
   000P["000P div-yields-float"]
   000Q["000Q floordiv-quotient"]
@@ -284,7 +284,7 @@ x = v makes the name x hold the value v; print(x) shows that value.
 - Children: 000E, 000K, 000Y, 0014, 001R
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006
 - Characteristic wrong answer: the stored value where the text was meant, or the text where the value was meant
-- Exercises: quoted-or-name
+- Exercises: quoted-or-name, quoted-vs-name-spot
 
 ### 0008 · arith-on-ints — core
 
@@ -424,7 +424,7 @@ In a, b = b, a the whole right side is evaluated before either name rebinds — 
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0008
 - Characteristic wrong answer: the left-to-right answer, e.g. 20 for 2 + 3 * 4
-- Exercises: precedence-mix
+- Exercises: fill-precedence-op, precedence-mix
 
 ### 000P · div-yields-float — core
 
@@ -444,7 +444,7 @@ In a, b = b, a the whole right side is evaluated before either name rebinds — 
 - Children: 000R
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0008
 - Characteristic wrong answer: a decimal answer, as if it were /
-- Exercises: floor-div
+- Exercises: floor-div, floordiv-divisor-spot
 
 ### 000R · mod-remainder — core
 
@@ -594,7 +594,7 @@ The yes-or-no values are True and False, and they print exactly like that.
 - Children: 000X, 0015, 001A, 001V, 002M
 - Lineage: 0001 ← 0004 ← 0005
 - Characteristic wrong answer: true, yes, or 1
-- Exercises: bool-prints, fill-bool
+- Exercises: bool-prints
 
 ### 0017 · if-runs-or-skips — core
 
@@ -604,7 +604,7 @@ if runs its indented lines when the test is True and skips them when it is False
 - Children: 0018, 001B, 001N, 001P
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0008 ← 0015 ← 0016
 - Characteristic wrong answer: the skipped branch's output
-- Exercises: if-runs
+- Exercises: branch-boundary-order, if-runs
 
 ### 0018 · else-otherwise — core
 
@@ -634,7 +634,7 @@ and needs both sides true; or needs at least one; not flips.
 - Children: 001C, 001D
 - Lineage: 0001 ← 0004 ← 0005 ← 0016
 - Characteristic wrong answer: or treated as exclusive, or and/or swapped
-- Exercises: bool-and-or-not
+- Exercises: bool-and-or-not, fill-bool-op
 
 ### 001B · truthiness-empty-falsy — edge
 
@@ -774,7 +774,7 @@ d = {"a": 1} maps keys to values; d["a"] fetches the value stored under that key
 - Children: 001S, 001T, 001V
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E
 - Characteristic wrong answer: the key itself, or a value looked up by position
-- Exercises: dict-lookup
+- Exercises: dict-lookup, fill-dict-key
 
 ### 001S · dict-key-assign — core
 
@@ -824,7 +824,7 @@ x, y = pair spreads a two-item bundle into two names, in order.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 001W
 - Characteristic wrong answer: both names get the whole tuple
-- Exercises: tuple-spread
+- Exercises: tuple-spread, unpack-vs-pack-spot
 
 ### 001Y · tuple-by-comma — edge
 
@@ -844,7 +844,7 @@ len, sum, max, min compute one value from a whole list.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D
 - Characteristic wrong answer: an off-by-one count, or the wrong end of the range
-- Exercises: aggregate-one-value
+- Exercises: aggregate-one-value, fill-aggregate
 
 ### 0020 · extend-vs-append — edge
 
@@ -864,7 +864,7 @@ append([4, 5]) adds one item (a nested list); extend([4, 5]) adds each item.
 - Children: 0023
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D
 - Characteristic wrong answer: an original list shown as changed
-- Exercises: concat-builds-new
+- Exercises: concat-builds-new, concat-vs-append-spot
 
 ### 0022 · nested-lists — core
 
@@ -924,7 +924,7 @@ A branch can rebind a name — what the name ends up holding depends on which br
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D ← 0016
 - Characteristic wrong answer: the item's position, or an error
-- Exercises: in-list
+- Exercises: in-list, in-list-spot
 
 ## Exercises
 
@@ -955,7 +955,7 @@ prints:
 Program A (shown with its output):
 ```py
 count = 0
-for x in [3, 1, 2]:
+for x in [1, 2, 5, 1]:
     count = count + 1
     print(count)
 ```
@@ -964,18 +964,19 @@ prints:
 1
 2
 3
+4
 ```
 
 Program B (predicted):
 ```py
 count = 0
-for x in [3, 1, 2]:
+for x in [1, 2, 5, 1]:
     count = count + 1
 print(count)
 ```
 prints:
 ```
-3
+4
 ```
 
 ### aggregate-one-value — focus 001Z (aggregate-builtins)
@@ -1197,30 +1198,64 @@ False
 
 - Form: `predict-exact-output` · Role: intro · Topic: numbers
 - Assumed: 0005, 0008, 0016
-- Shapes: true-plus-true, true-plus-int, false-plus-int · Variants: plain
+- Shapes: bool-plus-bool, true-plus-int, false-plus-int · Variants: plain
 - Sample (provenance: seed k=0):
 
 ```py
-print(True + True)
+print(False + False)
 ```
 prints:
 ```
-2
+0
 ```
 
 ### bool-prints — focus 0016 (bool-values)
 
 - Form: `predict-exact-output` · Role: intro · Topic: logic
 - Assumed: 0005
-- Shapes: true, false · Variants: true, false
+- Shapes: true, false, both · Variants: true, false, both
 - Sample (provenance: seed k=0):
 
 ```py
+print(True)
 print(False)
 ```
 prints:
 ```
+True
 False
+```
+
+### branch-boundary-order — focus 0017 (if-runs-or-skips)
+
+- Form: `spot-the-difference` · Role: review · Topic: logic
+- Assumed: 0005, 0015
+- Shapes: move-out-of-skip · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+if 2 > 6:
+    print("frog")
+    print("tree")
+print("fish")
+```
+prints:
+```
+fish
+```
+
+Program B (predicted):
+```py
+if 2 > 6:
+    print("frog")
+print("tree")
+print("fish")
+```
+prints:
+```
+tree
+fish
 ```
 
 ### branch-rebind — focus 002K (branch-picks-binding)
@@ -1384,6 +1419,35 @@ prints:
 drumdrumstar
 ```
 
+### concat-vs-append-spot — focus 0021 (list-concat-new)
+
+- Form: `spot-the-difference` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D
+- Shapes: original-vs-new · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+a = [1, 9]
+b = a + [12]
+print(a)
+```
+prints:
+```
+[1, 9]
+```
+
+Program B (predicted):
+```py
+a = [1, 9]
+b = a + [12]
+print(b)
+```
+prints:
+```
+[1, 9, 12]
+```
+
 ### continue-order — focus 001P (continue-skips)
 
 - Form: `spot-the-difference` · Role: review · Topic: loops
@@ -1455,17 +1519,17 @@ After it runs, `a` holds:
 
 - Form: `predict-state` · Role: review · Topic: state
 - Assumed: 0005, 0006, 000A
-- Shapes: copy-rebind-probe-copy · Variants: plain
+- Shapes: copy-rebind-probe-copy, probe-source-after-rebind · Variants: plain
 - Sample (provenance: seed k=0):
 
 ```py
-a = 5
-b = a
 a = 11
+b = a
+a = 14
 ```
-After it runs, `b` holds:
+After it runs, `a` holds:
 ```
-5
+14
 ```
 
 ### copy-order — focus 000C (name-from-name)
@@ -1505,11 +1569,11 @@ prints:
 
 - Form: `predict-exact-output` · Role: intro · Topic: state
 - Assumed: 0005, 0006, 000A
-- Shapes: copy-then-rebind-source, copy-of-copy, read-source-after-copy · Variants: plain
+- Shapes: copy-then-rebind-source, copy-of-copy, read-source-after-copy, rebind-read-new · Variants: plain
 - Sample (provenance: seed k=0):
 
 ```py
-a = 2
+a = 3
 b = a
 c = b
 b = 18
@@ -1517,7 +1581,7 @@ print(c)
 ```
 prints:
 ```
-2
+3
 ```
 
 ### copy-timing — focus 0024 (slice-copies)
@@ -1621,7 +1685,7 @@ After it runs, `d` holds:
 
 ### digit-text — focus 000K (str-literal-vs-number)
 
-- Form: `predict-exact-output` · Role: intro · Topic: state
+- Form: `predict-exact-output` · Role: intro · Topic: numbers
 - Assumed: 0005, 0006, 0007, 000Y
 - Shapes: two-digit-strings, three-digit-strings, name-digit · Variants: plain
 - Sample (provenance: seed k=0):
@@ -1700,18 +1764,17 @@ moon
 
 - Form: `predict-exact-output` · Role: intro · Topic: logic
 - Assumed: 0005, 0006, 000D, 0017
-- Shapes: empty-list, zero, empty-string · Variants: plain
+- Shapes: empty-list, zero, empty-string, truthy-list, truthy-int, truthy-string, falsy-before · Variants: plain
 - Sample (provenance: seed k=0):
 
 ```py
-x = 0
+x = 4
 if x:
     print("blue")
-print("fish")
 ```
 prints:
 ```
-fish
+blue
 ```
 
 ### extend-vs-append-spot — focus 0020 (extend-vs-append)
@@ -1743,6 +1806,22 @@ prints:
 [4, 6, [15, 18]]
 ```
 
+### fill-aggregate — focus 001Z (aggregate-builtins)
+
+- Form: `fill-one-blank` · Role: review · Topic: lists
+- Assumed: 0005, 000D
+- Shapes: len, sum, max, min · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended token `min`:
+```py
+print(min([9, 2, 10, 11]))
+```
+prints the target:
+```
+2
+```
+
 ### fill-arith-op — focus 0008 (arith-on-ints)
 
 - Form: `fill-one-blank` · Role: review · Topic: numbers
@@ -1759,20 +1838,37 @@ prints the target:
 24
 ```
 
-### fill-bool — focus 0016 (bool-values)
+### fill-bool-op — focus 001A (bool-ops)
 
 - Form: `fill-one-blank` · Role: review · Topic: logic
-- Assumed: 0005
-- Shapes: fill-bool-value · Variants: true, false
+- Assumed: 0005, 0016
+- Shapes: not, and-false · Variants: plain
 - Sample (provenance: seed k=0):
 
 Filled with the intended token `True`:
 ```py
-print(True)
+print(True and False)
 ```
 prints the target:
 ```
-True
+False
+```
+
+### fill-dict-key — focus 001R (dict-lookup-by-key)
+
+- Form: `fill-one-blank` · Role: review · Topic: structures
+- Assumed: 0005, 0006, 0007, 000E
+- Shapes: fill-key · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended token `"a"`:
+```py
+d = {"a": 3, "cat": 11}
+print(d["a"])
+```
+prints the target:
+```
+3
 ```
 
 ### fill-mod — focus 000R (mod-remainder)
@@ -1789,6 +1885,22 @@ print(44 % 7)
 prints the target:
 ```
 2
+```
+
+### fill-precedence-op — focus 000N (op-precedence)
+
+- Form: `fill-one-blank` · Role: review · Topic: numbers
+- Assumed: 0005, 0008
+- Shapes: fill-op · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended token `+`:
+```py
+print(5 + 6 * 6)
+```
+prints the target:
+```
+41
 ```
 
 ### fill-range-start — focus 001H (range-step)
@@ -1915,30 +2027,56 @@ prints:
 - Sample (provenance: seed k=0):
 
 ```py
-print(7 // 2 // 3 // 2)
+print(81 // 2 // 2 // 2)
 ```
 prints:
 ```
-0
+10
+```
+
+### floordiv-divisor-spot — focus 000Q (floordiv-quotient)
+
+- Form: `spot-the-difference` · Role: review · Topic: numbers
+- Assumed: 0005, 0008
+- Shapes: divisor-change · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+print(32 // 3)
+```
+prints:
+```
+10
+```
+
+Program B (predicted):
+```py
+print(32 // 6)
+```
+prints:
+```
+5
 ```
 
 ### for-else-runs — focus 001Q (for-else-no-break)
 
 - Form: `predict-exact-output` · Role: intro · Topic: loops
-- Assumed: 0005, 0006, 000D, 0016, 0017, 001E, 001N
-- Shapes: no-break · Variants: plain
+- Assumed: 0005, 0006, 000D, 0015, 0016, 0017, 001E, 001N
+- Shapes: no-break, break-fires · Variants: plain
 - Sample (provenance: seed k=0):
 
 ```py
-for x in [9, 2, 8]:
-    if False:
+for x in [2, 8, 3]:
+    if x == 2:
+        print(x)
         break
 else:
-    print("clear")
+    print("ready")
 ```
 prints:
 ```
-clear
+2
 ```
 
 ### for-visits — focus 001E (loop-for-visits-each)
@@ -2041,16 +2179,17 @@ blue
 
 - Form: `predict-exact-output` · Role: intro · Topic: logic
 - Assumed: 0005, 0008, 0015, 0016
-- Shapes: runs, skips, compare-test · Variants: plain
+- Shapes: runs, skips, compare-test, skips-before, compare-skips-before · Variants: plain
 - Sample (provenance: seed k=0):
 
 ```py
-if True:
+if False:
     print("blue")
+print("hi")
 ```
 prints:
 ```
-blue
+hi
 ```
 
 ### in-checks-keys — focus 001V (in-dict-checks-keys)
@@ -2079,6 +2218,33 @@ False
 ```py
 xs = [4, 2, 7]
 print(4 in xs)
+```
+prints:
+```
+True
+```
+
+### in-list-spot — focus 002M (in-checks-membership)
+
+- Form: `spot-the-difference` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D, 0016
+- Shapes: hit-vs-miss, miss-vs-hit · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+xs = [3, 7, 4]
+print(2 in xs)
+```
+prints:
+```
+False
+```
+
+Program B (predicted):
+```py
+xs = [3, 7, 4]
+print(3 in xs)
 ```
 prints:
 ```
@@ -2310,7 +2476,7 @@ prints:
 
 Program A (shown with its output):
 ```py
-print(True or False)
+print(False or True)
 ```
 prints:
 ```
@@ -2319,11 +2485,11 @@ True
 
 Program B (predicted):
 ```py
-print(5 or 0)
+print(4 or 0)
 ```
 prints:
 ```
-5
+4
 ```
 
 ### plain-arith — focus 0008 (arith-on-ints)
@@ -2473,6 +2639,33 @@ print("score")
 prints:
 ```
 score
+```
+
+### quoted-vs-name-spot — focus 0007 (quoted-vs-name)
+
+- Form: `spot-the-difference` · Role: review · Topic: state
+- Assumed: 0005, 0006
+- Shapes: bare-vs-quoted · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+n = 10
+print(n)
+```
+prints:
+```
+10
+```
+
+Program B (predicted):
+```py
+n = 10
+print("n")
+```
+prints:
+```
+n
 ```
 
 ### range-start — focus 001G (range-start-stop)
@@ -2688,11 +2881,11 @@ hihi
 
 Program B (predicted):
 ```py
-print("hi" * 2)
+print("hi" * 3)
 ```
 prints:
 ```
-hihi
+hihihi
 ```
 
 ### shallow-copy-latent — focus 0025 (copy-is-shallow)
@@ -2958,15 +3151,15 @@ prints:
 
 - Form: `predict-exact-output` · Role: intro · Topic: strings
 - Assumed: 0005, 0015, 0016
-- Shapes: capital-vs-lower, lower-descending · Variants: plain
+- Shapes: capital-vs-lower, lower-descending, capital-on-right, lower-ascending · Variants: plain
 - Sample (provenance: seed k=0):
 
 ```py
-print("Zoo" < "melon")
+print("zebra" < "apple")
 ```
 prints:
 ```
-True
+False
 ```
 
 ### text-from-int — focus 000T (str-of-int)
@@ -3256,6 +3449,33 @@ print(x)
 prints:
 ```
 7
+```
+
+### unpack-vs-pack-spot — focus 001X (tuple-unpack)
+
+- Form: `spot-the-difference` · Role: review · Topic: structures
+- Assumed: 0005, 0006, 001W
+- Shapes: unpack-vs-pack · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+x, y = (1, 11)
+print(x)
+```
+prints:
+```
+1
+```
+
+Program B (predicted):
+```py
+t = (1, 11)
+print(t)
+```
+prints:
+```
+(1, 11)
 ```
 
 ### while-counts-down — focus 001M (while-repeats-while-true)
