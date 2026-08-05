@@ -27,6 +27,7 @@ import loopExercises from "./exercises/loops.mjs";
 import structureExercises from "./exercises/structures.mjs";
 import formExercises from "./exercises/forms.mjs";
 import challengeExercises from "./exercises/challenges.mjs";
+import orderExercises from "./exercises/order.mjs";
 import { footprint } from "./analyzer/footprint.mjs";
 
 const TAG_RE = /^[0-9A-HJKMNP-TV-Z]{4}$/; // Crockford base-32: no I L O U
@@ -62,7 +63,7 @@ export function loadKB() {
 
   const structural = new Set([...concepts.values()].filter((c) => c.kind === "structural").map((c) => c.tag));
 
-  const exercises = [...stateExercises, ...numberExercises, ...listExercises, ...stringExercises, ...logicExercises, ...loopExercises, ...structureExercises, ...formExercises, ...challengeExercises];
+  const exercises = [...stateExercises, ...numberExercises, ...listExercises, ...stringExercises, ...logicExercises, ...loopExercises, ...structureExercises, ...formExercises, ...challengeExercises, ...orderExercises];
   const exIds = new Set();
   for (const ex of exercises) {
     if (exIds.has(ex.id)) throw new Error(`kb: duplicate exercise id ${ex.id}`);

@@ -9,8 +9,8 @@
 ## Overview
 
 - **71 concepts** — 4 structural / 49 core / 18 edge.
-- **141 exercises** across 7 topics.
-- **Forms:** fill-one-blank, predict-exact-output, predict-state, spot-the-difference, trace-table.
+- **146 exercises** across 7 topics.
+- **Forms:** fill-one-blank, order-the-lines, predict-exact-output, predict-state, spot-the-difference, trace-table.
 
 ## Topics
 
@@ -314,7 +314,7 @@ A second x = … replaces x's value; the old value is gone.
 - Children: 000B, 000C
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006
 - Characteristic wrong answer: the first value
-- Exercises: read-before-rebind, rebind-replaces
+- Exercises: order-rebind-last-wins, read-before-rebind, rebind-replaces
 
 ### 000B · accumulate-rebind — core
 
@@ -324,7 +324,7 @@ x = x + 1 reads the old value, computes, then rebinds x to the result.
 - Children: 001J, 001M, 002K
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A
 - Characteristic wrong answer: the old value, or one step short
-- Exercises: accumulate-step, read-between-steps, trace-rebind
+- Exercises: accumulate-step, order-noncommutative-steps, read-between-steps, trace-rebind
 
 ### 000C · name-from-name — core
 
@@ -334,7 +334,7 @@ b = a gives b the value a holds now; rebinding a later does not change b.
 - Children: 000H, 000M, 0013
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 000A
 - Characteristic wrong answer: a's new value
-- Exercises: copy-latent-value, copy-order, copy-then-rebind
+- Exercises: copy-latent-value, copy-order, copy-then-rebind, order-copy-timing
 
 ### 000D · list-literal — core
 
@@ -374,7 +374,7 @@ xs.append(v) changes the existing list, adding v at the end.
 - Children: 000H, 001K, 0020
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D
 - Characteristic wrong answer: the list without the appended item
-- Exercises: append-grows, append-latent, append-order
+- Exercises: append-grows, append-latent, append-order, order-append-then-print
 
 ### 000H · names-share-list — edge
 
@@ -714,7 +714,7 @@ A running total updates once per loop pass; its final value is there after the l
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000B ← 000D ← 001E
 - Characteristic wrong answer: an off-by-one total, or only the last value
-- Exercises: accumulate-then-read, loop-total, loop-total-latent, trace-sum
+- Exercises: accumulate-then-read, loop-total, loop-total-latent, order-loop-total, trace-sum
 
 ### 001K · loop-build-list — core
 
@@ -2676,6 +2676,100 @@ print(4 or 0)
 prints:
 ```
 4
+```
+
+### order-append-then-print — focus 000G (append-mutates)
+
+- Form: `order-the-lines` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D
+- Shapes: empty-then-appends · Variants: plain
+- Sample (provenance: seed k=0):
+
+Lines (canonical order):
+```py
+xs = []
+xs.append(23)
+xs.append(60)
+print(xs)
+```
+prints:
+```
+[23, 60]
+```
+
+### order-copy-timing — focus 000C (name-from-name)
+
+- Form: `order-the-lines` · Role: review · Topic: state
+- Assumed: 0005, 0006, 000A
+- Shapes: copy-then-rebind · Variants: plain
+- Sample (provenance: seed k=0):
+
+Lines (canonical order):
+```py
+a = 7
+b = a
+a = 9
+print(b)
+```
+prints:
+```
+7
+```
+
+### order-loop-total — focus 001J (loop-accumulate)
+
+- Form: `order-the-lines` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 0009, 000A, 000B, 000D, 001E
+- Shapes: total-before-loop · Variants: plain
+- Sample (provenance: seed k=0):
+
+Lines (canonical order):
+```py
+total = 0
+for x in [6, 4, 2]:
+    total = total + x
+print(total)
+```
+prints:
+```
+12
+```
+
+### order-noncommutative-steps — focus 000B (accumulate-rebind)
+
+- Form: `order-the-lines` · Role: review · Topic: state
+- Assumed: 0005, 0006, 0008, 0009, 000A
+- Shapes: subtract-then-multiply · Variants: plain
+- Sample (provenance: seed k=0):
+
+Lines (canonical order):
+```py
+score = 7
+score = score - 5
+score = score * 4
+print(score)
+```
+prints:
+```
+8
+```
+
+### order-rebind-last-wins — focus 000A (rebind-updates-name)
+
+- Form: `order-the-lines` · Role: review · Topic: state
+- Assumed: 0005, 0006
+- Shapes: two-binds-one-read · Variants: plain
+- Sample (provenance: seed k=0):
+
+Lines (canonical order):
+```py
+n = 5
+n = 9
+print(n)
+```
+prints:
+```
+9
 ```
 
 ### plain-arith — focus 0008 (arith-on-ints)

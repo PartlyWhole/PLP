@@ -156,6 +156,62 @@ export function renderTraceTable(body, q) {
   };
 }
 
+// The Parsons renderer (expansion ladder §R2): one row per dealt item, each
+// with ↑/↓ buttons — touch-first, no drag dependency, so it works the same on
+// a phone and a laptop. `q.items` arrives in the DEALT (shuffled) order and
+// carries program text: every row is built with textContent (invariant 8).
+// collect() returns the ids top-to-bottom; the tutor joins their text and
+// RUNS it (any order that really prints the target is right).
+export function renderOrderLines(body, q) {
+  const list = document.createElement("div");
+  list.className = "quiz-order pr-order";
+  const rowFor = (item) => {
+    const row = document.createElement("div");
+    row.className = "quiz-order-row pr-order-row";
+    row.dataset.item = item.id;
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "pr-order-move";
+    up.textContent = "↑";
+    up.title = "move this line up";
+    const down = document.createElement("button");
+    down.type = "button";
+    down.className = "pr-order-move";
+    down.textContent = "↓";
+    down.title = "move this line down";
+    const code = document.createElement("code");
+    code.textContent = item.text;
+    const move = (dir) => {
+      if (list.classList.contains("frozen")) return;
+      const rows = [...list.children];
+      const i = rows.indexOf(row);
+      const j = i + dir;
+      if (j < 0 || j >= rows.length) return;
+      if (dir < 0) list.insertBefore(row, rows[j]);
+      else list.insertBefore(rows[j], row);
+    };
+    up.addEventListener("click", () => move(-1));
+    down.addEventListener("click", () => move(1));
+    row.append(up, down, code);
+    return row;
+  };
+  for (const item of q.items) list.appendChild(rowFor(item));
+  body.appendChild(list);
+  return {
+    collect: () => [...list.children].map((row) => row.dataset.item),
+    applyResult(result) {
+      list.classList.toggle("ok", result.correct === true);
+      list.classList.toggle("bad", result.correct === false);
+    },
+    freeze() {
+      list.classList.add("frozen");
+      for (const b of list.querySelectorAll("button")) b.disabled = true;
+    },
+    line: null,
+    wide: false,
+  };
+}
+
 export function renderQuestionBody(body, q, { omitPrompt = false } = {}) {
   if (!omitPrompt) {
     const prompt = document.createElement("p");

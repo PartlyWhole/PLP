@@ -310,6 +310,25 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met 
         code: prog.code, blank: prog.blank, targetOutput: prog.targetOutput,
         prompt: `Fill the blank so it prints \`${prog.targetOutput}\`.`,
       };
+    } else if (ex.form === "order-the-lines") {
+      // Parsons (expansion ladder §R2): the KB emits the CANONICAL lines and
+      // the output they produce; the deal is shuffled HERE, from the round's
+      // rng — so the same (topic, seed, …) compile always deals the same
+      // puzzle and a reload/review/retry rebuilds it identically. An element
+      // may contain "\n" (a compound block moves as one unit).
+      const items = prog.lines.map((text, k) => ({ id: `l${k}`, text }));
+      const shuffled = shuffleItems(rng, items, prog.lines);
+      const shuffledJoin = shuffled.map((it) => it.text).join("\n") + "\n";
+      // loadCode carries the SHUFFLED join: the editor/console/memory reset
+      // per question, and "open in editor" shows the honest puzzle state.
+      steps.push({ loadCode: shuffledJoin });
+      ask = {
+        kind: "order-the-lines",
+        form: ex.form, shape: prog.shape,
+        concept: ex.focus, template: ex.id,
+        items: shuffled, lines: prog.lines, targetOutput: prog.targetOutput,
+        prompt: `Put the lines in order so it prints \`${prog.targetOutput}\`.`,
+      };
     } else if (ex.form === "trace-table") {
       // Walk the trace: the student fills what each watched name holds at
       // every step where it changes; the real trace is the answer key (the
@@ -449,6 +468,27 @@ export function drillTopicFor(tags) {
   let best = null, n = 0;
   for (const [t, c] of counts) if (c > n) { best = t; n = c; }
   return best ?? "all";
+}
+
+// The compile-time deal for `order-the-lines` (§R2): a seeded Fisher-Yates
+// over the canonical items, with the guard that the dealt puzzle must never
+// start solved — a draw whose text sequence equals the canonical one is
+// re-drawn (and, if the re-draw collides too, reversed, which for ≥2 lines
+// is always different from canonical).
+function shuffleItems(rng, items, lines) {
+  const isCanonical = (arr) => arr.every((it, i) => it.text === lines[i]);
+  const draw = () => {
+    const a = [...items];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+  let out = draw();
+  if (isCanonical(out)) out = draw();
+  if (isCanonical(out)) out = [...out].reverse();
+  return out;
 }
 
 function weightedPick(rng, pool, stats, cold, templateStats) {

@@ -83,6 +83,25 @@ real trace, and the reveal is "N of M steps right" plus the memory-model
 link. Score is all-or-nothing; a clean first-attempt perfect table
 grants met (see design/lesson-kb-binding.md §4).
 
+**order-the-lines** (Parsons, expansion ladder §R2) is the fifth kind: the
+KB emits the lines in CANONICAL order and buildKBSession draws the deal
+from the round's rng (deterministic per round, guarded so the dealt
+puzzle never starts solved; `loadCode` carries the shuffled join so the
+editor is honest). The card renders one row per line with ↑/↓ buttons —
+touch-first, no drag — and suppresses the automatic program block
+(`addInteractiveCard({ program: false })`: the widget IS the program).
+An element may contain a newline: a compound block (a `for` header with
+its body) moves as ONE unit. Grading EXECUTES the arrangement — join,
+`setValue`, reveal, trace, then `predict-output`'s grade against the
+target — so any order that really prints the target is right and an
+arrangement that raises simply never completes. This form grants NO met
+in v1 (an arrangement is production, weaker than §4's prediction
+evidence classes); stats, streak and template retirement still move.
+Review shows the recorded arrangement, the verdict and what it really
+printed; the retry re-deals the same items as a live widget and runs the
+new arrangement for real (`retryAnswer` takes an ARRAY of item ids here,
+mirroring the trace-table map branch).
+
 **Endless mode and the score tracker.** "∞ Endless practice" on the menu
 runs auto-chaining chunks: when a chunk's questions are exhausted,
 `finish()` compiles the next seeded round into the SAME store (no summary
@@ -118,7 +137,9 @@ restored around the retry run), but the score of record never moves:
 `rec.ok`, the kb seen/missed stats, and met grants all keep the first
 attempt; the retry outcome only decorates the record (`rec.retry`) and
 its dot. A skipped question's retry teaches the record its answer.
-Single-answer kinds retry through a one-line input; a trace-table retry
+Single-answer kinds retry through a one-line input; an order-the-lines
+retry re-deals the shuffled rows and runs the new arrangement; a
+trace-table retry
 swaps the graded table for a fresh BLANK one (the truth leaves the
 screen the moment the retry starts — otherwise it would be copying),
 grades the refilled cells against a real re-run, then re-renders the
@@ -229,7 +250,8 @@ The compiler takes the learner's met set as `opts.met` (threaded from
 line of output (single-line input, Enter to submit); the one
 `multiline: true` exception is `loop-for-visits-each`, where several
 lines ARE the concept. Forms beyond predict-exact-output — predict-state,
-fill-one-blank, spot-the-difference — plug in per exercise (design §5.2).
+fill-one-blank, spot-the-difference, trace-table, order-the-lines — plug
+in per exercise (design §5.2, expansion ladder §R2).
 
 A drill round compiles a seeded, stats-weighted sequence into an
 ordinary lesson script, so drills reuse the whole machinery (popup

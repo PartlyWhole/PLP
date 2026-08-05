@@ -154,6 +154,47 @@ test.describe("PLP questions (Q-series)", () => {
     expect(r.wrong.correct).toBe(false);
   });
 
+  // The Parsons renderer (expansion ladder §R2) has no generator — the KB
+  // deals its items — so it is unit-checked directly through the shared
+  // question-ui module: ↑/↓ reorder the rows, collect() reads them
+  // top-to-bottom, and freeze() ends the interaction.
+  test("renderOrderLines: ↑/↓ reorder the rows; collect reads them top-down; freeze stops moving", async ({ page }) => {
+    await page.goto(SITE);
+    await page.waitForFunction(() => Boolean(window.plp?.questionUI));
+    const r = await page.evaluate(() => {
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      const items = [{ id: "l2", text: "print(n)" }, { id: "l0", text: "n = 1" }, { id: "l1", text: "n = n + 1" }];
+      const view = window.plp.questionUI.renderOrderLines(host, { items });
+      const rows = () => [...host.querySelectorAll(".pr-order-row")];
+      const click = (i, which) => rows()[i].querySelectorAll("button")[which].click();
+      const dealt = view.collect();
+      click(0, 1);              // ↓ on the top row
+      const afterDown = view.collect();
+      click(2, 0);              // ↑ on the bottom row
+      const afterUp = view.collect();
+      click(0, 0);              // ↑ at the top edge: no-op
+      const atEdge = view.collect();
+      const texts = rows().map((row) => row.querySelector("code").textContent);
+      view.applyResult({ correct: false });
+      const marked = host.querySelector(".pr-order").className;
+      view.freeze();
+      click(0, 1);              // frozen: the row does not move
+      const afterFreeze = view.collect();
+      const disabled = [...host.querySelectorAll(".pr-order-move")].every((b) => b.disabled);
+      host.remove();
+      return { dealt, afterDown, afterUp, atEdge, texts, marked, afterFreeze, disabled };
+    });
+    expect(r.dealt).toEqual(["l2", "l0", "l1"]);
+    expect(r.afterDown).toEqual(["l0", "l2", "l1"]);
+    expect(r.afterUp).toEqual(["l0", "l1", "l2"]);
+    expect(r.atEdge).toEqual(["l0", "l1", "l2"]);
+    expect(r.texts).toEqual(["n = 1", "n = n + 1", "print(n)"]);
+    expect(r.marked).toContain("bad");
+    expect(r.afterFreeze).toEqual(["l0", "l1", "l2"]);
+    expect(r.disabled).toBe(true);
+  });
+
   test("code-structure: both modes blank complementary lines", async ({ page }) => {
     await setupRun(page);
     const r = await page.evaluate((ctxSrc) => {

@@ -26,7 +26,7 @@
 // printed. The run IS the reveal.
 
 import { generateQuestion, questionGenerators, normalizeAnswer } from "./questions.mjs";
-import { renderQuestionBody, renderTraceTable, createAnswerInput, appendExpected } from "./question-ui.mjs";
+import { renderQuestionBody, renderTraceTable, renderOrderLines, createAnswerInput, appendExpected } from "./question-ui.mjs";
 import { buildKBSession, kbTopics, migrateStats, spliceBlank, lintLessonConcepts, frontierTags, drillTopicFor, topicProgress, conceptTopics } from "./kb-session.mjs";
 import { summarizeRound } from "./progress.mjs";
 import { mapModel, renderConceptMap } from "./concept-map.mjs";
@@ -498,6 +498,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       if (step.ask.kind === "predict-output" || step.ask.kind === "predict-state") return execPredictOutput(step.ask);
       if (step.ask.kind === "fill-one-blank") return execFillBlank(step.ask);
       if (step.ask.kind === "trace-table") return execTraceTable(step.ask);
+      if (step.ask.kind === "order-the-lines") return execOrderLines(step.ask);
       return execGeneratedAsk(step.ask);
     }
 
@@ -914,6 +915,91 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     return true;
   }
 
+  // order-the-lines (Parsons, expansion ladder §R2): the dealt lines are
+  // shuffled at COMPILE time; the learner rearranges them with ↑/↓ and the
+  // grade is what their arrangement REALLY prints — join, load, run, compare
+  // with the target. Any order that prints the target is right (positional
+  // grading would contradict interpreter-first); an arrangement that raises
+  // never completes and grades wrong.
+  //
+  // NO met grant here (v1): an arrangement is production evidence, weaker
+  // than the prediction classes lesson-kb-binding §4 admits as met-granting.
+  // Everything else resolveAsk does — kb stats, template retirement, score
+  // and streak, events — still runs. Revisit with data (ladder §R2).
+  function execOrderLines(ask) {
+    events.emit("quiz-question", { kind: "order-the-lines" });
+    const byId = new Map(ask.items.map((it) => [it.id, it.text]));
+    const codeFor = (orderIds) => orderIds.map((id) => byId.get(id) ?? "").join("\n") + "\n";
+    const baseReview = (extra = {}) => ({
+      kind: "order-the-lines", form: ask.form,
+      items: ask.items, canonical: ask.lines, targetOutput: ask.targetOutput,
+      teach: ask.teach, context: ask.context,
+      ...extra,
+    });
+    let view = null;
+    const card = ui.addInteractiveCard({
+      teach: ask.teach, context: ask.context, form: ask.form ?? "order-the-lines",
+      prompt: ask.prompt ?? "Put the lines in order.",
+      // The widget IS the program — a second, uneditable copy above it would
+      // only be the same lines twice.
+      program: false,
+      render: (body) => { view = renderOrderLines(body, ask); return view; },
+      actions: [],
+      prog: store.currentProg,
+    });
+    ui.popBatch(batch, card);
+    batch = [];
+
+    const doCheck = async (provided) => {
+      const orderIds = provided ?? view.collect();
+      const arranged = codeFor(orderIds);
+      view.freeze();
+      card.setActions([]);
+      card.setNote("Running your order for real…");
+      editor.setValue(arranged);
+      store.lastLoadedCode = arranged; // the reveal run is now the lesson's code
+      registerProgram(arranged);
+      persist();
+      ui.beginReveal?.();
+      const summary = await actions.trace();
+      // A non-completing arrangement (the classic use-before-bind) has no
+      // gradable output — it simply is not the target.
+      const q = summary?.terminal_reason === "completed" ? generateQuestion("predict-output", ctx(), {}) : null;
+      const correct = Boolean(q && q.grade({ text: ask.targetOutput }).correct);
+      const expectedText = q ? q.grade({ text: "" }).expected.text : "";
+      view.applyResult({ correct });
+      card.reveal?.({ text: expectedText, correct, kind: "order-the-lines" });
+      if (!correct && !card.reveal) {
+        appendExpected(card.body, { label: "What your order really printed:", text: expectedText });
+      }
+      resolveAsk(card, {
+        prompt: ask.prompt, ok: correct,
+        verdict: correct ? "✓ That prints the target!" : "✗ Not quite — that order prints something else",
+        lastAnswer: correct ? "correct" : "wrong",
+        template: ask.template, concept: ask.concept, kind: "order-the-lines",
+        misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
+        review: baseReview({ code: arranged, answerOrder: orderIds, expectedText }),
+      });
+    };
+    const doSkip = () => resolveAsk(card, {
+      prompt: ask.prompt, ok: false, verdict: "skipped",
+      lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: "order-the-lines",
+      misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
+      review: baseReview({ code: codeFor(ask.items.map((it) => it.id)) }),
+    });
+    card.setActions([
+      { label: "Check my order ▶", primary: true, onClick: () => doCheck() },
+      { label: "Skip this one", onClick: doSkip },
+    ]);
+    setWaiting({
+      type: "ask",
+      kind: "order-the-lines",
+      submit: (orderIds) => doCheck(orderIds),
+      skip: doSkip,
+    });
+    return true;
+  }
+
   // trace-table: walk the program's execution step by step, filling in what
   // each watched name holds after each line. The trace runs SILENTLY first —
   // ground truth must exist before the table can even be built — then every
@@ -1227,13 +1313,17 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     if (!rec) return null;
     const r = rec.review ?? {};
     const displayCode = r.kind === "fill-one-blank" && r.blank
-      ? spliceBlank(r.code, r.blank, "___") : r.code;
+      ? spliceBlank(r.code, r.blank, "___")
+      // order-the-lines shows the ARRANGEMENT widget instead of a program
+      // block — the arrangement is the answer, and the code is the same lines.
+      : r.kind === "order-the-lines" ? null : r.code;
     practiceUI.showReview?.({
       index: i,
       prompt: rec.prompt, ok: rec.ok, verdict: rec.verdict,
       answerText: rec.answerText, retry: rec.retry,
       kind: r.kind, code: displayCode, expectedText: r.expectedText,
       table: r.table, answersById: r.answersById,
+      items: r.items, answerOrder: r.answerOrder, canonical: r.canonical,
       teach: r.teach, context: r.context,
       // Single-answer kinds get the single-input widget; trace-table gets
       // a fresh blank table (the UI branches on kind — retryAnswer takes a
@@ -1268,6 +1358,29 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
           perBlank: res.perBlank,
           expectedById: Object.fromEntries(q.blanks.map((b) => [b.id, b.expected])),
         };
+      } finally {
+        editor.setValue(before);
+      }
+    }
+    if (r.kind === "order-the-lines") {
+      // `text` is an ARRAY of item ids here (the retry widget's collect()),
+      // mirroring the trace-table branch's answersById map: the arrangement
+      // is joined and executed, exactly like the first attempt.
+      if (!Array.isArray(text) || !text.length) return null;
+      const byId = new Map((r.items ?? []).map((it) => [it.id, it.text]));
+      const arranged = text.map((id) => byId.get(id) ?? "").join("\n") + "\n";
+      const before = editor.getValue();
+      try {
+        editor.setValue(arranged);
+        const summary = await actions.trace();
+        if (!summary) return null; // a run is live — the retry never happened
+        const q = summary.terminal_reason === "completed" ? generateQuestion("predict-output", ctx(), {}) : null;
+        const ok = Boolean(q && q.grade({ text: r.targetOutput }).correct);
+        const expectedText = q ? q.grade({ text: "" }).expected.text : "";
+        rec.retry = { ok, tries: (rec.retry?.tries ?? 0) + 1 };
+        persist();
+        pushProgress();
+        return { ok, expectedText };
       } finally {
         editor.setValue(before);
       }

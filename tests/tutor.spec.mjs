@@ -169,27 +169,27 @@ test.describe("PLP tutor (T-series)", () => {
       localStorage.setItem("plp.kb.v1", JSON.stringify({ "0005": { seen: 24, missed: 0 } }));
       localStorage.removeItem("plp.tutor.v1");
     });
-    // Seed 41 of a warm lists round opens with the += vs + [x] contrast (the
+    // Seed 194 of a warm lists round opens with the += vs + [x] contrast (the
     // seed is a fixture — re-derive it if the lists exercise pool changes;
     // derivation: scan buildKBSession("lists", {seed, count: 1, stats: warm})
     // for the first seed whose ask.context.code contains "+= [").
-    const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 41, count: 1 }));
-    expect(id).toBe("drill-lists-41");
+    const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 194, count: 1 }));
+    expect(id).toBe("drill-lists-194");
     // The contrast rides ON the ask (ask.context): program A (uses +=) with
     // its real output — reload-safe — and the card renders it above B.
     const ctx = await page.evaluate(() => {
       const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
       return s.drillLesson.steps.find((x) => x.ask)?.ask.context;
     });
-    expect(ctx.code).toContain("b += [87]");   // program A mutates the shared list
-    expect(ctx.output).toBe("[3, 6, 87]");     // …and its real output is shown
-    await expect(page.locator("#practice .pr-context")).toContainText("b += [87]");
-    await expect(page.locator("#practice .pr-context .pr-out")).toContainText("[3, 6, 87]");
+    expect(ctx.code).toContain("b += [40]");   // program A mutates the shared list
+    expect(ctx.output).toBe("[1, 8, 40]");     // …and its real output is shown
+    await expect(page.locator("#practice .pr-context")).toContainText("b += [40]");
+    await expect(page.locator("#practice .pr-context .pr-out")).toContainText("[1, 8, 40]");
     // The editor holds program B (the one to predict — a is left untouched).
     expect((await page.evaluate(() => window.plp.editor.getValue())).trim())
-      .toBe("a = [3, 6]\nb = a\nb = b + [87]\nprint(a)");
+      .toBe("a = [1, 8]\nb = a\nb = b + [40]\nprint(a)");
     // Predicting B's output correctly grades right and records the focus tag.
-    await page.evaluate(() => window.plp.tutor.lockPrediction("[3, 6]"));
+    await page.evaluate(() => window.plp.tutor.lockPrediction("[1, 8]"));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
     expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({
@@ -1366,6 +1366,135 @@ test.describe("PLP tutor (T-series)", () => {
     expect(after.editor).toBe(liveCode); // the live round's program survived the retry run
     // The dot now reads missed-then-solved (red with the green ring).
     await expect(page.locator("#practice .pr-dot.miss.retried")).toHaveCount(1);
+    await page.evaluate(() => window.plp.tutor.closeReview());
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  // order-the-lines (Parsons, expansion ladder §R2). The fixture is a FOCUS
+  // round on 000A (rebind-updates-name): seed 2 of a cold `state` focus round
+  // deals order-rebind-last-wins — re-derive by scanning
+  // buildKBSession("state", { seed, count: 1, focus: "000A" }) for the first
+  // seed whose ask.kind is "order-the-lines".
+  async function startOrderRound(page) {
+    await page.evaluate(() => {
+      localStorage.removeItem("plp.kb.v1");
+      localStorage.removeItem("plp.kb.met.v1");
+      localStorage.removeItem("plp.kb.tmpl.v1");
+      localStorage.removeItem("plp.tutor.v1");
+    });
+    const id = await page.evaluate(() =>
+      window.plp.tutor.startDrill("state", { focus: "000A", seed: 2, count: 1 }));
+    expect(id).toBe("drill-state-000A-2");
+    return page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
+      return s.drillLesson.steps.find((x) => x.ask)?.ask;
+    });
+  }
+  const orderIdsFor = (ask, texts) => texts.map((t) => ask.items.find((it) => it.text === t).id);
+
+  test("order-the-lines: the deal is shuffled, a wrong order really runs and grades wrong, the right one grades right and grants NO met", async ({ page }) => {
+    await setup(page);
+    // lintLesson accepts the kind via the questionGenerators stub entry.
+    expect(await page.evaluate(() => window.plp.tutor.lintLesson({
+      id: "ol-lint", steps: [{ ask: { kind: "order-the-lines", items: [] } }],
+    }))).toEqual([]);
+
+    const ask = await startOrderRound(page);
+    expect(ask.kind).toBe("order-the-lines");
+    expect(ask.template).toBe("order-rebind-last-wins");
+    expect(ask.prompt).toContain(`prints \`${ask.targetOutput}\``);
+    // The dealt puzzle NEVER starts solved (the compile-time guard).
+    expect(ask.items.map((it) => it.text)).not.toEqual(ask.lines);
+    // loadCode carries the SHUFFLED join — open-in-editor is honest.
+    expect((await page.evaluate(() => window.plp.editor.getValue())).trim())
+      .toBe(ask.items.map((it) => it.text).join("\n"));
+    // The widget IS the program: no second, uneditable copy of the lines.
+    await expect(page.locator("#practice .pr-order-row")).toHaveCount(ask.lines.length);
+    await expect(page.locator("#practice .pr-question .pr-program")).toHaveCount(0);
+    await expect(page.locator("#practice .pr-mechanics")).toContainText("↑ and ↓");
+
+    // A WRONG arrangement (the two binds swapped) runs for real and prints
+    // the other value — the reveal shows what it actually printed.
+    const wrong = orderIdsFor(ask, [ask.lines[1], ask.lines[0], ask.lines[2]]);
+    await page.evaluate((ids) => window.plp.tutor.submit(ids), wrong);
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("wrong");
+    const printed = (await page.evaluate(() => window.plp.console.text())).trim();
+    expect(printed).not.toBe(ask.targetOutput);
+    await expect(page.locator("#practice .pr-reveal pre")).toContainText(printed);
+    await expect(page.locator("#practice .pr-order.bad")).toHaveCount(1);
+    expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "000A": { seen: 1, missed: 1 } });
+    expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+
+    // The same deal, arranged correctly: right, stats bump — and still NO met
+    // grant (v1: an arrangement is not a §4 prediction evidence class).
+    const ask2 = await startOrderRound(page);
+    const right = orderIdsFor(ask2, ask2.lines);
+    await page.evaluate((ids) => window.plp.tutor.submit(ids), right);
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
+    expect((await page.evaluate(() => window.plp.console.text())).trim()).toBe(ask2.targetOutput);
+    await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("✓ That prints the target");
+    await expect(page.locator("#practice .pr-order.ok")).toHaveCount(1);
+    expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "000A": { seen: 1, missed: 0 } });
+    expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({}); // no met for this form
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("order-the-lines review + retry: the recorded arrangement comes back, the retry re-runs for real and keeps the first attempt", async ({ page }) => {
+    await setup(page);
+    const ask = await startOrderRound(page);
+    const wrong = orderIdsFor(ask, [ask.lines[1], ask.lines[0], ask.lines[2]]);
+    await page.evaluate((ids) => window.plp.tutor.submit(ids), wrong);
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
+    const liveCode = await page.evaluate(() => window.plp.editor.getValue());
+
+    // The review snapshot carries everything needed to rebuild the puzzle.
+    const rec = await page.evaluate(() =>
+      window.plp.tutor.feed().findLast((c) => c.type === "question-frozen"));
+    expect(rec.review.kind).toBe("order-the-lines");
+    expect(rec.review.items.length).toBe(3);
+    expect(rec.review.answerOrder).toEqual(wrong);
+    expect(rec.review.canonical).toEqual(ask.lines);
+    expect(rec.review.targetOutput).toBe(ask.targetOutput);
+
+    // Review: the arrangement the learner submitted, the verdict, and what it
+    // really printed.
+    await page.evaluate(() => window.plp.tutor.review(0));
+    await expect(page.locator("#practice .pr-review .pr-order-arrangement pre"))
+      .toHaveText([ask.lines[1], ask.lines[0], ask.lines[2]].join("\n"));
+    await expect(page.locator("#practice .pr-review .pr-review-answer .tutor-verdict")).toContainText("✗");
+    await expect(page.locator("#practice .pr-review .pr-reveal pre")).toContainText(rec.review.expectedText.trim());
+    await expect(page.locator("#practice .pr-review .pr-retry.pr-retry-order")).toHaveCount(1);
+
+    // Starting the retry brings the DEALT items back as a live widget.
+    await page.locator("#practice .pr-retry-order button.primary", { hasText: "Try it again" }).click();
+    await expect(page.locator("#practice .pr-review .pr-order-row")).toHaveCount(3);
+    await expect(page.locator("#practice .pr-review .pr-order-row code").first())
+      .toHaveText(ask.items[0].text);
+    // ↑/↓ move rows: the top row's ↓ swaps it with the second.
+    await page.locator("#practice .pr-review .pr-order-row").first().locator("button").nth(1).click();
+    await expect(page.locator("#practice .pr-review .pr-order-row code").first())
+      .toHaveText(ask.items[1].text);
+    await page.locator("#practice .pr-retry-cancel").click();
+    await expect(page.locator("#practice .pr-review .pr-order-arrangement pre")).toBeVisible();
+
+    // A correct retry (driven through the API, same path) re-runs for real,
+    // decorates the record — and never touches the score of record.
+    const res = await page.evaluate((ids) => window.plp.tutor.retry(0, ids), orderIdsFor(ask, ask.lines));
+    expect(res.ok).toBe(true);
+    expect(res.expectedText.trim()).toBe(ask.targetOutput);
+    const after = await page.evaluate(() => ({
+      rec: (() => { const r = window.plp.tutor.feed().find((c) => c.type === "question-frozen"); return { ok: r.ok, retry: r.retry }; })(),
+      stats: window.plp.tutor.drillStats(),
+      met: window.plp.tutor.met(),
+      editor: window.plp.editor.getValue(),
+    }));
+    expect(after.rec).toEqual({ ok: false, retry: { ok: true, tries: 1 } });
+    expect(after.stats).toEqual({ "000A": { seen: 1, missed: 1 } });
+    expect(after.met).toEqual({});
+    expect(after.editor).toBe(liveCode); // the live round's program survived
     await page.evaluate(() => window.plp.tutor.closeReview());
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });

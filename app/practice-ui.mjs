@@ -11,6 +11,7 @@
 // serves the menu, the concept map, drills, and round summaries.
 
 import { buildStaticCard, buildControlButton, renderInline, verdictSpan } from "./tutor-widgets.mjs";
+import { renderOrderLines } from "./question-ui.mjs";
 
 export function createPracticeUI({ layout, getCode }) {
   let onExit = null;
@@ -192,6 +193,7 @@ export function createPracticeUI({ layout, getCode }) {
     "fill-one-blank": "type just the missing piece — it runs with your fill",
     "spot-the-difference": "type what the changed program prints",
     "trace-table": "fill every box, then check — the trace grades each step",
+    "order-the-lines": "move the lines with ↑ and ↓, then check — it really runs",
   };
   function mechanicsLineFor(form) {
     let seen;
@@ -203,7 +205,11 @@ export function createPracticeUI({ layout, getCode }) {
     return MECHANICS[form] ?? null;
   }
 
-  function addInteractiveCard({ prompt, render, teach, context, form }) {
+  // `program: false` suppresses the program block (and its open-in-editor
+  // escape): forms whose widget IS the program — order-the-lines, where the
+  // dealt arrangement lives in the rows themselves — would otherwise show the
+  // same lines twice, once uneditable.
+  function addInteractiveCard({ prompt, render, teach, context, form, program = true }) {
     const el = document.createElement("div");
     el.className = "pr-question tutor-question";
     const code = getCode();
@@ -215,17 +221,19 @@ export function createPracticeUI({ layout, getCode }) {
     // Spot-the-difference: program A with its real output, above program B.
     if (context?.code) el.appendChild(buildContextBlock(context));
 
-    const programBlock = mountProgram(el, code);
-    // Escape hatch: the real IDE is one tap away, program loaded. If the
-    // learner edits it there and comes back, a chip offers to restore the
-    // question's program (grade-what-runs stays the philosophy either way).
-    const openLink = document.createElement("button");
-    openLink.type = "button";
-    openLink.className = "pr-quiet pr-open-editor";
-    openLink.textContent = "open in editor";
-    openLink.addEventListener("click", () => { hide(); onLeaveToIDE?.(); });
-    programBlock.insertAdjacentElement("afterend", openLink);
-    handleMeta.set(el, { capturedCode: code });
+    if (program) {
+      const programBlock = mountProgram(el, code);
+      // Escape hatch: the real IDE is one tap away, program loaded. If the
+      // learner edits it there and comes back, a chip offers to restore the
+      // question's program (grade-what-runs stays the philosophy either way).
+      const openLink = document.createElement("button");
+      openLink.type = "button";
+      openLink.className = "pr-quiet pr-open-editor";
+      openLink.textContent = "open in editor";
+      openLink.addEventListener("click", () => { hide(); onLeaveToIDE?.(); });
+      programBlock.insertAdjacentElement("afterend", openLink);
+      handleMeta.set(el, { capturedCode: code });
+    }
 
     const teachSlot = document.createElement("div");
     teachSlot.className = "pr-teach-slot";
@@ -557,6 +565,23 @@ export function createPracticeUI({ layout, getCode }) {
     };
   }
 
+  // An order-the-lines arrangement, read-only: the lines as the learner left
+  // them, in their order. Text only (invariant 8).
+  function buildArrangement(texts, { label } = {}) {
+    const wrap = document.createElement("div");
+    wrap.className = "pr-order-arrangement";
+    if (label) {
+      const p = document.createElement("p");
+      p.className = "pr-reveal-label";
+      p.textContent = label;
+      wrap.appendChild(p);
+    }
+    const pre = document.createElement("pre");
+    pre.textContent = texts.join("\n");
+    wrap.appendChild(pre);
+    return wrap;
+  }
+
   function buildReviewCard(desc) {
     const el = document.createElement("div");
     el.className = "pr-question pr-review";
@@ -576,6 +601,19 @@ export function createPracticeUI({ layout, getCode }) {
       tableSlot.className = "pr-table-slot";
       tableSlot.appendChild(buildReviewTable(desc.table, desc.answersById ?? {}));
       el.appendChild(tableSlot);
+    }
+    // order-the-lines: the arrangement the learner submitted, in a slot a
+    // retry can swap for a fresh widget (and back).
+    let orderSlot = null;
+    if (desc.kind === "order-the-lines" && desc.items) {
+      orderSlot = document.createElement("div");
+      orderSlot.className = "pr-order-slot";
+      const byId = new Map(desc.items.map((it) => [it.id, it.text]));
+      const texts = (desc.answerOrder ?? desc.items.map((it) => it.id)).map((id) => byId.get(id) ?? "");
+      orderSlot.appendChild(buildArrangement(texts, {
+        label: desc.answerOrder ? "you arranged it like this" : "the lines, as they were dealt",
+      }));
+      el.appendChild(orderSlot);
     }
     if (desc.prompt) {
       const p = document.createElement("p");
@@ -609,7 +647,73 @@ export function createPracticeUI({ layout, getCode }) {
       revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: desc.expectedText, correct: desc.ok }));
     }
 
-    if (desc.onRetry && desc.kind === "trace-table" && tableSlot) {
+    if (desc.onRetry && desc.kind === "order-the-lines" && orderSlot) {
+      // A Parsons retry is a genuine second arrangement: the recorded one
+      // leaves the screen, the DEALT items come back in their dealt order,
+      // and the new arrangement is executed for real.
+      const wrap = document.createElement("div");
+      wrap.className = "pr-retry pr-retry-order";
+      const startBtn = document.createElement("button");
+      startBtn.type = "button";
+      startBtn.className = "primary";
+      startBtn.textContent = "Try it again ▶";
+      const checkBtn = document.createElement("button");
+      checkBtn.type = "button";
+      checkBtn.className = "primary";
+      checkBtn.textContent = "Check my order ▶";
+      checkBtn.hidden = true;
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "pr-quiet pr-retry-cancel";
+      cancelBtn.textContent = "never mind, show what I answered";
+      cancelBtn.hidden = true;
+      const verdictOut = document.createElement("p");
+      verdictOut.className = "pr-retry-verdict";
+      const note = document.createElement("p");
+      note.className = "hint pr-retry-note";
+      note.textContent = "retries are for you — your score keeps the first try";
+      const recordedEl = orderSlot.firstChild;
+      let view = null;
+      const showRecorded = () => {
+        orderSlot.replaceChildren(recordedEl);
+        view = null;
+        verdictOut.textContent = "";
+        startBtn.hidden = false;
+        checkBtn.hidden = true;
+        cancelBtn.hidden = true;
+      };
+      startBtn.addEventListener("click", () => {
+        const host = document.createElement("div");
+        view = renderOrderLines(host, { items: desc.items });
+        orderSlot.replaceChildren(host);
+        verdictOut.textContent = "";
+        startBtn.hidden = true;
+        checkBtn.hidden = false;
+        cancelBtn.hidden = false;
+      });
+      checkBtn.addEventListener("click", async () => {
+        if (!view || checkBtn.disabled) return;
+        checkBtn.disabled = true;
+        verdictOut.textContent = "running it for real…";
+        const res = await desc.onRetry(view.collect());
+        checkBtn.disabled = false;
+        verdictOut.textContent = "";
+        if (!res) { verdictOut.textContent = "couldn't run just now — try again in a moment"; return; }
+        view.freeze();
+        view.applyResult({ correct: res.ok });
+        verdictOut.appendChild(verdictSpan(res.ok, res.ok ? "✓ that prints it!" : "✗ not yet — that's what it printed above"));
+        checkBtn.hidden = true;
+        cancelBtn.hidden = false;
+        startBtn.hidden = false;
+        if (res.expectedText !== undefined) {
+          revealSlot.textContent = "";
+          revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: res.expectedText, correct: res.ok }));
+        }
+      });
+      cancelBtn.addEventListener("click", showRecorded);
+      wrap.append(startBtn, checkBtn, cancelBtn, verdictOut, note);
+      el.appendChild(wrap);
+    } else if (desc.onRetry && desc.kind === "trace-table" && tableSlot) {
       // A trace-table retry is a genuine second walk: the graded table (and
       // its truth) leaves the screen, a fresh blank table takes its place,
       // and the answers grade for real against a re-run of the program.

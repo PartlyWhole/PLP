@@ -11,6 +11,7 @@ import { initLayout } from "./layout.mjs";
 import { createCollab } from "./collab.mjs";
 import { createQuiz } from "./quiz.mjs";
 import * as questions from "./questions.mjs";
+import * as questionUI from "./question-ui.mjs";
 import { events } from "./events.mjs";
 import { createTutorUI } from "./tutor-ui.mjs";
 import { createPracticeUI } from "./practice-ui.mjs";
@@ -363,6 +364,7 @@ window.plp = {
   collab,
   quiz,
   questions, // pure engine module (generateQuestion, snapshotAt, …)
+  questionUI, // shared renderers (renderTraceTable, renderOrderLines, …)
   tutor,
   layout: layoutApi,
   events,

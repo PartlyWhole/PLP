@@ -664,6 +664,24 @@ button.pr-quiet:hover { color: var(--t-ink); text-decoration: underline; }
 .pr-table-slot { overflow-x: auto; }
 .pr-retry-cancel { font-size: var(--fs-meta); color: var(--t-ink-dim); }
 
+/* order-the-lines (Parsons): ↑/↓ rows, touch-first — no drag anywhere */
+.pr-order { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; }
+.pr-order-row {
+  gap: var(--sp-1); padding: 4px 6px; font-size: 14px;
+  background: var(--t-code-bg); border: 1px solid var(--t-line); border-radius: var(--r-s);
+}
+.pr-order-row code { flex: 1; overflow-x: auto; }
+.pr-order-move {
+  min-width: 40px; min-height: 40px; line-height: 1; font-size: 16px; padding: 0;
+}
+.pr-order.frozen .pr-order-move { opacity: 0.4; }
+.pr-order.ok .pr-order-row { border-color: var(--t-success); }
+.pr-order.bad .pr-order-row { border-color: var(--t-miss); }
+.pr-order-arrangement pre {
+  margin: 0; padding: var(--sp-1) var(--sp-2); overflow-x: auto;
+  background: var(--t-code-bg); border-radius: var(--r-s);
+}
+
 /* scratch notes drawer */
 .pr-top [data-role=pr-notes].on { background: var(--t-surface-3); }
 .pr-notes-drawer {

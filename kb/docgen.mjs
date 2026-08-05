@@ -41,6 +41,10 @@ export function docSamples(kb) {
       // The blanks derive from the live trace at runtime; the reference can
       // only show the watched names' END values (docgen is stdout-only).
       specs.push({ key: `${ex.id}|names`, run: `${prog.code}${prog.probeNames.map((n) => `print(${n})`).join("\n")}\n` });
+    } else if (ex.form === "order-the-lines") {
+      // The deal is shuffled at compile time; the reference records the
+      // CANONICAL order (the exercise's ground truth) and what it prints.
+      specs.push({ key: `${ex.id}|out`, run: `${prog.lines.join("\n")}\n` });
     } else {
       specs.push({ key: `${ex.id}|out`, run: prog.code });
     }
@@ -192,6 +196,11 @@ export function renderReference(kb, outputs, waivers = []) {
       L.push(fence(prog.code));
       L.push(`Step-table walkthrough over \`${prog.probeNames.join("`, `")}\` (blanks derive from the live trace); the watched names end holding:`);
       L.push(outBlock(get(`${ex.id}|names`)));
+    } else if (ex.form === "order-the-lines") {
+      L.push("Lines (canonical order):");
+      L.push(fence(prog.lines.join("\n")));
+      L.push("prints:");
+      L.push(outBlock(get(`${ex.id}|out`)));
     } else if (ex.form === "fill-one-blank") {
       L.push(`Filled with the intended token \`${prog.blank.target}\`:`);
       L.push(fence(prog.code));

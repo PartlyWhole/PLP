@@ -630,6 +630,16 @@ export const questionGenerators = {
     needsTrace: false,
     generate: () => null,
   },
+  "order-the-lines": {
+    // Parsons (expansion ladder §R2). Graded by the tutor's async
+    // arrange-and-run path — the learner's arrangement is executed and its
+    // real output compared with the target — so, like fill-one-blank, this
+    // entry exists only so lessons can declare the kind and lint accepts it.
+    // (Unrelated to `code-order` below, which grades by position.)
+    label: "Put the lines in order",
+    needsTrace: false,
+    generate: () => null,
+  },
   "expression-sequence": {
     label: "Build expression evaluation",
     needsTrace: false,

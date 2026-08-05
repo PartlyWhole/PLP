@@ -93,8 +93,15 @@ function footprintSources(ex, prog) {
   // Python loop variables outlive the loop), so the probed reads are visible
   // to the analyzer exactly like predict-state's.
   if (ex.form === "trace-table") return [`${prog.code}${prog.probeNames.map((n) => `print(${n})`).join("\n")}\n`];
+  // order-the-lines carries no `code`: the exercise IS the canonical line
+  // list (the shuffle is drawn at compile time), so the canonical join is the
+  // program whose footprint must stay inside the closure.
+  if (ex.form === "order-the-lines") return [canonicalOrderCode(prog)];
   return [prog.code];
 }
+
+// The canonical (solved) program of an order-the-lines sample.
+const canonicalOrderCode = (prog) => prog.lines.join("\n") + "\n";
 
 // A single Pyodide program per sample that emits, in order: the Python-`ast`
 // normal form (inv 8), the program's real output (inv 11), and the runtime
@@ -443,6 +450,23 @@ test.describe("PLP knowledge base (K-series)", () => {
             { code: prog.contrastCode, form: "predict-output", name: null, target: null, mis: prog.misconception ?? prog.aOutput },
           ];
         }
+        // order-the-lines: the CANONICAL join must run clean and print
+        // exactly the target (one line), and wrong arrangements must not.
+        // Machine-enforced discrimination (§R2): rather than re-deriving the
+        // compiler's rng-drawn deal from this context (the round rng is not
+        // in hand here), two EXPLICIT dependency-breaking permutations are
+        // asserted — the reverse, and the first two lines swapped. Both are
+        // draws the shuffle can produce, and neither may print the target.
+        if (ex.form === "order-the-lines") {
+          const L = prog.lines;
+          const join = (arr) => arr.join("\n") + "\n";
+          const swapped = [L[1], L[0], ...L.slice(2)];
+          return [
+            { code: join(L), form: "predict-output", name: null, target: prog.targetOutput },
+            { code: join([...L].reverse()), form: "predict-output", name: null, target: null, mustMissTarget: prog.targetOutput },
+            { code: join(swapped), form: "predict-output", name: null, target: null, mustMissTarget: prog.targetOutput },
+          ];
+        }
         // fill-one-blank's `code` is the FULL correct program; grade it as
         // predict-output and verify its real output equals the target.
         return [{
@@ -505,6 +529,16 @@ test.describe("PLP knowledge base (K-series)", () => {
       }, programs);
 
       results.forEach((r, i) => {
+        // A deliberately-broken arrangement is allowed (expected!) to fail:
+        // it must merely not produce the target — by different output OR by
+        // never completing at all (the classic read-before-bind raise).
+        if (programs[i].mustMissTarget != null) {
+          const solved = r.reason === "completed"
+            && (r.expected ?? "").trim() === String(programs[i].mustMissTarget).trim();
+          expect(solved, `${ex.id} program ${i}: a shuffled arrangement must not already print the target`).toBe(false);
+          expect(r.errors).toEqual([]);
+          return;
+        }
         expect(r.reason, `${ex.id} program ${i} must run clean`).toBe("completed");
         expect(r.gradable, `${ex.id} program ${i} must print something gradable`).toBe(true);
         // One printed line, unless the exercise is the flagged multi-line
@@ -541,7 +575,9 @@ test.describe("PLP knowledge base (K-series)", () => {
     const items = [];
     for (const ex of kb.exercises) {
       for (const k of stratifiedSeeds(ex)) {
-        const source = ex.generator.generate(seedFor(ex.id, k)).code;
+        const source = ex.form === "order-the-lines"
+          ? canonicalOrderCode(ex.generator.generate(seedFor(ex.id, k)))
+          : ex.generator.generate(seedFor(ex.id, k)).code;
         const fp = kb.footprint(source);
         expect(fp.error, `${ex.id} seed ${k}: analyzer error ${JSON.stringify(fp.error)}`).toBeUndefined();
         const names = Object.keys(fp.finalTypes);
