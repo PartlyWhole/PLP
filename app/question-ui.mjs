@@ -59,6 +59,13 @@ export function createAnswerInput({ singleLine = false, placeholder = "" } = {})
   }
   el.placeholder = placeholder;
   el.spellcheck = false;
+  // Answer boxes hold CODE or exact output, never prose: mobile keyboards
+  // that auto-capitalize, auto-correct or smart-quote break Python (and exact
+  // output comparison) silently, so every affordance is turned off here —
+  // required by write-the-line (ladder §R5), harmless everywhere else.
+  el.setAttribute("autocapitalize", "off");
+  el.setAttribute("autocorrect", "off");
+  el.setAttribute("autocomplete", "off");
   return el;
 }
 

@@ -226,8 +226,10 @@ export function renderReference(kb, outputs, waivers = []) {
       L.push(`someone types: ${prog.stdinScript.map((l) => `\`${l}\``).join(", then ")}`);
       L.push("the program emits (prompts + output, without the typed lines):");
       L.push(outBlock(get(`${ex.id}|io`)));
-    } else if (ex.form === "fill-one-blank") {
-      L.push(`Filled with the intended token \`${prog.blank.target}\`:`);
+    } else if (ex.form === "fill-one-blank" || ex.form === "write-the-line") {
+      // write-the-line (ladder §R5) is fill-one-blank with a line-wide blank:
+      // same {code, blank, targetOutput} shape, same reference rendering.
+      L.push(`Filled with the intended ${ex.form === "write-the-line" ? "line" : "token"} \`${prog.blank.target}\`:`);
       L.push(fence(prog.code));
       L.push("prints the target:");
       L.push(outBlock(get(`${ex.id}|out`)));

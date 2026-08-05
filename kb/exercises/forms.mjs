@@ -857,4 +857,97 @@ export default [
       },
     },
   },
+
+  // ---------------------------------------------------------------------
+  // write-the-line (expansion ladder §R5): fill-one-blank generalized from a
+  // TOKEN to a whole line. The emitted shape is identical — {code, blank,
+  // targetOutput} — with the blank spanning a line's content (col = the
+  // indentation width, len = the rest of the line), so spliceBlank, the
+  // substitute-and-run grader, and the docgen branch all work unchanged.
+  //
+  // THE SCOPE RULE (quality bar E5/E6 for this form): the blanked line must
+  // execute more than once OR feed ≥2 distinct later observations, so that no
+  // CONSTANT line can fake the target. Both exercises below satisfy it by
+  // construction: the blanked line sits in a loop body whose effect is
+  // printed on EVERY pass, so a constant line prints the same value n times
+  // where the truth grows. Each generator emits `constantLine` — the most
+  // plausible constant a gamer would type — and K-10 asserts that splicing it
+  // does NOT reproduce the target on every stratified seed.
+  {
+    id: "write-loop-step",
+    topic: "loops",
+    focus: "001J", // loop-accumulate — WRITE the accumulate line, don't read it
+    assumed: ["0005", "0006", "0008", "000A", "000B", "000D", "001E"],
+    role: "review",
+    form: "write-the-line",
+    multiline: true, // the running value on every pass IS the concept (E4)
+    generator: {
+      shapes: ["sum-items", "sum-from-start", "count-items"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["sum-items", "sum-from-start", "count-items"]);
+        const items = Array.from({ length: int(rng, 3, 4) }, () => int(rng, 1, 9));
+        let name, start, step, running;
+        if (shape === "count-items") {
+          name = "count"; start = 0; step = "count = count + 1";
+          let c = 0; running = items.map(() => (c += 1));
+        } else {
+          name = "total";
+          start = shape === "sum-from-start" ? int(rng, 5, 15) : 0;
+          step = "total = total + x";
+          let t = start; running = items.map((v) => (t += v));
+        }
+        const { code, blank } = blankFrom(
+          `${name} = ${start}\nfor x in [${items.join(", ")}]:\n    \x00\n    print(${name})\n`,
+          step,
+        );
+        const final = running[running.length - 1];
+        return {
+          code, blank, targetOutput: running.join("\n"),
+          // The scope-rule refutation: a constant line prints `final` on every
+          // pass, and the truth grows — so it never reproduces the target.
+          constantLine: `${name} = ${final}`,
+          shape, variant: "plain",
+          variantCard: `\`${step}\` runs once per pass, so \`${name}\` grows: `
+            + `${running.join(", ")}. A line that just sets \`${name} = ${final}\` would print `
+            + `${final} on every pass instead.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "write-build-append",
+    topic: "loops",
+    focus: "001K", // loop-build-list — WRITE the append line
+    assumed: ["0005", "0006", "000D", "000G", "001E"],
+    role: "review",
+    form: "write-the-line",
+    multiline: true, // the list growing one item per pass IS the concept (E4)
+    generator: {
+      shapes: ["collect-each", "collect-onto-start"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["collect-each", "collect-onto-start"]);
+        const items = Array.from({ length: int(rng, 3, 4) }, () => int(rng, 1, 9));
+        const startList = shape === "collect-onto-start" ? [int(rng, 10, 20)] : [];
+        const grown = [];
+        const acc = [...startList];
+        for (const v of items) { acc.push(v); grown.push(`[${acc.join(", ")}]`); }
+        const { code, blank } = blankFrom(
+          `xs = [${startList.join(", ")}]\nfor x in [${items.join(", ")}]:\n    \x00\n    print(xs)\n`,
+          "xs.append(x)",
+        );
+        return {
+          code, blank, targetOutput: grown.join("\n"),
+          constantLine: `xs = ${grown[grown.length - 1]}`,
+          shape, variant: "plain",
+          variantCard: `\`xs.append(x)\` adds ONE item per pass, so the list grows: `
+            + `${grown.join(", ")}. Assigning the finished list instead would print it whole on the first pass.`,
+        };
+      },
+    },
+  },
 ];

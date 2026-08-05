@@ -229,6 +229,7 @@ export function createPracticeUI({ layout, getCode }) {
     "predict-output": "type your answer, press Enter — the program really runs",
     "predict-state": "type the value it holds, like 7 or [1, 2]",
     "fill-one-blank": "type just the missing piece — it runs with your fill",
+    "write-the-line": "type the whole missing line — it runs with your line",
     "spot-the-difference": "type what the changed program prints",
     "trace-table": "fill every box, then check — the trace grades each step",
     "order-the-lines": "move the lines with ↑ and ↓, then check — it really runs",
@@ -965,6 +966,11 @@ export function createPracticeUI({ layout, getCode }) {
       input.className = "tutor-output-input";
       if (multiline) input.rows = 4;
       input.placeholder = "have another go…";
+      // Same code-not-prose hardening as createAnswerInput (ladder §R5).
+      input.spellcheck = false;
+      input.setAttribute("autocapitalize", "off");
+      input.setAttribute("autocorrect", "off");
+      input.setAttribute("autocomplete", "off");
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "primary";

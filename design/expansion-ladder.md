@@ -19,7 +19,7 @@ R3 predict-the-error ─────────┴─ (R2 first: forms │
                                   change)         │
 R4a input() rung (A0 + predict-io)  — DONE       ├─ any order after R1–R3
 R4b functions waves (A1..A4, waves 1–5) ──────────┘
-R5 write-the-line  (after R3; scope rule below)
+R5 write-the-line  — DONE (rides the fill-one-blank ask kind)
    fix-the-bug     = composition of R3+R5, build later, never a third path
 ```
 
@@ -176,7 +176,7 @@ tests + kb/index offerable branch) → hard siblings. Sizing M total.
   comment at wiring time). Total R4b sizing: L (~300 analyzer lines,
   ~20 exercises, 5 PR-waves).
 
-## R5 — write-the-line (conditional GO, after R3)
+## R5 — write-the-line — DONE
 
 fill-one-blank with a line-spanning blank; grading and syntax-error
 paths already exist. SCOPE RULE (goes into the quality bar as the
@@ -186,6 +186,19 @@ target. Mobile hardening: autocapitalize/autocorrect off + curly-quote
 normalization. First two: write-loop-step (001J), write-build-append
 (001K). fix-the-bug is R3+R5's composition — never a third grading
 path. Sizing S–M.
+
+**As built.** DECIDED: it RIDES the `fill-one-blank` ask kind (form:
+"write-the-line") — same {code, blank, targetOutput} contract with the
+blank spanning a line's content, so `spliceBlank`, `execFillBlank`, the
+lint registry, review and retry are all reused unchanged; only the
+prompt ("Write the missing line so it prints …"), the MECHANICS line,
+the placeholder and the input hardening key off `form`. The scope rule
+is machine-enforced: each generator emits `constantLine` and K-10
+asserts the intended line hits the target while that constant line
+misses it. Both exercises print the accumulator on every pass, so they
+are `multiline: true` and the prompt reads "`4`, then `11`, then `13`".
+Curly-quote normalization + autocapitalize/autocorrect/autocomplete off
+apply to every answer box, not just this form.
 
 ## Standing constraints (all rungs)
 

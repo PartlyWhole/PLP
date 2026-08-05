@@ -60,6 +60,14 @@ export function spliceBlank(code, blank, replacement) {
   return lines.join("\n");
 }
 
+// A target output rendered for a prompt sentence. Multi-line targets (the
+// write-the-line loop forms, where the point IS one printed line per pass)
+// read as "`4`, then `11`, then `13`" rather than a backticked blob.
+function targetPhrase(target) {
+  const lines = String(target).split("\n");
+  return lines.map((l) => `\`${l}\``).join(", then ");
+}
+
 // Weight of an exercise given the learner's tag-keyed stats (design §6.3),
 // plus the cold-start frontier bias: while the learner has answered little,
 // exercises whose focus is not yet REACHABLE — the focus is unmet and some
@@ -310,6 +318,20 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met 
         concept: ex.focus, template: ex.id, singleLine: true,
         code: prog.code, blank: prog.blank, targetOutput: prog.targetOutput,
         prompt: `Fill the blank so it prints \`${prog.targetOutput}\`.`,
+      };
+    } else if (ex.form === "write-the-line") {
+      // write-the-line (expansion ladder §R5): fill-one-blank with a blank
+      // that spans a whole LINE's content. Same emitted shape, same splice,
+      // same substitute-and-run grading — so it RIDES the fill-one-blank ask
+      // kind (zero new exec/lint/review/retry code); only the prompt, the
+      // MECHANICS line and the input hardening differ, keyed off `form`.
+      steps.push({ loadCode: spliceBlank(prog.code, prog.blank, "___") });
+      ask = {
+        kind: "fill-one-blank",
+        form: ex.form, shape: prog.shape,
+        concept: ex.focus, template: ex.id, singleLine: true,
+        code: prog.code, blank: prog.blank, targetOutput: prog.targetOutput,
+        prompt: `Write the missing line so it prints ${targetPhrase(prog.targetOutput)}.`,
       };
     } else if (ex.form === "order-the-lines") {
       // Parsons (expansion ladder §R2): the KB emits the CANONICAL lines and

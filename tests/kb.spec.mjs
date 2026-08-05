@@ -128,6 +128,17 @@ function footprintSources(ex, prog) {
   return [prog.code];
 }
 
+// Splice a blank (fill-one-blank / write-the-line) with a replacement — the
+// same operation app/kb-session.mjs's spliceBlank performs, restated here
+// because kb/ and the K-series never import from app/.
+function spliceBlankAt(code, blank, replacement) {
+  const lines = code.split("\n");
+  const li = blank.line - 1;
+  const line = lines[li] ?? "";
+  lines[li] = line.slice(0, blank.col) + replacement + line.slice(blank.col + blank.len);
+  return lines.join("\n");
+}
+
 // The canonical (solved) program of an order-the-lines sample.
 const canonicalOrderCode = (prog) => prog.lines.join("\n") + "\n";
 
@@ -674,6 +685,21 @@ test.describe("PLP knowledge base (K-series)", () => {
         if (ex.form === "predict-the-error") {
           return [{ code: prog.code, form: "predict-the-error", name: null, target: null, raise: prog.expectedError }];
         }
+        // write-the-line (expansion ladder §R5): fill-one-blank with a
+        // line-wide blank. Two programs: the intended line spliced in must
+        // print the target, and the SCOPE RULE is machine-enforced — the
+        // generator's plausible CONSTANT line must not reproduce the target
+        // (otherwise the exercise can be gamed without the concept).
+        if (ex.form === "write-the-line") {
+          return [
+            { code: prog.code, form: "predict-output", name: null, target: prog.targetOutput },
+            {
+              code: spliceBlankAt(prog.code, prog.blank, prog.constantLine),
+              form: "predict-output", name: null, target: null,
+              mustMissTarget: prog.targetOutput,
+            },
+          ];
+        }
         // fill-one-blank's `code` is the FULL correct program; grade it as
         // predict-output and verify its real output equals the target.
         return [{
@@ -854,7 +880,7 @@ test.describe("PLP knowledge base (K-series)", () => {
         // output is unavailable — K-10 carries its discrimination floor
         // instead, where the real transcript is in hand.
         const scripted = ex.form === "predict-io";
-        const misCheckable = !["spot-the-difference", "predict-state", "trace-table", "fill-one-blank", "predict-io"].includes(ex.form);
+        const misCheckable = !["spot-the-difference", "predict-state", "trace-table", "fill-one-blank", "write-the-line", "predict-io"].includes(ex.form);
         items.push({
           id: ex.id, seed: k, source,
           jsAst: jsAst(source),

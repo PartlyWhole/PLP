@@ -963,6 +963,12 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
   // the token, runs the filled program for real, and accepts ANY fill whose
   // real output equals the target — the interpreter is the only judge. A
   // non-parsing fill just grades wrong (no traceback shown).
+  // Mobile keyboards silently substitute typographic quotes, which Python
+  // rejects with a syntax error the learner cannot see the cause of. The
+  // typed text is normalized BEFORE splicing — so the program that runs (and
+  // the console reveal, which shows exactly what ran) holds straight quotes.
+  const normalizeTypedCode = (text) => String(text).replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
+
   function execFillBlank(ask) {
     events.emit("quiz-question", { kind: "fill-one-blank" });
     const fillReview = () => ({
@@ -975,7 +981,12 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       teach: ask.teach, context: ask.context, form: ask.form ?? "fill-one-blank",
       prompt: ask.prompt ?? "Fill in the blank so the program prints the target.",
       render: (body) => {
-        input = createAnswerInput({ singleLine: true, placeholder: "the missing piece…" });
+        input = createAnswerInput({
+          singleLine: true,
+          // write-the-line asks for a WHOLE line (ladder §R5), so the
+          // placeholder names the job; the fill placeholder names a token.
+          placeholder: ask.form === "write-the-line" ? "the missing line…" : "the missing piece…",
+        });
         input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !input.readOnly) doFill(); });
         body.appendChild(input);
         return null;
@@ -987,8 +998,11 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     batch = [];
 
     const doFill = async () => {
-      const token = input.value;
-      if (!token.trim()) { card.setNote("Type the missing piece first"); return; }
+      const token = normalizeTypedCode(input.value);
+      if (!token.trim()) {
+        card.setNote(ask.form === "write-the-line" ? "Type the missing line first" : "Type the missing piece first");
+        return;
+      }
       input.readOnly = true;
       card.setActions([]);
       card.setNote("Filling it in and running it for real…");

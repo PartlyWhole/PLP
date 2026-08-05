@@ -626,6 +626,11 @@ export const questionGenerators = {
   "fill-one-blank": {
     // Graded by the tutor's async substitute-and-run path (design §5.2); this
     // entry exists so lessons can declare the kind and lint accepts it.
+    // write-the-line (expansion ladder §R5) RIDES this kind: it is the same
+    // {code, blank, targetOutput} contract with a line-wide blank and the
+    // identical splice-run-compare grading, so it needs no exec, lint, review
+    // or retry code of its own — it differs only by `form` (prompt wording,
+    // MECHANICS line, placeholder).
     label: "Fill in the missing token",
     needsTrace: false,
     generate: () => null,

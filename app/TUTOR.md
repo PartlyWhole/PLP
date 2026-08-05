@@ -301,8 +301,19 @@ line of output (single-line input, Enter to submit); the one
 `multiline: true` exception is `loop-for-visits-each`, where several
 lines ARE the concept. Forms beyond predict-exact-output — predict-state,
 fill-one-blank, spot-the-difference, trace-table, order-the-lines,
-predict-the-error, predict-io — plug in per exercise (design §5.2,
-expansion ladder §R2/§R3/§R4a). A predict-the-error program is the ONE
+predict-the-error, predict-io, write-the-line — plug in per exercise
+(design §5.2, expansion ladder §R2/§R3/§R4a/§R5). ASK KINDS are fewer
+than forms: `write-the-line` (ladder §R5) RIDES the `fill-one-blank` ask
+kind — same {code, blank, targetOutput} contract, blank widened to a
+whole line's content, identical splice-run-compare grading — so it adds
+no exec, lint, review or retry path; it differs only by `form` (prompt
+wording, MECHANICS line, placeholder). Its programs are
+`multiline: true` by construction: the blanked line sits in a loop body
+whose effect prints on every pass (the §R5 SCOPE RULE), which is what
+makes a constant line unable to fake the target. Every answer box is
+hardened for mobile (autocapitalize/autocorrect/autocomplete off,
+spellcheck off) and typed code is curly-quote-normalized before it is
+spliced and run. A predict-the-error program is the ONE
 deliberate exception to "runs clean": it stops, and at most one line is
 printed before it does. predict-io is structurally `multiline: true`: its
 answer is a transcript.

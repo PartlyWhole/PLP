@@ -9,8 +9,8 @@
 ## Overview
 
 - **85 concepts** — 4 structural / 59 core / 22 edge.
-- **165 exercises** across 8 topics.
-- **Forms:** fill-one-blank, order-the-lines, predict-exact-output, predict-io, predict-state, predict-the-error, spot-the-difference, trace-table.
+- **167 exercises** across 8 topics.
+- **Forms:** fill-one-blank, order-the-lines, predict-exact-output, predict-io, predict-state, predict-the-error, spot-the-difference, trace-table, write-the-line.
 
 ## Topics
 
@@ -753,7 +753,7 @@ A running total updates once per loop pass; its final value is there after the l
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000B ← 000D ← 001E
 - Characteristic wrong answer: an off-by-one total, or only the last value
-- Exercises: accumulate-then-read, loop-total, loop-total-latent, order-loop-total, trace-sum
+- Exercises: accumulate-then-read, loop-total, loop-total-latent, order-loop-total, trace-sum, write-loop-step
 
 ### 001K · loop-build-list — core
 
@@ -763,7 +763,7 @@ Appending once per pass grows a list one item per pass.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D ← 000G ← 001E
 - Characteristic wrong answer: the wrong length, or items in the wrong order
-- Exercises: chal-filter-build, loop-collect, trace-build-list
+- Exercises: chal-filter-build, loop-collect, trace-build-list, write-build-append
 
 ### 001M · while-repeats-while-true — core
 
@@ -4363,6 +4363,49 @@ print(n)
 prints:
 ```
 16
+```
+
+### write-build-append — focus 001K (loop-build-list)
+
+- Form: `write-the-line` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 000D, 000G, 001E
+- Shapes: collect-each, collect-onto-start · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended line `xs.append(x)`:
+```py
+xs = [12]
+for x in [5, 2, 1]:
+    xs.append(x)
+    print(xs)
+```
+prints the target:
+```
+[12, 5]
+[12, 5, 2]
+[12, 5, 2, 1]
+```
+
+### write-loop-step — focus 001J (loop-accumulate)
+
+- Form: `write-the-line` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 000A, 000B, 000D, 001E
+- Shapes: sum-items, sum-from-start, count-items · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended line `total = total + x`:
+```py
+total = 0
+for x in [7, 7, 6, 6]:
+    total = total + x
+    print(total)
+```
+prints the target:
+```
+7
+14
+20
+26
 ```
 
 ## Waivers

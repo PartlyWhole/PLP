@@ -160,6 +160,91 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
+  test("write-the-line (§R5): the intended line grades right; a plausible CONSTANT line and a broken line grade wrong; curly quotes normalize", async ({ page }) => {
+    await setup(page);
+    // The seed is DERIVED, not a fixture: scan focus rounds for the first
+    // seed that deals write-loop-step (the pool may grow; the derivation
+    // stays valid). Warm stats + focus keep the round to that one concept.
+    const warm = { "0005": { seen: 24, missed: 0 } };
+    const found = await page.evaluate(async (warmStats) => {
+      const { buildKBSession } = await import("./app/kb-session.mjs");
+      for (let seed = 1; seed < 200; seed++) {
+        const l = buildKBSession("loops", { seed, count: 1, stats: warmStats, focus: "001J" });
+        const ask = l?.steps.find((s) => s.ask)?.ask;
+        if (ask?.template === "write-loop-step") {
+          return { seed, form: ask.form, kind: ask.kind, prompt: ask.prompt, target: ask.targetOutput, answer: ask.blank.target, code: ask.code };
+        }
+      }
+      return null;
+    }, warm);
+    expect(found, "a loops focus round must deal write-loop-step").toBeTruthy();
+    // It RIDES the fill-one-blank ask kind; only `form` distinguishes it.
+    expect(found.kind).toBe("fill-one-blank");
+    expect(found.form).toBe("write-the-line");
+    expect(found.prompt).toContain("Write the missing line");
+
+    const targetLines = found.target.split("\n");
+    const accName = found.code.split("\n")[0].split(" ")[0]; // total | count
+    // The plausible constant a gamer types: assign the finished value.
+    const constantLine = `${accName} = ${targetLines[targetLines.length - 1]}`;
+
+    const round = async () => {
+      await page.evaluate((w) => {
+        localStorage.setItem("plp.kb.v1", JSON.stringify(w));
+        localStorage.removeItem("plp.tutor.v1");
+      }, warm);
+      await page.evaluate((seed) => window.plp.tutor.startDrill("loops", { seed, count: 1, focus: "001J" }), found.seed);
+      // The dealt program shows the hole, a whole line wide.
+      expect(await page.evaluate(() => window.plp.editor.getValue())).toContain("    ___");
+    };
+    const answer = async (text) => {
+      await page.evaluate((t) => window.plp.tutor.lockPrediction(t), text);
+      await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 20_000 });
+      return page.evaluate(() => ({
+        lastAnswer: window.plp.tutor.state().lastAnswer,
+        editor: window.plp.editor.getValue(),
+        console: window.plp.console.text().replace(/\n+$/, ""),
+        errors: window.plp.checkErrors(),
+      }));
+    };
+
+    // 1. The intended line: graded right by REAL execution against the target.
+    await round();
+    let r = await answer(found.answer);
+    expect(r.lastAnswer).toBe("correct");
+    expect(r.console).toBe(found.target);
+    expect(r.errors).toEqual([]);
+
+    // 2. THE SCOPE RULE, made visible: a constant line executes once per pass
+    // and prints the finished value every time, so it never reproduces the
+    // growing target — the exercise cannot be gamed without the concept.
+    await round();
+    r = await answer(constantLine);
+    expect(r.lastAnswer).toBe("wrong");
+    expect(r.editor).toContain(`    ${constantLine}`);
+    expect(r.console).not.toBe(found.target);
+    expect(r.console.split("\n").every((l) => l === targetLines[targetLines.length - 1])).toBe(true);
+    expect(r.errors).toEqual([]);
+
+    // 3. A syntactically invalid line grades wrong without wedging the round.
+    await round();
+    r = await answer(`${accName} = ${accName} +`);
+    expect(r.lastAnswer).toBe("wrong");
+    expect(r.errors).toEqual([]);
+    expect(await page.evaluate(() => window.plp.tutor.state().waiting)).toBe("pause");
+
+    // 4. Mobile smart quotes are normalized BEFORE the splice: the curly-quoted
+    // line would be a syntax error, and the console reveal shows what really
+    // ran — the straight-quoted program.
+    await round();
+    r = await answer(`${found.answer} + int(“0”)`);
+    expect(r.lastAnswer).toBe("correct");
+    expect(r.editor).toContain('int("0")');
+    expect(r.editor).not.toContain("“");
+    expect(r.console).toBe(found.target);
+    expect(r.errors).toEqual([]);
+  });
+
   test("spot-the-difference: program A shown with its real output; predict program B", async ({ page }) => {
     await setup(page);
     // Warm stats neutralize the cold-start frontier bias (this test is about
