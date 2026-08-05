@@ -197,9 +197,10 @@ function buildDetail(node, { onPractice, jump }) {
   card.appendChild(status);
   if (onPractice) {
     // The map recommends, it never forbids: a locked chip keeps its
-    // "First: …" guidance but still lets the learner jump ahead — its
-    // first ask teaches the rule (introStyle), and met is still only
-    // EARNED, so the map stays honest about what's been demonstrated.
+    // "First: …" guidance but still lets the learner jump ahead — a
+    // focus round always teaches its concept first (buildKBSession forces
+    // teach-first for the focused tag), and met is still only EARNED, so
+    // the map stays honest about what's been demonstrated.
     const go = document.createElement("button");
     go.type = "button";
     if (node.state !== "locked") go.className = "primary";

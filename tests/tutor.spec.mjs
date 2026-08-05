@@ -24,10 +24,11 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("header")).not.toBeVisible();
     await expect(page.locator("#layout")).not.toBeVisible();
     // Idle state: welcome card + exercises-only menu (drill topics; guided
-    // units are debug-only via plp.tutor.start).
+    // units are debug-only via plp.tutor.start — except the fresh-profile
+    // "Start here" on-ramp, which leads the menu into the first guided unit).
     await expect(page.locator("#practice .pr-static .tutor-card")).toHaveCount(1);
-    await expect(page.locator("#practice [data-role=pr-controls] button").first()).toContainText("Everything");
-    await expect(page.locator("#practice [data-role=pr-controls] button:not(.t-endless-mini)")).toHaveCount(10); // all + endless + map + 7 topics
+    await expect(page.locator("#practice [data-role=pr-controls] button").first()).toContainText("Start here");
+    await expect(page.locator("#practice [data-role=pr-controls] button:not(.t-endless-mini)")).toHaveCount(11); // start-here + all + endless + map + 7 topics
     await expect(page.locator("#practice [data-role=pr-controls] .t-endless-mini")).toHaveCount(7); // ∞ per topic
     await page.reload();
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
@@ -161,31 +162,40 @@ test.describe("PLP tutor (T-series)", () => {
 
   test("spot-the-difference: program A shown with its real output; predict program B", async ({ page }) => {
     await setup(page);
-    await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
-    // Seed 199 of a lists round opens with the += vs + [x] contrast (the
+    // Warm stats neutralize the cold-start frontier bias (this test is about
+    // the spot-the-difference FORM, whose focus concept is deep — a cold
+    // compile would ~never deal it in a single-question round).
+    await page.evaluate(() => {
+      localStorage.setItem("plp.kb.v1", JSON.stringify({ "0005": { seen: 24, missed: 0 } }));
+      localStorage.removeItem("plp.tutor.v1");
+    });
+    // Seed 162 of a warm lists round opens with the += vs + [x] contrast (the
     // seed is a fixture — re-derive it if the lists exercise pool changes;
-    // derivation: scan buildKBSession("lists", {seed, count: 1}) for the
-    // first seed whose ask.context.code contains "+= [").
-    const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 199, count: 1 }));
-    expect(id).toBe("drill-lists-199");
+    // derivation: scan buildKBSession("lists", {seed, count: 1, stats: warm})
+    // for the first seed whose ask.context.code contains "+= [").
+    const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 162, count: 1 }));
+    expect(id).toBe("drill-lists-162");
     // The contrast rides ON the ask (ask.context): program A (uses +=) with
     // its real output — reload-safe — and the card renders it above B.
     const ctx = await page.evaluate(() => {
       const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
       return s.drillLesson.steps.find((x) => x.ask)?.ask.context;
     });
-    expect(ctx.code).toContain("b += [88]");   // program A mutates the shared list
-    expect(ctx.output).toBe("[4, 9, 88]");     // …and its real output is shown
-    await expect(page.locator("#practice .pr-context")).toContainText("b += [88]");
-    await expect(page.locator("#practice .pr-context .pr-out")).toContainText("[4, 9, 88]");
+    expect(ctx.code).toContain("b += [55]");   // program A mutates the shared list
+    expect(ctx.output).toBe("[5, 6, 55]");     // …and its real output is shown
+    await expect(page.locator("#practice .pr-context")).toContainText("b += [55]");
+    await expect(page.locator("#practice .pr-context .pr-out")).toContainText("[5, 6, 55]");
     // The editor holds program B (the one to predict — a is left untouched).
     expect((await page.evaluate(() => window.plp.editor.getValue())).trim())
-      .toBe("a = [4, 9]\nb = a\nb = b + [88]\nprint(a)");
+      .toBe("a = [5, 6]\nb = a\nb = b + [55]\nprint(a)");
     // Predicting B's output correctly grades right and records the focus tag.
-    await page.evaluate(() => window.plp.tutor.lockPrediction("[4, 9]"));
+    await page.evaluate(() => window.plp.tutor.lockPrediction("[5, 6]"));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
-    expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0023": { seen: 1, missed: 0 } });
+    expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({
+      "0005": { seen: 24, missed: 0 }, // the warm-stats primer
+      "0023": { seen: 1, missed: 0 },
+    });
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
@@ -295,7 +305,10 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#practice .pr-question")).toBeVisible();
 
     // predict-state: the reveal is the probed value, with the memory escape.
+    // (warm stats: the predict-state fixture's focus is deep — cold-biased
+    // single-question rounds would ~never deal it)
     await page.evaluate(() => window.plp.tutor.exit());
+    await page.evaluate(() => localStorage.setItem("plp.kb.v1", JSON.stringify({ "0005": { seen: 24, missed: 0 } })));
     await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 4, count: 1 }));
     expect((await page.evaluate(() => window.plp.tutor.ask())).kind).toBe("predict-state");
     await page.evaluate(() => window.plp.tutor.lockPrediction("[1]"));
@@ -431,7 +444,9 @@ test.describe("PLP tutor (T-series)", () => {
     });
     expect(round.id).toMatch(/^drill-state-0005-\d+$/);
     expect(round.asks.every((t) => t === "0005")).toBe(true);
-    expect(round.asks.length).toBe(4); // focused rounds default shorter
+    // Focused rounds default shorter — and a single-exercise focus pool
+    // (0005 has one) caps at 2: four near-identical questions read as broken.
+    expect(round.asks.length).toBe(2);
   });
 
   test("practice edge flows: open-in-editor round trip, changed-program chip, reload rebuilds the card, hide keeps the round", async ({ page }) => {
@@ -714,9 +729,13 @@ test.describe("PLP tutor (T-series)", () => {
       const focuses = [...new Set(asks.map((s) => s.ask.concept))];
       const coreFocuses = focuses.filter((t) => kinds.get(t).kind === "core");
       const taught = asks.filter((s) => s.ask.teach);
+      // Prime EVERY concept (not just this round's focuses): primed stats
+      // change selection (novelty + the cold-start bias), so the primed
+      // round may deal different exercises — the invariant is that no SEEN
+      // concept ever gets a teach line, whichever ones deal.
       const primed = buildKBSession("numbers", {
         seed: 7, count: 5,
-        stats: Object.fromEntries(focuses.map((t) => [t, { seen: 2, missed: 0 }])),
+        stats: Object.fromEntries([...kinds.keys()].map((t) => [t, { seen: 2, missed: 0 }])),
       });
       return {
         coreConcepts: coreFocuses.length,
@@ -743,11 +762,151 @@ test.describe("PLP tutor (T-series)", () => {
     // test intentionally stops before any trace runs)
   });
 
+  test("selection policy: cold start deals basics, the worst concept returns, no concept repeats — within and across chunks", async ({ page }) => {
+    await setup(page);
+    const r = await page.evaluate(async () => {
+      const { buildKBSession } = await import("./app/kb-session.mjs");
+      const { loadKB } = await import("./kb/index.mjs");
+      const kb = loadKB();
+      const depth = (t) => [...kb.ancestors(t)].filter((a) => !kb.structural.has(a)).length;
+
+      // (a) Cold-start frontier bias: a brand-new learner's first question is
+      // a shallow concept (property, not a fixed tag: few non-structural
+      // ancestors), across seeds.
+      const firstDepths = [];
+      for (const seed of [1, 2, 3, 4, 5, 6]) {
+        const l = buildKBSession("all", { seed, stats: {}, met: [] });
+        firstDepths.push(depth(l.steps.find((s) => s.ask).ask.concept));
+      }
+
+      // (b) Guaranteed miss-return: every compiled round contains the
+      // learner's worst concept when the pool carries one.
+      const stats = { "000H": { seen: 4, missed: 3 } };
+      const missReturn = [1, 5, 9, 23].every((seed) =>
+        buildKBSession("all", { seed, count: 8, stats })
+          .steps.filter((s) => s.ask).some((s) => s.ask.concept === "000H"));
+
+      // (c) Concept-level no-repeat within a round, and across a chunk
+      // boundary via prevKey (the endless finish() hand-off).
+      let repeat = null;
+      for (const topic of ["all", "numbers", "lists"]) {
+        for (const seed of [1, 7, 23, 42, 99]) {
+          const asks = buildKBSession(topic, { seed, count: 10 })
+            .steps.filter((s) => s.ask).map((s) => s.ask);
+          for (let i = 1; i < asks.length; i++) {
+            if (asks[i].concept === asks[i - 1].concept) repeat = `${topic}/${seed}@${i}`;
+          }
+          const last = asks.at(-1);
+          const next = buildKBSession(topic, {
+            seed: seed + 1000, count: 4,
+            prevKey: `${last.form}|${last.shape}|${last.concept}`,
+          }).steps.find((s) => s.ask).ask;
+          if (next.concept === last.concept) repeat = `${topic}/${seed}@chunk-boundary`;
+          if (`${next.form}|${next.shape}` === `${last.form}|${last.shape}`) repeat = `${topic}/${seed}@chunk-boundary-fs`;
+        }
+      }
+      return { firstDepths, missReturn, repeat };
+    });
+    expect(Math.max(...r.firstDepths)).toBeLessThanOrEqual(4);
+    expect(r.firstDepths.filter((d) => d <= 2).length).toBeGreaterThanOrEqual(4);
+    expect(r.missReturn).toBe(true);
+    expect(r.repeat).toBeNull();
+  });
+
+  test("focus rounds always teach the asked-for concept and cap a single-exercise pool at 2", async ({ page }) => {
+    await setup(page);
+    const r = await page.evaluate(async () => {
+      const { buildKBSession } = await import("./app/kb-session.mjs");
+      // Single-exercise focus (0005 → hello-print), already seen: still
+      // teaches (the learner explicitly asked), and caps at 2.
+      const single = buildKBSession("state", { seed: 3, focus: "0005", stats: { "0005": { seen: 5, missed: 0 } } });
+      const singleAsks = single.steps.filter((s) => s.ask).map((s) => s.ask);
+      // Edge (discover-first) concept focus: "Try it anyway" still teaches.
+      const edge = buildKBSession("lists", { seed: 1, focus: "000H", stats: {} });
+      const edgeAsks = edge.steps.filter((s) => s.ask).map((s) => s.ask);
+      return {
+        singleCount: singleAsks.length,
+        singleTeach: Boolean(singleAsks[0].teach?.statement),
+        edgeCount: edgeAsks.length,
+        edgeTeach: Boolean(edgeAsks[0].teach?.statement),
+        edgeFocused: edgeAsks.every((a) => a.concept === "000H"),
+      };
+    });
+    expect(r.singleCount).toBe(2);
+    expect(r.singleTeach).toBe(true);
+    expect(r.edgeCount).toBe(4);
+    expect(r.edgeTeach).toBe(true);
+    expect(r.edgeFocused).toBe(true);
+  });
+
+  test("Start here: a fresh profile's menu leads with the first lesson; any experience removes it", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.clear(); location.reload(); });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await page.locator("#btn-tutor").click();
+    const first = page.locator("#practice [data-role=pr-controls] button").first();
+    await expect(first).toContainText("Start here");
+    // Clicking it starts the guided unit (stage surface) from the menu.
+    await first.click();
+    await expect(page.locator(".tutor-stage")).toBeVisible();
+    expect((await page.evaluate(() => window.plp.tutor.state())).lessonId).toBe("u1-state-io");
+    await page.evaluate(() => window.plp.tutor.exit());
+    // Any answered question (stats non-empty) retires the on-ramp.
+    await page.evaluate(() => {
+      localStorage.setItem("plp.kb.v1", JSON.stringify({ "0008": { seen: 1, missed: 0 } }));
+      location.reload();
+    });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    // The surface visibility persisted; the reload re-renders the menu.
+    await expect(page.locator("body")).toHaveClass(/practice/);
+    await expect(page.locator("#practice [data-role=pr-controls] button").first()).toContainText("Everything");
+    expect(await page.evaluate(() =>
+      [...document.querySelectorAll("#practice [data-role=pr-controls] button")].some((b) => b.textContent.includes("Start here")))).toBe(false);
+  });
+
+  test("predict-state grants met: a clean first-attempt state prediction evidences the concept (binding §4 rule 2)", async ({ page }) => {
+    await setup(page);
+    // Inline drill lesson (the trace-table tests' pattern): pool-proof — the
+    // grant path under test is the tutor runtime's, not the KB's selection.
+    await page.evaluate(() => {
+      localStorage.removeItem("plp.kb.met.v1");
+      localStorage.removeItem("plp.kb.v1");
+      const lesson = {
+        id: "ps-inline",
+        title: "Predict state",
+        steps: [
+          { loadCode: "a = [1, 8]\nb = a\nb.append(71)\n" },
+          { ask: { kind: "predict-state", opts: { name: "a" }, singleLine: true, concept: "000H", prompt: "After it runs, what does `a` hold?" } },
+          { pause: true },
+          { done: "done" },
+        ],
+      };
+      localStorage.setItem("plp.tutor.v1", JSON.stringify({
+        lessonId: lesson.id, drillLesson: lesson, resumeIndex: 0, cards: [],
+      }));
+      location.reload();
+    });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    expect((await page.evaluate(() => window.plp.tutor.ask())).kind).toBe("predict-state");
+    // a = [1, 8]; b = a; b.append(71) → `a` holds [1, 8, 71] (the alias).
+    await page.evaluate(() => window.plp.tutor.lockPrediction("[1, 8, 71]"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
+    const met = await page.evaluate(() => window.plp.tutor.met());
+    expect(Object.keys(met)).toEqual(["000H"]);
+    expect(met["000H"].source).toBe("drill");
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
   test("drill round: seeded session, miss stats, explain cards, reload-restores same round", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => localStorage.removeItem("plp.drills.v1"));
-    const id = await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 42, count: 2 }));
-    expect(id).toBe("drill-numbers-42");
+    // Seed 8 is the cold two-plain-predict-output fixture (derivation: first
+    // seed where both asks of a cold numbers count-2 round are predict-output
+    // without a spot-the-difference context).
+    const id = await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 8, count: 2 }));
+    expect(id).toBe("drill-numbers-8");
     expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
 
     // Miss on purpose → template explain card arrives and pauses.
@@ -764,7 +923,7 @@ test.describe("PLP tutor (T-series)", () => {
     await page.reload();
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
     s = await page.evaluate(() => window.plp.tutor.state());
-    expect(s.lessonId).toBe("drill-numbers-42");
+    expect(s.lessonId).toBe("drill-numbers-8");
     // Reload-as-continue moves past the pause to the round's next question.
     expect(s.waiting).toBe("ask");
 
@@ -852,7 +1011,9 @@ test.describe("PLP tutor (T-series)", () => {
   test("dots review + retry: go back to any answered question; a retry re-runs for real but the score keeps the first attempt", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
-    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 42, count: 2 }));
+    // Seed 8: both asks plain predict-output (the retry below re-grades
+    // output text, and the review card must hold a single program).
+    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 8, count: 2 }));
 
     // Q1 wrong: the reveal carries the reflect link (the graded trace is
     // already scrubbable in the memory model), and its dot reads red.

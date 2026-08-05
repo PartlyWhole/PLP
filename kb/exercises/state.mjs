@@ -64,7 +64,7 @@ export default [
     role: "intro",
     form: "predict-exact-output",
     generator: {
-      // 2 structural shapes here + fill-value's "fill-assign" form → ≥3 for 0006.
+      // 2 structural shapes here + fill-value's "fill-name" form → ≥3 for 0006.
       shapes: ["bind-and-print", "two-binds"],
       variants: ["plain"],
       generate(seed) {

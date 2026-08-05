@@ -8,16 +8,16 @@
 
 ## Overview
 
-- **70 concepts** — 4 structural / 48 core / 18 edge.
-- **108 exercises** across 7 topics.
+- **71 concepts** — 4 structural / 49 core / 18 edge.
+- **119 exercises** across 7 topics.
 - **Forms:** fill-one-blank, predict-exact-output, predict-state, spot-the-difference, trace-table.
 
 ## Topics
 
 - **State & I/O** (`state`): 0005, 0006, 0007, 0009, 000A, 000B, 000C, 000J, 000K, 000M
 - **Numbers & bools** (`numbers`): 0008, 000N, 000P, 000Q, 000R, 000S, 000T, 000V, 000W, 000X
-- **Strings** (`strings`): 000Y, 000Z, 0010, 0011, 0012, 0013, 0014
-- **Lists & aliasing** (`lists`): 000D, 000E, 000F, 000G, 000H, 001Z, 0020, 0021, 0022, 0023, 0024, 0025
+- **Strings** (`strings`): 000E, 000Y, 000Z, 0010, 0011, 0012, 0013, 0014
+- **Lists & aliasing** (`lists`): 000D, 000F, 000G, 000H, 001Z, 0020, 0021, 0022, 0023, 0024, 0025, 002M
 - **Conditions & logic** (`logic`): 0015, 0016, 0017, 0018, 0019, 001A, 001B, 001C, 001D, 002K
 - **Loops & ranges** (`loops`): 001E, 001F, 001G, 001H, 001J, 001K, 001M, 001N, 001P, 001Q
 - **Dicts & tuples** (`structures`): 001R, 001S, 001T, 001V, 001W, 001X, 001Y
@@ -61,6 +61,7 @@ graph TD
   000X("000X bool-is-int")
   end
   subgraph strings [Strings]
+  000E["000E index-from-zero"]
   000Y["000Y str-concat"]
   000Z["000Z str-repeat"]
   0010("0010 index-from-end")
@@ -71,7 +72,6 @@ graph TD
   end
   subgraph lists [Lists & aliasing]
   000D["000D list-literal"]
-  000E["000E index-from-zero"]
   000F["000F index-assign-mutates"]
   000G["000G append-mutates"]
   000H("000H names-share-list")
@@ -82,6 +82,7 @@ graph TD
   0023("0023 plus-eq-mutates-list")
   0024("0024 slice-copies")
   0025("0025 copy-is-shallow")
+  002M["002M in-checks-membership"]
   end
   subgraph logic [Conditions & logic]
   0015["0015 compare-ops"]
@@ -217,6 +218,8 @@ graph TD
   0024 --> 0025
   000B --> 002K
   0018 --> 002K
+  000D --> 002M
+  0016 --> 002M
 ```
 
 ## Concepts
@@ -338,7 +341,7 @@ b = a gives b the value a holds now; rebinding a later does not change b.
 [a, b, c] builds a list; it prints with brackets, commas, and spaces.
 
 - Parents: 0002, 0006
-- Children: 000F, 000G, 001B, 001E, 001Z, 0021, 0022
+- Children: 000F, 000G, 001B, 001E, 001Z, 0021, 0022, 002M
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006
 - Characteristic wrong answer: the items without brackets, or without the spaces after the commas
 - Exercises: list-shows-brackets
@@ -371,7 +374,7 @@ xs.append(v) changes the existing list, adding v at the end.
 - Children: 000H, 001K, 0020
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D
 - Characteristic wrong answer: the list without the appended item
-- Exercises: append-grows, append-order
+- Exercises: append-grows, append-latent, append-order
 
 ### 000H · names-share-list — edge
 
@@ -541,7 +544,7 @@ s[a:b] is the characters from position a up to but not including b.
 - Children: 0012, 0024
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E
 - Characteristic wrong answer: includes the character at position b
-- Exercises: slice-two-ends
+- Exercises: fill-slice-stop, slice-two-ends
 
 ### 0012 · slice-open-ended — core
 
@@ -588,7 +591,7 @@ Text compares character by character by code point — all capitals come before 
 The yes-or-no values are True and False, and they print exactly like that.
 
 - Parents: 0005
-- Children: 000X, 0015, 001A, 001V
+- Children: 000X, 0015, 001A, 001V, 002M
 - Lineage: 0001 ← 0004 ← 0005
 - Characteristic wrong answer: true, yes, or 1
 - Exercises: bool-prints, fill-bool
@@ -701,7 +704,7 @@ range(a, b, s) counts from a in steps of s, stopping before b.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D ← 001E ← 001F ← 001G
 - Characteristic wrong answer: includes the endpoint, or uses the wrong step
-- Exercises: range-step-contrast, range-with-step
+- Exercises: fill-range-start, range-step-contrast, range-with-step
 
 ### 001J · loop-accumulate — core
 
@@ -721,7 +724,7 @@ Appending once per pass grows a list one item per pass.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D ← 000G ← 001E
 - Characteristic wrong answer: the wrong length, or items in the wrong order
-- Exercises: loop-collect
+- Exercises: loop-collect, trace-build-list
 
 ### 001M · while-repeats-while-true — core
 
@@ -741,7 +744,7 @@ break leaves the whole loop immediately.
 - Children: 001Q
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 000D ← 0015 ← 0016 ← 0017 ← 001E
 - Characteristic wrong answer: the loop finishes the remaining items anyway
-- Exercises: break-order, break-stops
+- Exercises: break-order, break-stops, trace-break
 
 ### 001P · continue-skips — core
 
@@ -781,7 +784,7 @@ d[k] = v stores v under k — adding the key if it is new, replacing it if it ex
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E ← 001R
 - Characteristic wrong answer: the old value survives, or a new key is rejected
-- Exercises: dict-store, store-order, trace-dict-build
+- Exercises: dict-store, dict-store-latent, store-order, trace-dict-build
 
 ### 001T · dict-get-default — core
 
@@ -851,7 +854,7 @@ append([4, 5]) adds one item (a nested list); extend([4, 5]) adds each item.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D ← 000G
 - Characteristic wrong answer: flattened where it should nest, or nested where it should flatten
-- Exercises: append-vs-extend
+- Exercises: append-vs-extend, extend-vs-append-spot
 
 ### 0021 · list-concat-new — core
 
@@ -871,7 +874,7 @@ A list can hold lists; g[r][c] picks row r, then position c inside it.
 - Children: 0025
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000D ← 000E
 - Characteristic wrong answer: row and column swapped
-- Exercises: grid-lookup
+- Exercises: grid-lookup, nested-index-spot
 
 ### 0023 · plus-eq-mutates-list — edge
 
@@ -881,7 +884,7 @@ On a list, b += […] changes the shared list in place; b = b + […] builds a n
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000A ← 000C ← 000D ← 000G ← 000H ← 0021
 - Characteristic wrong answer: the unmutated list for +=, or the mutated one for +
-- Exercises: aug-assign-shared-list, plus-eq-contrast
+- Exercises: aug-assign-shared-list, plus-eq-contrast, plus-eq-latent
 
 ### 0024 · slice-copies — edge
 
@@ -901,7 +904,7 @@ a[:] copies only the outer list — the inner lists are shared, so a change thro
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000A ← 000C ← 000D ← 000E ← 000G ← 000H ← 0011 ← 0022 ← 0024
 - Characteristic wrong answer: the original grid unchanged
-- Exercises: shallow-copy-shares-rows
+- Exercises: shallow-copy-latent, shallow-copy-shares-rows
 
 ### 002K · branch-picks-binding — core
 
@@ -912,6 +915,16 @@ A branch can rebind a name — what the name ends up holding depends on which br
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000B ← 0015 ← 0016 ← 0017 ← 0018
 - Characteristic wrong answer: the value the OTHER branch would have produced
 - Exercises: branch-rebind, trace-branch
+
+### 002M · in-checks-membership — core
+
+`in` asks "is this value one of the items?" — it answers True or False.
+
+- Parents: 000D, 0016
+- Children: —
+- Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D ← 0016
+- Characteristic wrong answer: the item's position, or an error
+- Exercises: in-list
 
 ## Exercises
 
@@ -1064,6 +1077,23 @@ print(nums)
 prints:
 ```
 [36]
+```
+
+### append-latent — focus 000G (append-mutates)
+
+- Form: `predict-state` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D
+- Shapes: two-appends-probe · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+nums = [1, 9]
+nums.append(42)
+nums.append(88)
+```
+After it runs, `nums` holds:
+```
+[1, 9, 42, 88]
 ```
 
 ### append-order — focus 000G (append-mutates)
@@ -1572,6 +1602,23 @@ prints:
 {'b': 5, 'a': 11}
 ```
 
+### dict-store-latent — focus 001S (dict-key-assign)
+
+- Form: `predict-state` · Role: review · Topic: structures
+- Assumed: 0005, 0006, 001R
+- Shapes: add-then-overwrite · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+d = {"x": 3}
+d["y"] = 12
+d["x"] = 22
+```
+After it runs, `d` holds:
+```
+{'x': 22, 'y': 12}
+```
+
 ### digit-text — focus 000K (str-literal-vs-number)
 
 - Form: `predict-exact-output` · Role: intro · Topic: state
@@ -1667,6 +1714,35 @@ prints:
 fish
 ```
 
+### extend-vs-append-spot — focus 0020 (extend-vs-append)
+
+- Form: `spot-the-difference` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D, 000G
+- Shapes: extend-then-append · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+nums = [4, 6]
+nums.extend([15, 18])
+print(nums)
+```
+prints:
+```
+[4, 6, 15, 18]
+```
+
+Program B (predicted):
+```py
+nums = [4, 6]
+nums.append([15, 18])
+print(nums)
+```
+prints:
+```
+[4, 6, [15, 18]]
+```
+
 ### fill-arith-op — focus 0008 (arith-on-ints)
 
 - Form: `fill-one-blank` · Role: review · Topic: numbers
@@ -1715,6 +1791,22 @@ prints the target:
 2
 ```
 
+### fill-range-start — focus 001H (range-step)
+
+- Form: `fill-one-blank` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 001E, 001F, 001G
+- Shapes: fill-start-index · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended token `3`:
+```py
+print(list(range(3, 10, 2)))
+```
+prints the target:
+```
+[3, 5, 7, 9]
+```
+
 ### fill-range-stop — focus 001F (range-stop-excluded)
 
 - Form: `fill-one-blank` · Role: review · Topic: loops
@@ -1731,14 +1823,30 @@ prints the target:
 [0, 1, 2, 3, 4]
 ```
 
+### fill-slice-stop — focus 0011 (slice-half-open)
+
+- Form: `fill-one-blank` · Role: review · Topic: strings
+- Assumed: 0005, 0006, 0007, 000E
+- Shapes: fill-stop-index · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended token `4`:
+```py
+print("planet"[2:4])
+```
+prints the target:
+```
+an
+```
+
 ### fill-value — focus 0006 (name-holds-value)
 
 - Form: `fill-one-blank` · Role: review · Topic: state
 - Assumed: 0005
-- Shapes: fill-assign · Variants: plain
+- Shapes: fill-name · Variants: plain
 - Sample (provenance: seed k=0):
 
-Filled with the intended token `6`:
+Filled with the intended token `count`:
 ```py
 count = 6
 print(count)
@@ -1961,9 +2069,25 @@ prints:
 False
 ```
 
-### index-char — focus 000E (index-from-zero)
+### in-list — focus 002M (in-checks-membership)
 
 - Form: `predict-exact-output` · Role: intro · Topic: lists
+- Assumed: 0005, 0006, 000D, 0016
+- Shapes: found, not-found, in-text · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+xs = [4, 2, 7]
+print(4 in xs)
+```
+prints:
+```
+True
+```
+
+### index-char — focus 000E (index-from-zero)
+
+- Form: `predict-exact-output` · Role: intro · Topic: strings
 - Assumed: 0005, 0006, 0007
 - Shapes: word-index, literal-index, assign-char · Variants: plain
 - Sample (provenance: seed k=0):
@@ -2149,6 +2273,33 @@ prints:
 3
 ```
 
+### nested-index-spot — focus 0022 (nested-lists)
+
+- Form: `spot-the-difference` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D, 000E
+- Shapes: row-col-swap · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+g = [[5, 3], [4, 7]]
+print(g[1][0])
+```
+prints:
+```
+4
+```
+
+Program B (predicted):
+```py
+g = [[5, 3], [4, 7]]
+print(g[0][1])
+```
+prints:
+```
+3
+```
+
 ### or-value-contrast — focus 001C (and-or-return-operand)
 
 - Form: `spot-the-difference` · Role: review · Topic: logic
@@ -2220,6 +2371,23 @@ print(a)
 prints:
 ```
 [4, 9]
+```
+
+### plus-eq-latent — focus 0023 (plus-eq-mutates-list)
+
+- Form: `predict-state` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000A, 000C, 000D, 000G, 000H, 0021
+- Shapes: aug-probe-original · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+a = [3, 6]
+b = a
+b += [66]
+```
+After it runs, `a` holds:
+```
+[3, 6, 66]
 ```
 
 ### precedence-mix — focus 000N (op-precedence)
@@ -2527,6 +2695,23 @@ prints:
 hihi
 ```
 
+### shallow-copy-latent — focus 0025 (copy-is-shallow)
+
+- Form: `predict-state` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D, 000E, 000G, 000H, 0011, 0022, 0024
+- Shapes: copy-mutate-inner-probe · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+a = [[1, 5], [3, 5]]
+b = a[:]
+b[0].append(54)
+```
+After it runs, `a` holds:
+```
+[[1, 5, 54], [3, 5]]
+```
+
 ### shallow-copy-shares-rows — focus 0025 (copy-is-shallow)
 
 - Form: `predict-exact-output` · Role: intro · Topic: lists
@@ -2647,7 +2832,7 @@ prints:
 
 Program A (shown with its output):
 ```py
-nums = [15, 1]
+nums = [1, 1]
 nums[0] = 15
 print(nums)
 nums[0] = 21
@@ -2659,7 +2844,7 @@ prints:
 
 Program B (predicted):
 ```py
-nums = [15, 1]
+nums = [1, 1]
 nums[0] = 15
 nums[0] = 21
 print(nums)
@@ -2773,11 +2958,11 @@ prints:
 
 - Form: `predict-exact-output` · Role: intro · Topic: strings
 - Assumed: 0005, 0015, 0016
-- Shapes: capital-vs-lower · Variants: plain
+- Shapes: capital-vs-lower, lower-descending · Variants: plain
 - Sample (provenance: seed k=0):
 
 ```py
-print("Apple" < "apple")
+print("Zoo" < "melon")
 ```
 prints:
 ```
@@ -2856,6 +3041,46 @@ Step-table walkthrough over `n` (blanks derive from the live trace); the watched
 ```
 6
 6
+```
+
+### trace-break — focus 001N (break-exits)
+
+- Form: `trace-table` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 000D, 0015, 0017, 001E
+- Shapes: break-on-third · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+for x in [2, 4, 7]:
+    if x > 6:
+        break
+    print(x)
+```
+Step-table walkthrough over `x` (blanks derive from the live trace); the watched names end holding:
+```
+2
+4
+7
+```
+
+### trace-build-list — focus 001K (loop-build-list)
+
+- Form: `trace-table` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 000D, 000G, 001E
+- Shapes: collect-each, collect-onto-start · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+xs = [18]
+for x in [3, 6, 2]:
+    xs.append(x)
+print(xs)
+```
+Step-table walkthrough over `xs`, `x` (blanks derive from the live trace); the watched names end holding:
+```
+[18, 3, 6, 2]
+[18, 3, 6, 2]
+2
 ```
 
 ### trace-dict-build — focus 001S (dict-key-assign)

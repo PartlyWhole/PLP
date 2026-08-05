@@ -182,8 +182,18 @@ machine-checked guarantee that the program uses at most one concept the
 student hasn't met (`footprint ⊆ assumed ∪ {focus} ∪ Structural`, the
 K-series). 7 topics (state & I/O, numbers, strings, lists, logic, loops,
 structures); selection weights core concepts 3:1 over edge, boosts unseen
-(×1.5) and missed (up to ×3) concepts, and never repeats a
-`(exercise, shape)` back to back.
+(×1.5) and missed (up to ×3) concepts, applies a **cold-start frontier
+bias** (while few answers exist, exercises whose focus has never-seen
+non-structural ancestors are down-weighted per unseen ancestor — a bias,
+never a gate — fading out by ~24 answers, so cold "all"/endless rounds
+deal basics first and walk outward), reserves **one slot per round for
+the learner's worst concept** (highest missed/seen — the "will come back
+until it's easy" promise, honored per chunk in endless mode too), and
+never repeats a `(form, shape)` back to back — nor, when alternatives
+exist, the same focus concept, including across endless chunk boundaries
+(`finish()` passes the outgoing chunk's last key as `opts.prevKey`).
+The compiler takes the learner's met set as `opts.met` (threaded from
+`plp.kb.met.v1` by tutor.mjs) to feed the bias.
 
 **One question at a time**: every generated program produces exactly one
 line of output (single-line input, Enter to submit); the one
@@ -201,7 +211,8 @@ answers. A miss (wrong or skipped) shows the program's `variantCard`
 (interpolating the exact values asked) or the concept's canonical rule
 card, and bumps `plp.kb.v1` per-CONCEPT stats (`{seen, missed}`, keyed by
 permanent tag; one-time migration from the legacy `plp.drills.v1`
-template store). A clean first-attempt correct answer additionally grants
+template store). A clean first-attempt correct answer (predict-output,
+predict-state, or an all-correct trace-table) additionally grants
 the concept **met** in `plp.kb.met.v1` (see
 `design/lesson-kb-binding.md`), which feeds the menu's frontier entry.
 The generated catalogue of every concept and exercise is
@@ -228,9 +239,17 @@ artifact, byte-exact by the K-doc test; regenerate with
   glow), locked (dimmed, never hidden) — with an SVG edge underlay
   measured from the DOM. A chip's detail card shows the concept
   statement, cross-topic prerequisites as jump links, and
-  **Practice this ▶**, which starts a targeted round on that one concept
-  (`buildKBSession`'s `focus` option: the concept's own exercises,
-  4 questions, id `drill-{topic}-{tag}-{seed}`).
+  **Practice this ▶** (or **Try it anyway ▶** on a locked chip), which
+  starts a targeted round on that one concept (`buildKBSession`'s
+  `focus` option: the concept's own exercises, 4 questions — capped at 2
+  when the concept has a single exercise — id
+  `drill-{topic}-{tag}-{seed}`). A focus round always teaches the
+  focused concept on its first ask, regardless of `introStyle` or prior
+  sightings: the learner explicitly asked to learn it.
+- **Start here**: a brand-new profile (nothing met, nothing answered)
+  gets a primary "🌱 Start here — your first lesson" control at the top
+  of the menu, launching the guided `u1-state-io` unit; it retires as
+  soon as any experience exists.
 - Debug hooks: `plp.tutor.progress()`, `plp.tutor.met()`,
   `plp.tutor.frontier()`, `plp.tutor.mapModel()`, `plp.tutor.showMap()`.
 - Design tokens: learner surfaces speak the `--t-*` custom properties

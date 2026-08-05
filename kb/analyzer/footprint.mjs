@@ -73,6 +73,7 @@ export const TAG = {
   dictKeyAssign: "001S",
   dictGetDefault: "001T",
   inDictChecksKeys: "001V",
+  inChecksMembership: "002M",
   tuplePackPrint: "001W",
   tupleUnpack: "001X",
   tupleByComma: "001Y",
@@ -291,8 +292,14 @@ function analyze(statements) {
           const right = evalExpr(node.comparators[k]);
           parts.push(right);
           if (op === "in" || op === "not in") {
-            if (right.type !== "dict") throw new AnalyzerError("unmapped-syntax", `${op} on a ${right.type} is outside the subset`, node.line);
-            emit(TAG.inDictChecksKeys, "row52", node.line);
+            if (right.type === "dict") {
+              emit(TAG.inDictChecksKeys, "row52", node.line);
+            } else if (right.type === "list" || right.type === "str") {
+              // Membership on sequences: `3 in xs`, `"a" in word` (002M).
+              emit(TAG.inChecksMembership, "row52b", node.line);
+            } else {
+              throw new AnalyzerError("unmapped-syntax", `${op} on a ${right.type} is outside the subset`, node.line);
+            }
           } else {
             emit(TAG.compareOps, "row36", node.line);
             const l = parts[parts.length - 2];

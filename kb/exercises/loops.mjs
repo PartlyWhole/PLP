@@ -549,4 +549,71 @@ export default [
       },
     },
   },
+
+  {
+    // Trace walkthrough (design §5.2 trace-table): the list grows one append
+    // per pass while `x` takes each item — both watched columns move every
+    // iteration. ≤3 items keeps the table short.
+    id: "trace-build-list",
+    topic: "loops",
+    focus: "001K", // loop-build-list
+    assumed: ["0005", "0006", "000D", "000G", "001E"],
+    role: "review",
+    form: "trace-table",
+    generator: {
+      shapes: ["collect-each", "collect-onto-start"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["collect-each", "collect-onto-start"]);
+        const items = Array.from({ length: 3 }, () => int(rng, 1, 9));
+        if (shape === "collect-onto-start") {
+          const start = int(rng, 10, 20);
+          return {
+            code: `xs = [${start}]\nfor x in [${items.join(", ")}]:\n    xs.append(x)\nprint(xs)\n`,
+            probeNames: ["xs", "x"],
+            shape, variant: "plain",
+            variantCard: "The list starts with one item and grows one more each pass — `xs` and `x` both change on every row.",
+          };
+        }
+        return {
+          code: `xs = []\nfor x in [${items.join(", ")}]:\n    xs.append(x)\nprint(xs)\n`,
+          probeNames: ["xs", "x"],
+          shape: "collect-each", variant: "plain",
+          variantCard: "Start empty; each pass `x` takes the next item and `xs` grows by it — the table is the list being built.",
+        };
+      },
+    },
+  },
+
+  {
+    // Trace walkthrough (design §5.2 trace-table): `x` takes each item until
+    // the threshold trips `break`. The threshold is placed so the first two
+    // items pass and the third trips it — `x` changes 3 times, so there are
+    // always ≥2 blanks.
+    id: "trace-break",
+    topic: "loops",
+    focus: "001N", // break-exits
+    assumed: ["0005", "0006", "000D", "0015", "0017", "001E"],
+    role: "review",
+    form: "trace-table",
+    generator: {
+      shapes: ["break-on-third"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const t = int(rng, 4, 6);
+        const a = int(rng, 1, 2);
+        const b = int(rng, a + 1, t); // a < b ≤ t, both below the threshold
+        const c = t + int(rng, 1, 3);  // above the threshold → trips break
+        return {
+          code: `for x in [${a}, ${b}, ${c}]:\n    if x > ${t}:\n        break\n    print(x)\n`,
+          probeNames: ["x"],
+          shape: "break-on-third", variant: "plain",
+          variantCard: `\`x\` steps ${a}, ${b}, ${c}; the first two clear \`> ${t}\` and print, but ${c} trips `
+            + "`break` and the loop ends — `x`'s last value is where the table stops.",
+        };
+      },
+    },
+  },
 ];

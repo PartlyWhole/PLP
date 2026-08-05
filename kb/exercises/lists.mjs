@@ -36,34 +36,6 @@ export default [
   },
 
   {
-    id: "index-char",
-    topic: "lists",
-    focus: "000E", // index-from-zero
-    assumed: ["0005", "0006", "0007"],
-    role: "intro",
-    form: "predict-exact-output",
-    generator: {
-      shapes: ["word-index", "literal-index", "assign-char"],
-      variants: ["plain"],
-      generate(seed) {
-        const rng = mulberry32(seed);
-        const word = pick(rng, words.filter((w) => w.length >= 3));
-        const i = int(rng, 0, 2);
-        const shape = pick(rng, ["word-index", "literal-index", "assign-char"]);
-        const card = `Positions count from 0, so \`[${i}]\` is the character at `
-          + `position ${i} of \`"${word}"\` — that's \`${word[i]}\`.`;
-        if (shape === "literal-index") {
-          return { code: `print("${word}"[${i}])\n`, shape, variant: "plain", variantCard: card };
-        }
-        if (shape === "assign-char") {
-          return { code: `s = "${word}"\nc = s[${i}]\nprint(c)\n`, shape, variant: "plain", variantCard: card };
-        }
-        return { code: `s = "${word}"\nprint(s[${i}])\n`, shape, variant: "plain", variantCard: card };
-      },
-    },
-  },
-
-  {
     id: "slot-assign",
     topic: "lists",
     focus: "000F", // index-assign-mutates
@@ -430,8 +402,11 @@ export default [
         const v1 = int(rng, 10, 40);
         const v2 = v1 + int(rng, 1, 20); // v2 ≠ v1
         if (shape === "read-between") {
+          // The initial slot 0 value is `base` (1..9), well below the first
+          // write `v1` (10..40), so the first write is a REAL change, never a
+          // no-op like `nums[0] = 15` on `[15, …]`.
           const { code, contrastCode } = orderPair(
-            [`${nm} = [${v1}, ${base}]`, `${nm}[0] = ${v1}`, `print(${nm})`, `${nm}[0] = ${v2}`], 2, 3);
+            [`${nm} = [${base}, ${base}]`, `${nm}[0] = ${v1}`, `print(${nm})`, `${nm}[0] = ${v2}`], 2, 3);
           return {
             code, aOutput: `[${v1}, ${base}]`, contrastCode,
             shape, variant: "plain",
@@ -514,6 +489,120 @@ export default [
           probeNames: ["a", "b"],
           shape, variant: "plain",
           variantCard: "`b = a` makes two names for ONE list — so the append step changes both columns at once. That shared row is aliasing.",
+        };
+      },
+    },
+  },
+
+  {
+    // spot-the-difference: same list, extend vs append of the SAME two-item
+    // list — one flattens, one nests. Not a `contrast` (both programs are the
+    // single focus concept), just the two halves of extend-vs-append.
+    id: "extend-vs-append-spot",
+    topic: "lists",
+    focus: "0020", // extend-vs-append
+    assumed: ["0005", "0006", "000D", "000G"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["extend-then-append"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const nm = pick(rng, listNames);
+        const p = int(rng, 1, 5), q = int(rng, 6, 9);
+        const x = int(rng, 10, 15), y = int(rng, 16, 20);
+        return {
+          // Program A (shown WITH its output): extend adds each item.
+          code: `${nm} = [${p}, ${q}]\n${nm}.extend([${x}, ${y}])\nprint(${nm})\n`,
+          aOutput: `[${p}, ${q}, ${x}, ${y}]`,
+          // Program B (predicted): append adds the whole list as ONE nested item.
+          contrastCode: `${nm} = [${p}, ${q}]\n${nm}.append([${x}, ${y}])\nprint(${nm})\n`,
+          shape: "extend-then-append", variant: "plain",
+          variantCard: `The only change is the method. \`extend([${x}, ${y}])\` folds each item in — `
+            + `[${p}, ${q}, ${x}, ${y}]. \`append([${x}, ${y}])\` adds the whole list as ONE item — `
+            + `[${p}, ${q}, [${x}, ${y}]].`,
+        };
+      },
+    },
+  },
+
+  {
+    // spot-the-difference: reading a grid at [1][0] vs [0][1] — row/column
+    // order is the whole lesson of nested-lists. Values are chosen so the two
+    // cells always differ.
+    id: "nested-index-spot",
+    topic: "lists",
+    focus: "0022", // nested-lists
+    assumed: ["0005", "0006", "000D", "000E"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["row-col-swap"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        // g[1][0] and g[0][1] are the two probed cells; keep them distinct so
+        // A-output ≠ B-output on every seed.
+        const g01 = int(rng, 1, 4);
+        const g10 = g01 + int(rng, 1, 4); // ≠ g01
+        const g00 = int(rng, 1, 9), g11 = int(rng, 1, 9);
+        const lit = `[[${g00}, ${g01}], [${g10}, ${g11}]]`;
+        return {
+          // Program A (shown WITH its output): row 1, position 0.
+          code: `g = ${lit}\nprint(g[1][0])\n`,
+          aOutput: String(g10),
+          // Program B (predicted): row 0, position 1 — a different cell.
+          contrastCode: `g = ${lit}\nprint(g[0][1])\n`,
+          shape: "row-col-swap", variant: "plain",
+          variantCard: `\`g[1][0]\` is row 1 then position 0 — that's ${g10}. Swap the subscripts to `
+            + `\`g[0][1]\` and you pick row 0 position 1 instead — ${g01}. Row comes first.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Membership (002M): `in` answers the yes-or-no question — never the
+    // position. Three shapes keep the answer honest: found, not found,
+    // and text membership.
+    id: "in-list",
+    topic: "lists",
+    focus: "002M", // in-checks-membership
+    assumed: ["0005", "0006", "000D", "0016"],
+    role: "intro",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["found", "not-found", "in-text"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["found", "not-found", "in-text"]);
+        if (shape === "in-text") {
+          const word = pick(rng, ["cat", "dog", "sun", "map"]);
+          const hit = pick(rng, [true, false]);
+          const ch = hit ? word[int(rng, 0, 2)] : pick(rng, ["z", "q", "x"]);
+          return {
+            code: `word = "${word}"\nprint("${ch}" in word)\n`,
+            shape, variant: "plain",
+            variantCard: `\`in\` works on text too: is \`"${ch}"\` one of the characters of \`"${word}"\`? ${hit ? "Yes — `True`." : "No — `False`."}`,
+          };
+        }
+        const items = [];
+        while (items.length < 3) { const v = int(rng, 1, 9); if (!items.includes(v)) items.push(v); }
+        if (shape === "found") {
+          const target = items[int(rng, 0, 2)];
+          return {
+            code: `xs = [${items.join(", ")}]\nprint(${target} in xs)\n`,
+            shape, variant: "plain",
+            variantCard: `${target} IS one of the items, so \`in\` answers \`True\` — it never says where.`,
+          };
+        }
+        let miss = int(rng, 10, 19);
+        return {
+          code: `xs = [${items.join(", ")}]\nprint(${miss} in xs)\n`,
+          shape: "not-found", variant: "plain",
+          variantCard: `${miss} is not among the items, so the answer is \`False\` — \`in\` asks membership, nothing more.`,
         };
       },
     },

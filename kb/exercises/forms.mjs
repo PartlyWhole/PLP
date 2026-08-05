@@ -58,17 +58,21 @@ export default [
     role: "review",
     form: "fill-one-blank",
     generator: {
-      shapes: ["fill-assign"],
+      // The blank is the NAME in the print, not the value in the assignment,
+      // so the token you fill (`${name}`) is never the same as the printed
+      // output (${v}) — real work, not a transcription of the shown target.
+      shapes: ["fill-name"],
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
         const name = pick(rng, names);
         const v = int(rng, 2, 20);
-        const { code, blank } = blankFrom(`${name} = \x00\nprint(${name})\n`, String(v));
+        const { code, blank } = blankFrom(`${name} = ${v}\nprint(\x00)\n`, name);
         return {
           code, blank, targetOutput: String(v),
-          shape: "fill-assign", variant: "plain",
-          variantCard: `Any value that makes \`${name}\` hold ${v} works — the simplest is \`${v}\`.`,
+          shape: "fill-name", variant: "plain",
+          variantCard: `The blank is the NAME, not the number. Bare \`${name}\` looks up the value `
+            + `it holds — ${v} — and prints it. \`"${name}"\` with quotes would print the letters instead.`,
         };
       },
     },
@@ -603,6 +607,170 @@ export default [
           shape, variant: "plain",
           variantCard: `\`a[:]\` made a real copy, so the append changed only \`b\`. `
             + `\`${probeName}\` holds [${held.join(", ")}].`,
+        };
+      },
+    },
+  },
+
+  {
+    // predict-state: a new-key store then an overwrite — the dict never prints
+    // itself, so `d`'s final contents are latent.
+    id: "dict-store-latent",
+    topic: "structures",
+    focus: "001S", // dict-key-assign
+    assumed: ["0005", "0006", "001R"],
+    role: "review",
+    form: "predict-state",
+    generator: {
+      shapes: ["add-then-overwrite"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const [k1, k2] = pick(rng, [["a", "b"], ["x", "y"], ["cat", "sun"], ["red", "id"]]);
+        const v1 = int(rng, 1, 9), v2 = int(rng, 10, 20), v3 = int(rng, 21, 30);
+        return {
+          code: `d = {"${k1}": ${v1}}\nd["${k2}"] = ${v2}\nd["${k1}"] = ${v3}\n`,
+          probeName: "d",
+          shape: "add-then-overwrite", variant: "plain",
+          variantCard: `\`"${k2}"\` is new, so it is added (${v2}); then \`"${k1}"\` is overwritten from ${v1} `
+            + `to ${v3}. \`d\` ends holding {'${k1}': ${v3}, '${k2}': ${v2}}.`,
+        };
+      },
+    },
+  },
+
+  {
+    // predict-state: `+=` on a shared list mutates in place; the original name
+    // is never printed, so its post-mutation value is latent.
+    id: "plus-eq-latent",
+    topic: "lists",
+    focus: "0023", // plus-eq-mutates-list
+    assumed: ["0005", "0006", "000A", "000C", "000D", "000G", "000H", "0021"],
+    role: "review",
+    form: "predict-state",
+    generator: {
+      shapes: ["aug-probe-original"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const p = int(rng, 1, 5), q = int(rng, 6, 9), x = int(rng, 10, 99);
+        return {
+          code: `a = [${p}, ${q}]\nb = a\nb += [${x}]\n`,
+          probeName: "a",
+          shape: "aug-probe-original", variant: "plain",
+          variantCard: `\`b += [${x}]\` changes the ONE shared list in place, so \`a\` shows it too: `
+            + `[${p}, ${q}, ${x}]. (\`b = b + [${x}]\` would have left \`a\` alone.)`,
+        };
+      },
+    },
+  },
+
+  {
+    // predict-state: two appends, then probe the list — its grown contents are
+    // latent (the program never prints it).
+    id: "append-latent",
+    topic: "lists",
+    focus: "000G", // append-mutates
+    assumed: ["0005", "0006", "000D"],
+    role: "review",
+    form: "predict-state",
+    generator: {
+      shapes: ["two-appends-probe"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const nm = pick(rng, ["xs", "nums", "vals"]);
+        const p = int(rng, 1, 5), q = int(rng, 6, 9), v = int(rng, 10, 50), w = int(rng, 51, 99);
+        return {
+          code: `${nm} = [${p}, ${q}]\n${nm}.append(${v})\n${nm}.append(${w})\n`,
+          probeName: nm,
+          shape: "two-appends-probe", variant: "plain",
+          variantCard: `Each append adds one item at the end, in order — \`${nm}\` ends [${p}, ${q}, ${v}, ${w}].`,
+        };
+      },
+    },
+  },
+
+  {
+    // predict-state: a shallow copy shares the inner rows; appending through
+    // the copy's inner list shows through the original. Latent.
+    id: "shallow-copy-latent",
+    topic: "lists",
+    focus: "0025", // copy-is-shallow
+    assumed: ["0005", "0006", "000D", "000E", "000G", "000H", "0011", "0022", "0024"],
+    role: "review",
+    form: "predict-state",
+    generator: {
+      shapes: ["copy-mutate-inner-probe"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const g = [[int(rng, 1, 4), int(rng, 5, 9)], [int(rng, 1, 4), int(rng, 5, 9)]];
+        const v = int(rng, 10, 99);
+        const row = int(rng, 0, 1);
+        const after = g.map((r, i) => (i === row ? [...r, v] : r));
+        const show = (grid) => `[[${grid[0].join(", ")}], [${grid[1].join(", ")}]]`;
+        return {
+          code: `a = ${show(g)}\nb = a[:]\nb[${row}].append(${v})\n`,
+          probeName: "a",
+          shape: "copy-mutate-inner-probe", variant: "plain",
+          variantCard: `\`a[:]\` copied only the OUTER list — \`a[${row}]\` and \`b[${row}]\` are one shared `
+            + `inner list. Appending ${v} through \`b[${row}]\` changes it, so \`a\` becomes ${show(after)}.`,
+        };
+      },
+    },
+  },
+
+  {
+    // fill-one-blank: the blank is the slice STOP; the student reverse-engineers
+    // it from the shown substring target.
+    id: "fill-slice-stop",
+    topic: "strings",
+    focus: "0011", // slice-half-open
+    assumed: ["0005", "0006", "0007", "000E"],
+    role: "review",
+    form: "fill-one-blank",
+    generator: {
+      shapes: ["fill-stop-index"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const word = pick(rng, ["python", "planet", "yellow", "garden", "silver", "orange"]);
+        const a = int(rng, 1, 2), b = a + int(rng, 2, 3);
+        const { code, blank } = blankFrom(`print("${word}"[${a}:\x00])\n`, String(b));
+        return {
+          code, blank, targetOutput: word.slice(a, b),
+          shape: "fill-stop-index", variant: "plain",
+          variantCard: `The slice runs from ${a} up to but NOT including the stop. To land on `
+            + `\`${word.slice(a, b)}\`, the stop must be ${b}.`,
+        };
+      },
+    },
+  },
+
+  {
+    // fill-one-blank: the blank is the range START, reverse-engineered from the
+    // printed list.
+    id: "fill-range-start",
+    topic: "loops",
+    focus: "001H", // range-step
+    assumed: ["0005", "0006", "001E", "001F", "001G"],
+    role: "review",
+    form: "fill-one-blank",
+    generator: {
+      shapes: ["fill-start-index"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const a = int(rng, 1, 3), s = int(rng, 2, 3), b = a + s * int(rng, 2, 3) + 1;
+        const seq = [];
+        for (let v = a; v < b; v += s) seq.push(v);
+        const { code, blank } = blankFrom(`print(list(range(\x00, ${b}, ${s})))\n`, String(a));
+        return {
+          code, blank, targetOutput: `[${seq.join(", ")}]`,
+          shape: "fill-start-index", variant: "plain",
+          variantCard: `The list starts at ${a} and steps by ${s}, stopping before ${b} — so the start `
+            + `argument must be ${a}: [${seq.join(", ")}].`,
         };
       },
     },

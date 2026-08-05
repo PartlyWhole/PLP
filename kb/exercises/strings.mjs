@@ -8,6 +8,37 @@ import { orderPair } from "../contrast.mjs";
 
 export default [
   {
+    // Concept-lane fix: index-from-zero belongs to the Strings lane (its
+    // siblings index-from-end/slice-half-open live here), so its topic is
+    // "strings". The program indexes a STRING, matching the lane.
+    id: "index-char",
+    topic: "strings",
+    focus: "000E", // index-from-zero
+    assumed: ["0005", "0006", "0007"],
+    role: "intro",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["word-index", "literal-index", "assign-char"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const word = pick(rng, words.filter((w) => w.length >= 3));
+        const i = int(rng, 0, 2);
+        const shape = pick(rng, ["word-index", "literal-index", "assign-char"]);
+        const card = `Positions count from 0, so \`[${i}]\` is the character at `
+          + `position ${i} of \`"${word}"\` — that's \`${word[i]}\`.`;
+        if (shape === "literal-index") {
+          return { code: `print("${word}"[${i}])\n`, shape, variant: "plain", variantCard: card };
+        }
+        if (shape === "assign-char") {
+          return { code: `s = "${word}"\nc = s[${i}]\nprint(c)\n`, shape, variant: "plain", variantCard: card };
+        }
+        return { code: `s = "${word}"\nprint(s[${i}])\n`, shape, variant: "plain", variantCard: card };
+      },
+    },
+  },
+
+  {
     id: "concat-text",
     topic: "strings",
     focus: "000Y", // str-concat
@@ -159,10 +190,27 @@ export default [
     role: "intro",
     form: "predict-exact-output",
     generator: {
-      shapes: ["capital-vs-lower"],
+      shapes: ["capital-vs-lower", "lower-descending"],
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
+        const shape = pick(rng, ["capital-vs-lower", "lower-descending"]);
+        if (shape === "lower-descending") {
+          // Two lowercase words in DESCENDING order, so `<` is really False —
+          // the answer isn't always True. Distinct picks, then the larger word
+          // first so the comparison genuinely fails on code points.
+          const pool = lowWords.slice();
+          const p = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
+          const q = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
+          const [hi, lo] = p > q ? [p, q] : [q, p];
+          return {
+            code: `print("${hi}" < "${lo}")\n`,
+            shape, variant: "plain",
+            variantCard: `Both are lowercase, so it comes down to the first letters: \`${hi[0]}\` `
+              + `has a LARGER code than \`${lo[0]}\`, so \`"${hi}"\` sorts AFTER \`"${lo}"\` — `
+              + `\`"${hi}" < "${lo}"\` is \`False\`.`,
+          };
+        }
         const cap = pick(rng, capWords), low = pick(rng, lowWords);
         return {
           code: `print("${cap}" < "${low}")\n`,

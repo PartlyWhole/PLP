@@ -39,10 +39,11 @@ export default [
         const shape = pick(rng, ["less", "greater", "equal"]);
         const a = int(rng, 2, 9), b = int(rng, 2, 9);
         const op = shape === "less" ? "<" : shape === "greater" ? ">" : "==";
+        const truth = op === "<" ? a < b : op === ">" ? a > b : a === b;
         return {
           code: `print(${a} ${op} ${b})\n`,
           shape, variant: shape,
-          variantCard: `\`${a} ${op} ${b}\` is \`${op === "<" ? a < b : op === ">" ? a > b : a === b ? "True" : "False"}\`.`,
+          variantCard: `\`${a} ${op} ${b}\` is \`${truth ? "True" : "False"}\`.`,
         };
       },
     },
@@ -148,7 +149,13 @@ export default [
       generate(seed) {
         const rng = mulberry32(seed);
         const shape = pick(rng, ["if-wins", "elif-wins", "else-wins"]);
-        const w1 = pick(rng, words), w2 = pick(rng, words), w3 = pick(rng, words);
+        // Draw three DISTINCT branch words: identical words would leak the
+        // answer (any branch printing the same word grades correct regardless
+        // of which branch wins). Same 3 rng draws as before, now collision-free.
+        const pool = words.slice();
+        const w1 = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
+        const w2 = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
+        const w3 = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
         const t1 = shape === "if-wins" ? "True" : "False";
         const t2 = shape === "elif-wins" ? "True" : "False";
         return {
@@ -173,7 +180,11 @@ export default [
       generate(seed) {
         const rng = mulberry32(seed);
         const shape = pick(rng, ["empty-list", "zero", "empty-string"]);
-        const w = pick(rng, words), after = pick(rng, words);
+        // Distinct words so the skipped-branch word can never equal the
+        // after-line word (a collision would leak the answer). Same 2 draws.
+        const pool = words.slice();
+        const w = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
+        const after = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
         const val = shape === "empty-list" ? "[]" : shape === "zero" ? "0" : '""';
         return {
           code: `x = ${val}\nif x:\n    print("${w}")\nprint("${after}")\n`,

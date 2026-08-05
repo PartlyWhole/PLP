@@ -200,8 +200,8 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     const welcome = {
       type: "say",
       md: "Pick a topic and try some questions. You'll read a tiny "
-        + "program and type **exactly** what it prints — then it really "
-        + "runs, so you see the true answer right away.\n\n"
+        + "program and predict what it does — then it really runs, so "
+        + "you see the true answer right away.\n\n"
         + "Getting one wrong is part of the plan: you'll see **why**, and "
         + "that idea will come back until it's easy. Every round has fresh "
         + "questions. Your own code is kept safe."
@@ -220,7 +220,16 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     // Topic buttons carry their mastery meter (met/total per topic).
     const byId = new Map(progress.map((r) => [r.id, r]));
     const frontier = met.length ? frontierTags(met) : [];
+    // Brand-new learners get an on-ramp FIRST: the guided unit is the
+    // gentlest entry, and a fresh profile (nothing met, nothing answered)
+    // is exactly when the topic grid reads as a wall of unknowns.
+    const brandNew = met.length === 0 && answeredEver === 0;
     ui.setControls([
+      ...(brandNew ? [{
+        label: "🌱 Start here — your first lesson",
+        primary: true,
+        onClick: () => start("u1-state-io"),
+      }] : []),
       ...(frontier.length ? [{
         label: "⭐ Drill what you just learned",
         onClick: () => startDrill(drillTopicFor(frontier)),
@@ -597,14 +606,16 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         });
       }
       // Met grant (lesson-kb-binding §4): a clean first-attempt correct
-      // predict-output — before the final hint was revealed — evidences the
-      // focused concept. predict-output has no retries, so the attempt is
-      // first by construction; a hint that states the output is a shown
-      // answer, so an answer after the last hint grants nothing. Lesson asks
-      // carry `focus`; practice-round asks carry `concept`.
+      // predict-output OR predict-state — before the final hint was revealed
+      // — evidences the focused concept (a clean state prediction is the same
+      // §2.8 evidence class: the learner predicted what really happened
+      // unaided). These kinds have no retries, so the attempt is first by
+      // construction; a hint that states the output is a shown answer, so an
+      // answer after the last hint grants nothing. Lesson asks carry `focus`;
+      // practice-round asks carry `concept`.
       const metTag = ask.focus ?? ask.concept;
       const beforeFinalHint = totalHints === 0 || hints.length > 0;
-      if (result.correct && ask.kind === "predict-output" && metTag && beforeFinalHint) {
+      if (result.correct && metTag && beforeFinalHint) {
         if (grantMet(metTag, ask.focus ? "lesson" : "drill")) {
           (store.roundMet ??= []).push(metTag); // exact newly-met list for the summary
           persist();
@@ -918,10 +929,15 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     // score, records (review dots), roundMet, and the code stash all carry;
     // only the compiled lesson and the dot-bar window (chunkBase) reset.
     if (store.endless && store.drillLesson) {
+      // The outgoing chunk's last-dealt key carries into the next compile so
+      // the no-repeat guard holds across the chunk boundary.
+      const lastAsk = store.drillLesson.steps?.findLast?.((s) => s.ask)?.ask;
       const built = buildKBSession(store.drillTopic ?? "all", {
         seed: Date.now() >>> 0,
         count: store.endlessCount,
         stats: loadDrillStats(),
+        met: Object.keys(loadMetStore()),
+        prevKey: lastAsk ? `${lastAsk.form}|${lastAsk.shape}|${lastAsk.concept}` : null,
       });
       if (built && !lintLesson(built).length) {
         lesson = built;
@@ -986,6 +1002,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       seed: opts.seed ?? (Date.now() >>> 0),
       count: opts.count, // unset lets the compiler pick (8, or 4 for a focus round)
       stats: loadDrillStats(),
+      met: Object.keys(loadMetStore()), // feeds the cold-start frontier bias
       focus: opts.focus, // targeted practice: one concept's own exercises
     });
     if (!built) throw new Error(`unknown drill topic: ${topic}`);

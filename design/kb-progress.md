@@ -313,6 +313,28 @@ uncommitted, so tags are not yet permanent; K-2 returns early.
   leaves the screen — otherwise it's copying), grades a real re-run
   per-cell, "never mind" restores; score-of-record semantics identical to
   single-input retries. Pool 105→108, concepts 69→70 wired.
+- Full KB review (3 parallel audit agents: DAG structure, exercise depth,
+  learner journey) → update wave. Verdicts: graph SOUND, reorganization
+  not worth append-only churn; depth and selection were the real gaps.
+  Landed: (1) selection intelligence — frontier-biased cold start
+  (0.2^unseenAncestors penalty fading over first 24 answers; opts.met
+  threaded), guaranteed worst-concept slot per round/chunk (makes the
+  welcome's "comes back until easy" true), concept-level no-repeat with
+  cross-chunk prevKey, focus rounds force teach-first + cap count 2 on
+  single-exercise pools, "🌱 Start here" u1 on-ramp for fresh profiles,
+  honest welcome copy; predict-state now grants met (binding §4 amended).
+  (2) content — 5 exercise bug-fixes (JS-true card, elif/falsy word
+  collisions, no-op slot write, always-True text-compare, transcription
+  fill), 10 depth additions (predict-state for mutation concepts 001S/
+  0023/000G/0025, trace-tables 001K/001N, fills 0011/001H, spot-diffs
+  0020/0022), index-char lane fix lists→strings. (3) MINT 002M
+  in-checks-membership (core; parents 000D+0016; analyzer row52b for
+  in/not-in on list/str — previously a hard error; 3-shape intro
+  in-list). (4) design-doc errata (§3.6 bool edge direction, 000K
+  parents, method whitelist). Deferred by graph contract: fill-bool
+  de-transcription (needs an exercisable bool ancestor), None-as-value
+  mint (functions wiring). Pool 108→119, concepts 70→71 wired, ledger
+  83→84. Lists fixture re-derived 199→69→162 (pool grew twice).
 - UI revamp (owner-approved plan, executed in 9 phases): focus mode — the
   beat panel promoted to a full-height stage in the code column, editor
   receded right, console a slim always-live strip that GROWS as the reveal

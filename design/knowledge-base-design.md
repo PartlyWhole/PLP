@@ -354,7 +354,7 @@ have none because they have no witness.
 | `000B` | `accumulate-rebind` | C | evaluate-before-bind, rebind-updates-name | `x = x + 1` reads the old value, computes, then rebinds x to the result. | the old value, or one step short |
 | `000C` | `name-from-name` | C | rebind-updates-name | `b = a` gives b the value a holds *now*; rebinding a later does not change b. | a's new value |
 | `000J` | `print-multi-args` | C | print-text, name-holds-value | `print(a, b)` writes both values on one line with a single space between them. | missing space, or a printed comma |
-| `000K` | `str-literal-vs-number` | C | quoted-vs-name, values-have-types | `"3"` is text and `3` is a number; they can print alike but are different kinds of value. | treats `"3"` as the number 3 |
+| `000K` | `str-literal-vs-number` | C | quoted-vs-name, values-have-types, str-concat | `"3"` is text and `3` is a number; they can print alike but are different kinds of value. | treats `"3"` as the number 3 |
 | `000M` | `swap-right-side-first` | E | name-from-name, evaluate-before-bind | In `a, b = b, a` the whole right side is evaluated before either name rebinds — so the values swap. | both names end up with the same value |
 
 ### 3.3 Numbers & bools (10 — 7 core, 3 edge)
@@ -404,8 +404,8 @@ have none because they have no witness.
 
 | Tag | Slug | Kind | Parents | Statement | Wrong answer |
 |---|---|---|---|---|---|
-| `0015` | `compare-ops` | C | arith-on-ints | `< > <= >= == !=` compare two values and yield a yes-or-no result. | comparison read backwards |
-| `0016` | `bool-values` | C | compare-ops | The yes-or-no values are `True` and `False`, and they print exactly like that. | `true`, `yes`, or `1` |
+| `0015` | `compare-ops` | C | arith-on-ints, bool-values | `< > <= >= == !=` compare two values and yield a yes-or-no result. | comparison read backwards |
+| `0016` | `bool-values` | C | print-text | The yes-or-no values are `True` and `False`, and they print exactly like that. | `true`, `yes`, or `1` |
 | `0017` | `if-runs-or-skips` | C | bool-values | `if` runs its indented lines when the test is `True` and skips them when it is `False`. | the skipped branch's output |
 | `0018` | `else-otherwise` | C | if-runs-or-skips | `else` runs exactly when the `if` test was `False` — one branch runs, never both. | both branches' output |
 | `0019` | `elif-first-true-wins` | C | else-otherwise | In an `if/elif/…` chain, tests run top to bottom and only the first true branch runs. | a later true branch also runs |
@@ -477,7 +477,8 @@ bool, list, dict, tuple), names, binary operators
 chains, `in`, `is`), boolean operators, subscripts (index and slice),
 calls to whitelisted builtins (`print len sum max min range str int
 list`) and whitelisted methods (`append pop insert remove extend
-get upper lower`). Everything else — comprehensions, f-strings,
+get`; the as-built analyzer dropped the once-planned `upper lower` —
+no concept node needs them yet). Everything else — comprehensions, f-strings,
 `lambda`, keyword arguments, sets — is **unparseable ⇒ unfootprintable
 ⇒ analyzer failure**. This doubles as a hygiene guard: the generator
 vocabulary literally cannot outgrow the concept vocabulary silently.

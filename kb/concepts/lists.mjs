@@ -153,4 +153,18 @@ export default [
       + "This prints `[[1, 2, 9], [3, 4]]`: the outer copy is new, but "
       + "`b[0]` and `a[0]` are one shared list.",
   },
+  {
+    tag: "002M",
+    slug: "in-checks-membership",
+    kind: "core",
+    parents: ["000D", "0016"],
+    statement: "`in` asks \"is this value one of the items?\" — it answers True or False.",
+    wrongAnswer: "the item's position, or an error",
+    card: "`in` checks membership: is the value on the left one of the "
+      + "items in the container on the right?\n\n"
+      + "```py\nxs = [3, 8, 5]\nprint(8 in xs)\nprint(4 in xs)\n```\n\n"
+      + "This prints `True` then `False`. It answers the yes-or-no "
+      + "question only — it never tells you WHERE the item is. Text "
+      + "works too: `\"a\" in \"cat\"` is `True`.",
+  },
 ];
