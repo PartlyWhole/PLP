@@ -19,6 +19,15 @@ const SITE = "/PLP/";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const kb = loadKB();
 
+// The heavy K tests execute EVERY exercise's stratified programs in real
+// Pyodide, so their cost grows with the bank (176 exercises and counting).
+// A run against the deployed site additionally fetches the whole vendored
+// engine over the network, which roughly doubles the wall clock — hence the
+// env-aware budget rather than one fixed number that silently rots as the
+// bank grows. If this ever needs raising again, prefer splitting the K-10
+// loop per topic so Playwright can parallelize it.
+const HEAVY_TIMEOUT = process.env.PLP_BASE_URL ? 900_000 : 420_000;
+
 // The declared exception TYPE of a predict-the-error exercise ↔ the concept
 // its raise teaches. Both halves are asserted in K-5: the analyzer's raiseKind
 // must map (through RAISE_TAG) to the tag this table names for the declared
@@ -662,7 +671,7 @@ test.describe("PLP knowledge base (K-series)", () => {
   });
 
   test("K-10: every exercise generates clean, gradable, one-line programs under real execution (inv 10)", async ({ page }) => {
-    test.setTimeout(420_000);
+    test.setTimeout(HEAVY_TIMEOUT);
     await page.goto(SITE);
     await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
@@ -920,7 +929,7 @@ test.describe("PLP knowledge base (K-series)", () => {
   });
 
   test("K-oracles: parser fidelity (inv 8), type fidelity (inv 9), discrimination (inv 11)", async ({ page }) => {
-    test.setTimeout(420_000);
+    test.setTimeout(HEAVY_TIMEOUT);
     await page.goto(SITE);
     await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
@@ -1209,7 +1218,7 @@ test.describe("PLP knowledge base (K-series)", () => {
   });
 
   test("K-doc: curriculum/KB-REFERENCE.md is byte-identical to a fresh regeneration with real outputs (inv 15)", async ({ page }) => {
-    test.setTimeout(420_000);
+    test.setTimeout(HEAVY_TIMEOUT);
     await page.goto(SITE);
     await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
