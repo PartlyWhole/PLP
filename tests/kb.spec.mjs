@@ -670,7 +670,13 @@ test.describe("PLP knowledge base (K-series)", () => {
     for (const want of RNG_PARITY) expect(r()).toBeCloseTo(want, 15);
   });
 
-  test("K-10: every exercise generates clean, gradable, one-line programs under real execution (inv 10)", async ({ page }) => {
+  // K-10 executes EVERY exercise's stratified programs in real Pyodide, so
+  // its cost is O(bank). Split per TOPIC so each slice carries its own budget:
+  // the bank can keep growing without one monolithic test tipping over, and a
+  // failure names the topic it came from. (workers:1 keeps Pyodide serialized,
+  // so this buys budget, not parallelism.)
+  for (const topic of [...new Set(kb.exercises.map((e) => e.topic))].sort()) {
+  test(`K-10 [${topic}]: every exercise generates clean, gradable, one-line programs under real execution (inv 10)`, async ({ page }) => {
     test.setTimeout(HEAVY_TIMEOUT);
     await page.goto(SITE);
     await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
@@ -683,7 +689,7 @@ test.describe("PLP knowledge base (K-series)", () => {
     });
     browserStream.forEach((v, i) => expect(v).toBeCloseTo(RNG_PARITY[i], 15));
 
-    for (const ex of kb.exercises) {
+    for (const ex of kb.exercises.filter((e) => e.topic === topic)) {
       // Stratified seeds: first occurrence of each declared shape and
       // variant, padded with the earliest remaining seeds to 5.
       const chosen = [];
@@ -927,6 +933,7 @@ test.describe("PLP knowledge base (K-series)", () => {
       });
     }
   });
+  }
 
   test("K-oracles: parser fidelity (inv 8), type fidelity (inv 9), discrimination (inv 11)", async ({ page }) => {
     test.setTimeout(HEAVY_TIMEOUT);
