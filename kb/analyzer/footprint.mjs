@@ -90,6 +90,9 @@ export const TAG = {
   returnHandsBackValue: "002A",
   returnVsPrint: "002B",
   returnExitsFunction: "002C",
+  localScopeInside: "002D",
+  localsShadowGlobals: "002E",
+  mutableArgShared: "002J",
   argsEvaluatedFirst: "002F",
   callInExpression: "002G",
   noneWhenNoReturn: "002H",
@@ -236,7 +239,10 @@ function analyze(statements, opts = {}) {
   function recordMutation(objId, via, line) {
     if (objId == null) return;
     const obj = objects.get(objId);
-    obj.mutations.push({ via, shared: obj.names.size >= 2, line });
+    // viaParam (ladder §R4b A4): the mutation went through a PARAMETER name.
+    // That is what makes the later read under the CALLER's name the
+    // mutable-arg-shared witness rather than a plain two-names alias.
+    obj.mutations.push({ via, shared: obj.names.size >= 2, line, viaParam: Boolean(frame?.params.has(via)) });
   }
 
   function checkAliasObservation(id, val, line) {
@@ -244,6 +250,12 @@ function analyze(statements, opts = {}) {
     const obj = objects.get(val.objId);
     if (obj.mutations.some((m) => m.shared && m.via !== id)) {
       emit(TAG.namesShareList, "rule1-observability", line);
+    }
+    // 002J: a mutation performed through a parameter, observed afterwards
+    // through the caller's own name — "passing a list passes the SAME list".
+    // Only observable OUTSIDE the frame: inside, the param is just a name.
+    if (!frame && obj.mutations.some((m) => m.shared && m.viaParam && m.via !== id)) {
+      emit(TAG.mutableArgShared, "rule-mutable-arg", line);
     }
   }
 
@@ -612,7 +624,14 @@ function analyze(statements, opts = {}) {
     }
     const savedEnv = env;
     env = new Map(savedEnv);           // read-through copy: writes stay local
-    frame = { assigned, bound: new Set(), printed: false, discarded: false };
+    frame = {
+      assigned,
+      bound: new Set(),
+      params: new Set(def.params),
+      moduleEnv: savedEnv,
+      printed: false,
+      discarded: false,
+    };
     let ret = { type: "none" };
     let returnedValue = false, bareReturn = false;
     let printedInBody = false, discardedInBody = false;
@@ -642,6 +661,20 @@ function analyze(statements, opts = {}) {
     } finally {
       printedInBody = frame.printed;
       discardedInBody = frame.discarded;
+      // FRAME TEARDOWN (ladder §R4b A3/A4). The env copy is simply dropped —
+      // but the objects table is program-global, so a local (param or
+      // body-assigned name) bound to a LIST would otherwise leave its name in
+      // that object's name set forever. A stale name inflates `names.size`,
+      // which is what decides `shared` on later mutations and what gates
+      // `+=` on a list — so the local names must be withdrawn here, exactly
+      // as the binding itself vanishes.
+      for (const name of frame.bound) {
+        const v = env.get(name);
+        if (v?.type !== "list" || v.objId == null) continue;
+        const outer = savedEnv.get(name);
+        if (outer?.type === "list" && outer.objId === v.objId) continue; // same module binding
+        objects.get(v.objId)?.names.delete(name);
+      }
       frame = null;
       env = savedEnv;
     }
@@ -804,6 +837,13 @@ function analyze(statements, opts = {}) {
       if (values.length !== names.length) throw new AnalyzerError("would-raise", "tuple-unpack length mismatch", stmt.line, "value-unpack");
       if (readsTarget) emit(TAG.swapRightSideFirst, "rule12", stmt.line);
       else emit(TAG.tupleUnpack, "row54", stmt.line);
+      if (frame) {
+        for (const n of names) {
+          if (frame.bound.has(n) || frame.params.has(n)) continue;
+          emit(TAG.localScopeInside, "rule-local", stmt.line);
+          if (frame.moduleEnv.has(n)) emit(TAG.localsShadowGlobals, "rule-shadow", stmt.line);
+        }
+      }
       names.forEach((n, i) => bind(n, values[i]));
       return;
     }
@@ -829,6 +869,18 @@ function analyze(statements, opts = {}) {
         emit(TAG.accumulateRebind, "rule3", stmt.line);
         if (forDepth > 0) emit(TAG.loopAccumulate, "row44", stmt.line);
       } else if (numeric) emit(TAG.evaluateBeforeBind, "row7", stmt.line);
+    }
+    // A body statement that binds a NEW name (not one of the parameters) makes
+    // a local: it exists only for this call and is gone at teardown (002D,
+    // ladder §R4b A3). Rebinding a PARAMETER is not a new local — it is the
+    // 0029 binding being replaced — so it stays out of this rule, which is
+    // also what keeps parameter-only exercises (0029/002F/002J) footprint-legal.
+    if (frame && !wasBound && !frame.params.has(id)) {
+      emit(TAG.localScopeInside, "rule-local", stmt.line);
+      // …and if the module env already binds that spelling, the local HIDES
+      // it while leaving it untouched (002E). 002D is 002E's parent, so both
+      // firing together is in-closure by construction.
+      if (frame.moduleEnv.has(id)) emit(TAG.localsShadowGlobals, "rule-shadow", stmt.line);
     }
     if (wasBound) {
       emit(TAG.rebindUpdatesName, "rule2", stmt.line);

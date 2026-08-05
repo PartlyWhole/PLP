@@ -324,44 +324,6 @@ export default [
   },
 
   {
-    id: "for-else-runs",
-    topic: "loops",
-    focus: "001Q", // for-else-no-break
-    assumed: ["0005", "0006", "000D", "0015", "0016", "0017", "001E", "001N"],
-    role: "intro",
-    form: "predict-exact-output",
-    generator: {
-      shapes: ["no-break", "break-fires"],
-      variants: ["plain"],
-      generate(seed) {
-        const rng = mulberry32(seed);
-        const shape = pick(rng, ["no-break", "break-fires"]);
-        const items = [];
-        while (items.length < 3) { const v = int(rng, 1, 9); if (!items.includes(v)) items.push(v); }
-        const word = pick(rng, ["done", "clear", "found", "ready"]);
-        if (shape === "break-fires") {
-          // The probe IS one of the items, so `break` fires and the loop's
-          // `else` is skipped — the number prints, never the word.
-          const t = items[int(rng, 0, 2)];
-          return {
-            code: `for x in [${items.join(", ")}]:\n    if x == ${t}:\n        print(x)\n        break\nelse:\n    print("${word}")\n`,
-            shape, variant: "plain",
-            variantCard: `\`${t}\` IS in the list, so \`break\` fires and the loop's \`else\` is SKIPPED — only \`${t}\` prints, never \`${word}\`.`,
-          };
-        }
-        // The probe is NOT among the items, so `break` never fires and the
-        // `else` runs.
-        const t = int(rng, 10, 19);
-        return {
-          code: `for x in [${items.join(", ")}]:\n    if x == ${t}:\n        print(x)\n        break\nelse:\n    print("${word}")\n`,
-          shape: "no-break", variant: "plain",
-          variantCard: `No item equals \`${t}\`, so \`break\` never fires and the loop's \`else\` runs, printing \`${word}\`.`,
-        };
-      },
-    },
-  },
-
-  {
     // Hard sibling (R1.3): a NEGATIVE step — range runs downhill, stopping
     // before the stop from above. Availability-gated on met(001H).
     id: "range-countdown-hard",

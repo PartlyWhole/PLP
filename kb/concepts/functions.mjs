@@ -1,9 +1,11 @@
-// The functions sub-graph, def/call/return half (expansion ladder §R4b,
-// waves 1–3). Each concept here is wired together with its intro exercise in
+// The functions sub-graph (expansion ladder §R4b, waves 1–5): the
+// def/call/return half plus scope (002D/002E) and the mutable-argument edge
+// (002J). Each concept here is wired together with its intro exercise in
 // kb/exercises/functions.mjs and the analyzer rules that emit its tag
 // (kb/analyzer/footprint.mjs: rule-def, rule-call, rule-param-bind,
 // rule-args-first, rule-return-value, rule-return-vs-print,
-// rule-return-exits, rule-call-in-expr, rule-none-fallthrough).
+// rule-return-exits, rule-call-in-expr, rule-none-fallthrough, rule-local,
+// rule-shadow, rule-mutable-arg).
 //
 // Parent edges are FROZEN by the append-only ledger (CLAUDE.md invariant 10;
 // check-ledger CI). One is redundant and deliberately kept: 002G's second
@@ -11,8 +13,11 @@
 // so it adds no gating — ACCEPTED per the ladder's §R4b decision rather than
 // edited, because any parents edit trips check-ledger.
 //
-// NOT wired here: 002D/002E (wave 4) and 002J (wave 5) — still in
-// kb/concepts/pending.mjs with the reason each is waiting.
+// SCOPE NOTE (waves 4–5). The analyzer charges 002D to a body statement that
+// binds a NEW name — never to a parameter binding (that is 0029's story) and
+// never to a rebind of a parameter. That distinction is load-bearing: 002D is
+// a CHILD of 0029, so if a plain parameter emitted it, every parameter-taking
+// exercise focused on 0029/002F/002J would leave its own closure.
 
 export default [
   {
@@ -90,6 +95,33 @@ export default [
       + "This prints just `1` — the `print(\"never\")` line never runs.",
   },
   {
+    tag: "002D",
+    slug: "local-scope-inside",
+    kind: "core",
+    parents: ["0029"],
+    statement: "Names bound inside a function exist only inside it; outside, they are gone.",
+    wrongAnswer: "the inside name still readable after the call",
+    card: "Names made inside a function live only INSIDE that run. When "
+      + "the function ends, they are gone.\n\n"
+      + "```py\ndef f():\n    inside = 5\n    print(inside)\nf()\n```\n\n"
+      + "`inside` exists during the call — printing it afterwards would be "
+      + "an error, because outside the function there is no such name.",
+  },
+  {
+    tag: "002E",
+    slug: "locals-shadow-globals",
+    kind: "edge",
+    parents: ["002D"],
+    statement: "A name bound inside a function hides the outer name of the same spelling; the outer one is untouched.",
+    wrongAnswer: "the outer name changed by the inner assignment",
+    card: "If a function binds a name that also exists outside, the inside "
+      + "one is a SEPARATE name that hides the outer one — the outer value "
+      + "is untouched.\n\n"
+      + "```py\nx = 1\ndef f():\n    x = 99\nf()\nprint(x)\n```\n\n"
+      + "This prints `1`: the function's `x` was its own, and it vanished "
+      + "when the call ended.",
+  },
+  {
     tag: "002F",
     slug: "args-evaluated-first",
     kind: "core",
@@ -126,5 +158,17 @@ export default [
       + "```py\ndef f(n):\n    n * 2\nprint(f(3))\n```\n\n"
       + "This prints `None`: `n * 2` was computed and thrown away; nothing "
       + "was returned.",
+  },
+  {
+    tag: "002J",
+    slug: "mutable-arg-shared",
+    kind: "edge",
+    parents: ["0029", "000H"],
+    statement: "Passing a list passes the SAME list — a mutation inside the function shows outside.",
+    wrongAnswer: "the outer list unchanged after the call",
+    card: "Passing a list does not copy it: the parameter is another name "
+      + "for the SAME list. A change inside shows outside.\n\n"
+      + "```py\ndef add(xs):\n    xs.append(9)\nnums = [1, 2]\nadd(nums)\nprint(nums)\n```\n\n"
+      + "This prints `[1, 2, 9]`: `xs` and `nums` were one list.",
   },
 ];

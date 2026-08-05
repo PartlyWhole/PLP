@@ -581,7 +581,6 @@ export const TEMPLATE_TO_CONCEPT = {
   // loops
   "loop-accumulate": "001J", "loop-build": "001K", "while-basic": "001M",
   "range-basics": "001F", "range-edge": "001H", "break-continue": "001N",
-  "for-else": "001Q",
   // structures
   "dict-read": "001R", "tuple-read": "001W", "dict-edge": "001V",
   "tuple-comma": "001Y",

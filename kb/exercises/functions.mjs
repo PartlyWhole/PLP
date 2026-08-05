@@ -21,7 +21,7 @@
 // the K-fnattr anchor test so the deferral cannot rot.
 
 import { mulberry32, int, pick } from "../rng.mjs";
-import { words } from "../pools.mjs";
+import { words, strNames, listNames } from "../pools.mjs";
 
 // Function names (no collision with kb/pools.mjs `names`, which supply the
 // variables — a program must never spell a function and a variable alike).
@@ -615,6 +615,348 @@ export default [
           misconception: String(v * k), // the computed value "coming back by itself"
           variantCard: `The body computed ${v} * ${k} = ${v * k} and threw it away — no `
             + `\`return\` means the caller gets \`None\`, so \`${nm}\` holds \`None\`.`,
+        };
+      },
+    },
+  },
+
+  // --- wave 3 (deferred, now shipped): the two-call trace table ----------
+  {
+    // Held back while a module binding produced by a call was attributed to
+    // the CALLEE's `return` line; the builder now charges a globals-scope
+    // change to the module statement that owns the frame — the call site —
+    // so both rows land on the lines that really bind the watched names
+    // (K-fnattr is the regression guard).
+    //
+    // DEVIATION from the ladder's sketch: the chained program there was
+    // `x = double(v)` / `y = double(x)`, which needs a PARAMETER. 0029 and
+    // 002A are siblings in the frozen ledger (neither is an ancestor of the
+    // other), so one program can never carry both and stay inside any
+    // exercise's closure. The chain is therefore built the legal way: a
+    // parameter-free function called twice, the second call taking part in an
+    // expression that also uses the first call's result — which is exactly
+    // 002G's story, so 002G is the focus.
+    id: "two-calls-chain",
+    topic: "functions",
+    focus: "002G", // call-in-expression
+    assumed: ["0005", "0006", "0008", "0009", "0027", "0028", "002A"],
+    role: "review",
+    form: "trace-table",
+    generator: {
+      shapes: ["second-call-uses-first", "second-call-scaled"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["second-call-uses-first", "second-call-scaled"]);
+        const f = pick(rng, fnNames);
+        const [x, y] = twoOf(rng, valNames);
+        const a = int(rng, 2, 9), b = int(rng, 2, 9);
+        const body = `def ${f}():\n    return ${a} + ${b}\n`;
+        if (shape === "second-call-scaled") {
+          const k = int(rng, 2, 4);
+          return {
+            code: `${body}${x} = ${f}()\n${y} = ${f}() * ${k}\nprint(${y})\n`,
+            probeNames: [x, y],
+            maxBlanks: 4,
+            shape, variant: "plain",
+            variantCard: `Each call is worth ${a + b}. \`${x}\` stores that; on the next `
+              + `line the second call becomes ${a + b} again and the expression finishes: `
+              + `${a + b} * ${k} = ${(a + b) * k}.`,
+          };
+        }
+        return {
+          code: `${body}${x} = ${f}()\n${y} = ${x} + ${f}()\nprint(${y})\n`,
+          probeNames: [x, y],
+          maxBlanks: 4,
+          shape, variant: "plain",
+          variantCard: `\`${f}()\` hands back ${a + b} every time. \`${x}\` becomes ${a + b}, `
+            + `then \`${y} = ${x} + ${f}()\` adds that to a fresh ${a + b}: ${(a + b) * 2}.`,
+        };
+      },
+    },
+  },
+
+  // --- wave 4: 002D local-scope-inside ----------------------------------
+  {
+    // The honest witness for "it is GONE" is a probe that finds NOTHING, so
+    // this rides the predict-state form's `gone` answer token: `probeGone`
+    // tells every consumer (docgen, the K-series) that the probed name does
+    // not survive, and that appending `print(<probe>)` would RAISE rather
+    // than reveal — the program itself must stay a clean run (E3).
+    // ancestors(002D) = {0005, 0006, 0027, 0028, 0029} — no arithmetic and no
+    // string operations are available here, so the locals hold plain values.
+    // MULTILINE: two of the three shapes run the body more than once or use
+    // both of the call's names, and the printed lines are not the graded
+    // surface anyway (the probe is).
+    id: "local-vanishes",
+    topic: "functions",
+    focus: "002D", // local-scope-inside
+    assumed: ["0005", "0006", "0027", "0028", "0029"],
+    role: "intro",
+    form: "predict-state",
+    multiline: true,
+    generator: {
+      shapes: ["one-call", "two-calls", "local-and-param"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["one-call", "two-calls", "local-and-param"]);
+        const f = pick(rng, fnNames);
+        const [local, param] = twoOf(rng, strNames);
+        const [v, other] = twoOf(rng, words);
+        if (shape === "two-calls") {
+          return {
+            code: `def ${f}():\n    ${local} = "${v}"\n    print(${local})\n${f}()\n${f}()\n`,
+            probeName: local,
+            probeGone: true,
+            shape, variant: "plain",
+            misconception: v, // the local "still holding" its last value
+            variantCard: `Each call makes its OWN \`${local}\`, uses it, and drops it. `
+              + `After the second call ends there is no \`${local}\` anywhere — running `
+              + `it twice does not make the name survive.`,
+          };
+        }
+        if (shape === "local-and-param") {
+          return {
+            code: `def ${f}(${param}):\n    ${local} = "${v}"\n    print(${param})\n    print(${local})\n${f}("${other}")\n`,
+            probeName: local,
+            probeGone: true,
+            shape, variant: "plain",
+            misconception: v,
+            variantCard: `Both \`${param}\` and \`${local}\` belong to the call: one arrived `
+              + `as the argument, one was made inside. When \`${f}\` ends, both are gone — `
+              + `so afterwards there is no \`${local}\`.`,
+          };
+        }
+        return {
+          code: `def ${f}():\n    ${local} = "${v}"\n    print(${local})\n${f}()\n`,
+          probeName: local,
+          probeGone: true,
+          shape, variant: "plain",
+          misconception: v,
+          variantCard: `\`${local}\` was made INSIDE \`${f}\`, so it lived only for that `
+            + `call. It printed \`${v}\` while the call was running; once the call ended `
+            + `the name was gone.`,
+        };
+      },
+    },
+  },
+
+  {
+    // The other half of the same idea, graded on OUTPUT: a local is perfectly
+    // usable inside — the question is WHICH name the body prints. Two names
+    // are bound in the frame and only one is printed, so the answer cannot be
+    // transcribed off a single line (E5); the other value is the designed
+    // wrong answer (E6).
+    id: "local-vs-printed",
+    topic: "functions",
+    focus: "002D", // local-scope-inside
+    assumed: ["0005", "0006", "0027", "0028", "0029"],
+    role: "review",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["print-second-local", "print-first-local", "print-param-not-local"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["print-second-local", "print-first-local", "print-param-not-local"]);
+        const f = pick(rng, fnNames);
+        const [n1, n2] = twoOf(rng, strNames);
+        const [v1, v2] = twoOf(rng, words);
+        if (shape === "print-param-not-local") {
+          return {
+            code: `def ${f}(${n1}):\n    ${n2} = "${v2}"\n    print(${n1})\n${f}("${v1}")\n`,
+            shape, variant: "plain",
+            misconception: v2, // the local mistaken for the printed name
+            variantCard: `Inside the call there are two names: \`${n1}\` (the argument, `
+              + `\`${v1}\`) and the local \`${n2}\` (\`${v2}\`). The body prints \`${n1}\`, `
+              + `so the output is \`${v1}\`.`,
+          };
+        }
+        if (shape === "print-first-local") {
+          return {
+            code: `def ${f}():\n    ${n1} = "${v1}"\n    ${n2} = "${v2}"\n    print(${n1})\n${f}()\n`,
+            shape, variant: "plain",
+            misconception: v2,
+            variantCard: `Both locals exist during the call, but the body prints \`${n1}\`, `
+              + `which holds \`${v1}\`. \`${n2}\` is a separate local — and both vanish when `
+              + `the call ends.`,
+          };
+        }
+        return {
+          code: `def ${f}():\n    ${n1} = "${v1}"\n    ${n2} = "${v2}"\n    print(${n2})\n${f}()\n`,
+          shape, variant: "plain",
+          misconception: v1,
+          variantCard: `The body makes two locals and prints \`${n2}\`, so the output is `
+            + `\`${v2}\` — \`${n1}\` is a different name holding \`${v1}\`.`,
+        };
+      },
+    },
+  },
+
+  // --- wave 4: 002E locals-shadow-globals -------------------------------
+  {
+    // Edge, discover-first: the surprise IS the lesson. MULTILINE is the
+    // whole point — the inside value and the outside value must BOTH appear,
+    // in that order, for "the outer one was untouched" to be visible.
+    id: "shadow-untouched",
+    topic: "functions",
+    focus: "002E", // locals-shadow-globals
+    assumed: ["0005", "0006", "0027", "0028", "002D"],
+    role: "intro",
+    form: "predict-exact-output",
+    multiline: true,
+    generator: {
+      shapes: ["shadow-then-outer", "shadow-two-calls"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["shadow-then-outer", "shadow-two-calls"]);
+        const f = pick(rng, fnNames);
+        const nm = pick(rng, valNames);
+        const [outer, inner] = twoOf(rng, words);
+        const head = `${nm} = "${outer}"\ndef ${f}():\n    ${nm} = "${inner}"\n    print(${nm})\n`;
+        if (shape === "shadow-two-calls") {
+          return {
+            code: `${head}${f}()\n${f}()\nprint(${nm})\n`,
+            shape, variant: "plain",
+            misconception: `${inner}\n${inner}\n${inner}`, // the outer name overwritten
+            variantCard: `Each call makes its own \`${nm}\` holding \`${inner}\` and prints `
+              + `it, then drops it. The outer \`${nm}\` never changed — twice \`${inner}\`, `
+              + `then \`${outer}\`.`,
+          };
+        }
+        return {
+          code: `${head}${f}()\nprint(${nm})\n`,
+          shape, variant: "plain",
+          misconception: `${inner}\n${inner}`, // the assignment "reached out"
+          variantCard: `The \`${nm}\` inside \`${f}\` is a SEPARATE name: it holds `
+            + `\`${inner}\` and prints it. The outer \`${nm}\` still holds \`${outer}\`, `
+            + `so the last line prints \`${outer}\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    // The same trap probed as latent state: after the call, what does the
+    // MODULE name hold? An ordinary bound probe — the outer name is alive.
+    id: "shadow-state",
+    topic: "functions",
+    focus: "002E", // locals-shadow-globals
+    assumed: ["0005", "0006", "0027", "0028", "002D"],
+    role: "review",
+    form: "predict-state",
+    generator: {
+      shapes: ["probe-outer-after-shadow", "probe-outer-after-two-calls"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["probe-outer-after-shadow", "probe-outer-after-two-calls"]);
+        const f = pick(rng, fnNames);
+        const nm = pick(rng, valNames);
+        const [outer, inner] = twoOf(rng, words);
+        const head = `${nm} = "${outer}"\ndef ${f}():\n    ${nm} = "${inner}"\n    print(${nm})\n`;
+        const calls = shape === "probe-outer-after-two-calls" ? `${f}()\n${f}()\n` : `${f}()\n`;
+        return {
+          code: `${head}${calls}`,
+          probeName: nm,
+          shape, variant: "plain",
+          misconception: inner, // the inner assignment mistaken for a rebind
+          variantCard: `\`${f}\` bound its OWN \`${nm}\` to \`${inner}\` — that binding `
+            + `vanished with the call. The outer \`${nm}\` was never touched, so it still `
+            + `holds \`${outer}\`.`,
+        };
+      },
+    },
+  },
+
+  // --- wave 5: 002J mutable-arg-shared ----------------------------------
+  {
+    // Edge, discover-first. The parameter and the caller's name are two names
+    // for ONE list, so a mutation inside is visible outside.
+    id: "same-list-inside",
+    topic: "functions",
+    focus: "002J", // mutable-arg-shared
+    assumed: ["0005", "0006", "000D", "000G", "000H", "0027", "0028", "0029"],
+    role: "intro",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["append-then-print", "append-twice", "longer-list"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["append-then-print", "append-twice", "longer-list"]);
+        const f = pick(rng, fnNames);
+        const [param, nm] = twoOf(rng, listNames);
+        const a = int(rng, 1, 5), b = int(rng, 6, 9), v = int(rng, 10, 20);
+        const def = `def ${f}(${param}):\n    ${param}.append(${v})\n`;
+        if (shape === "append-twice") {
+          return {
+            code: `${def}${nm} = [${a}, ${b}]\n${f}(${nm})\n${f}(${nm})\nprint(${nm})\n`,
+            shape, variant: "plain",
+            misconception: `[${a}, ${b}]`, // the caller's list assumed untouched
+            variantCard: `Both calls append to the SAME list — \`${param}\` is never a copy. `
+              + `\`${nm}\` ends as [${a}, ${b}, ${v}, ${v}].`,
+          };
+        }
+        if (shape === "longer-list") {
+          const c = int(rng, 1, 9);
+          return {
+            code: `${def}${nm} = [${a}, ${b}, ${c}]\n${f}(${nm})\nprint(${nm})\n`,
+            shape, variant: "plain",
+            misconception: `[${a}, ${b}, ${c}]`,
+            variantCard: `\`${f}(${nm})\` hands over the list itself, so the \`.append\` `
+              + `inside changes \`${nm}\`: [${a}, ${b}, ${c}, ${v}].`,
+          };
+        }
+        return {
+          code: `${def}${nm} = [${a}, ${b}]\n${f}(${nm})\nprint(${nm})\n`,
+          shape, variant: "plain",
+          misconception: `[${a}, ${b}]`,
+          variantCard: `\`${param}\` and \`${nm}\` are two names for ONE list, so appending `
+            + `${v} inside shows outside: [${a}, ${b}, ${v}].`,
+        };
+      },
+    },
+  },
+
+  {
+    // One line changed inside the body: MUTATE the list the caller handed
+    // over, or REBUILD a new one and point the parameter at it. Only the
+    // first is visible outside — and B's fresh list is built to hold exactly
+    // A's result, so the difference cannot be read off the values.
+    // NOTE: B rebuilds with a LITERAL rather than `${param} + [${v}]` —
+    // ancestors(002J) does not contain 0021 (list-concat-new), so a
+    // concatenation would leave this exercise's closure (E1).
+    id: "append-or-rebuild",
+    topic: "functions",
+    focus: "002J", // mutable-arg-shared
+    assumed: ["0005", "0006", "000A", "000D", "000G", "000H", "0027", "0028", "0029"],
+    contrast: "000H", // names-share-list — the parent, already assumed
+    misconceptionOf: "000H", // answering A's output = "any change inside shows outside"
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["append-vs-rebuild"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const f = pick(rng, fnNames);
+        const [param, nm] = twoOf(rng, listNames);
+        const a = int(rng, 1, 5), b = int(rng, 6, 9), v = int(rng, 10, 20);
+        const tail = `${nm} = [${a}, ${b}]\n${f}(${nm})\nprint(${nm})\n`;
+        return {
+          // A (shown with its output): the body MUTATES the shared list.
+          code: `def ${f}(${param}):\n    ${param}.append(${v})\n${tail}`,
+          aOutput: `[${a}, ${b}, ${v}]`,
+          // B (predicted): the body points the PARAMETER at a brand-new list.
+          contrastCode: `def ${f}(${param}):\n    ${param} = [${a}, ${b}, ${v}]\n${tail}`,
+          shape: "append-vs-rebuild", variant: "plain",
+          variantCard: `Only line 2 changed. \`.append\` changes the list \`${nm}\` names, `
+            + `so A prints [${a}, ${b}, ${v}]. In B the assignment only re-points `
+            + `\`${param}\` at a NEW list — \`${nm}\` still names the old one, so B prints `
+            + `[${a}, ${b}].`,
         };
       },
     },

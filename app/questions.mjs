@@ -348,12 +348,35 @@ function predictOutputQuestion(ctx, opts = {}) {
 // trace (the interpreter is still the only answer key); grading is quote-
 // style- and whitespace-insensitive (normalizeAnswer), which is exactly the
 // §13 Q4 default for this form.
+//
+// THE "GONE" ANSWER TOKEN (expansion ladder §R4b W4): a probe whose name is
+// NOT bound at program end — a function local that vanished when the frame
+// did — is still a legitimate question, and its answer is "there is no such
+// name". Contract: `expected.text === "gone"` and `expected.gone === true`;
+// grading accepts exactly the aliases in GONE_ANSWERS (case-insensitive,
+// whitespace-trimmed) and NOTHING else, so a learner who types a value is
+// wrong. Bound-name questions are untouched by this path.
+export const GONE_ANSWERS = ["gone", "nothing", "not defined", "undefined", "no such name"];
+export function isGoneAnswer(s) {
+  return GONE_ANSWERS.includes(String(s ?? "").trim().toLowerCase().replace(/\s+/g, " "));
+}
+
 function predictStateQuestion(ctx, opts = {}) {
   const name = opts.name;
   if (!name || !ctx.steps?.length) return null;
   const snap = snapshotAt(ctx.steps, ctx.steps.length - 1);
   const entry = snap.entries.find((e) => e.scope === "globals" && e.name === name);
-  if (!entry) return null; // the name is not bound at the end — cannot ask
+  if (!entry) {
+    return {
+      kind: "predict-state",
+      prompt: `After this program runs, what does \`${name}\` hold?`,
+      gone: true,
+      blanks: [],
+      grade(answer) {
+        return { correct: isGoneAnswer(answer?.text), expected: { text: "gone", gone: true } };
+      },
+    };
+  }
   const expected = entry.value;
   return {
     kind: "predict-state",
@@ -374,39 +397,69 @@ function predictStateQuestion(ctx, opts = {}) {
 // their carried value as givens, unbound names render "—". Graded per blank
 // against the real trace with the same container forgiveness as
 // predict-state (normalizeAnswer, else canonicalizeContainers).
+//
+// ROW ATTRIBUTION (expansion ladder §R4b): a module binding produced by a
+// call — `x = double(v)` — is first OBSERVED at the position whose steps sit
+// inside the callee (the group for the callee's `return` line, whose
+// displayed snapshot is the state after the frame popped). Attributing the
+// row to that line labels a globals change with a line the name is not
+// assigned on. The records carry the fix: `memory.linePositions()` reports
+// each position's `function`, so the module-level statement that owns any
+// in-frame position is the nearest PRECEDING position with
+// `function === "<module>"` — the call site. Globals rows use that line;
+// frame rows (opt-in, below) keep their own in-function line.
+//
+// FRAME ROWS: `{ frames: true }` also keeps rows for watched names bound
+// INSIDE a call frame, tagged `row.frame` (e.g. "double()") so a table can
+// walk into the call. OFF by default — every existing exercise is untouched.
 function traceTableQuestion(ctx, opts = {}) {
   const names = opts.names ?? [];
   const maxBlanks = opts.maxBlanks ?? 8;
+  const frames = opts.frames === true;
   if (!names.length) return null;
   const P = ctx.positions ?? [];
   const sourceLines = (ctx.source ?? "").split("\n");
+  // Module-level call site owning each position (see ROW ATTRIBUTION above).
+  const callSiteLine = [];
+  let site = null;
+  for (let i = 0; i < P.length; i++) {
+    if (P[i].function === "<module>") site = P[i].line;
+    callSiteLine[i] = site ?? P[i].line;
+  }
   const filterSnap = (snap) => ({
-    entries: snap.entries.filter((e) => e.scope === "globals" && names.includes(e.name)),
+    entries: snap.entries.filter((e) => names.includes(e.name)
+      && (frames || e.scope === "globals")),
   });
   let prev = { entries: [] };
   const kept = [];
   for (let i = 0; i < P.length; i++) {
     const snap = filterSnap(snapshotAt(ctx.steps, P[i].stateIndex));
     const diff = diffSnapshots(prev, snap);
-    if (diff.added.size || diff.changed.size) kept.push({ position: i, snap, diff });
+    const touched = new Set([...diff.added, ...diff.changed]);
+    if (touched.size) {
+      // One row per (position, scope): outer (globals) before inner frames.
+      const scopes = [...new Set([...touched].map((k) => k.slice(0, k.indexOf("|"))))]
+        .sort((a, b) => (a === "globals" ? -1 : b === "globals" ? 1 : 0));
+      for (const scope of scopes) kept.push({ position: i, scope, snap, touched });
+    }
     prev = snap;
   }
   if (!kept.length) return null; // no watched name ever binds/changes
   const allRows = kept.map((k, idx) => {
-    const byName = new Map(k.snap.entries.map((e) => [e.name, e.value]));
-    const cells = names.map((name) => {
-      const key = `globals|${name}`;
-      return {
-        name,
-        value: byName.has(name) ? byName.get(name) : "—",
-        blank: k.diff.added.has(key) || k.diff.changed.has(key),
-      };
-    });
+    const byName = new Map(k.snap.entries
+      .filter((e) => e.scope === k.scope).map((e) => [e.name, e.value]));
+    const cells = names.map((name) => ({
+      name,
+      value: byName.has(name) ? byName.get(name) : "—",
+      blank: k.touched.has(`${k.scope}|${name}`),
+    }));
+    const line = k.scope === "globals" ? callSiteLine[k.position] : P[k.position].line;
     return {
       step: idx + 1,
-      line: P[k.position].line,
-      codeText: sourceLines[P[k.position].line - 1] ?? "",
+      line,
+      codeText: sourceLines[line - 1] ?? "",
       cells,
+      ...(k.scope === "globals" ? {} : { frame: k.scope }),
     };
   });
   // A cell whose value can be read verbatim off its own line is a GIVEN,
@@ -443,7 +496,11 @@ function traceTableQuestion(ctx, opts = {}) {
       if (!c.blank) continue;
       const id = `b${blanks.length}`;
       c.blankId = id;
-      blanks.push({ id, label: `step ${r.step} · ${c.name}`, expected: c.value });
+      blanks.push({
+        id,
+        label: `step ${r.step} · ${r.frame ? `${r.frame} · ` : ""}${c.name}`,
+        expected: c.value,
+      });
     }
   }
   // Fewer than two REAL blanks isn't a walkthrough — the caller skips

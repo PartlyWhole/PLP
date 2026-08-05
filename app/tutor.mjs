@@ -26,7 +26,7 @@
 // printed. The run IS the reveal.
 
 import { generateQuestion, questionGenerators, normalizeAnswer, normalizeOutput } from "./questions.mjs";
-import { renderQuestionBody, renderTraceTable, renderOrderLines, renderErrorPicker, createAnswerInput, appendExpected } from "./question-ui.mjs";
+import { renderQuestionBody, renderTraceTable, renderOrderLines, renderErrorPicker, createAnswerInput, createLinesInput, createGoneChip, appendExpected } from "./question-ui.mjs";
 import { buildKBSession, kbTopics, migrateStats, spliceBlank, lintLessonConcepts, frontierTags, drillTopicFor, topicProgress, conceptTopics } from "./kb-session.mjs";
 import { summarizeRound } from "./progress.mjs";
 import { mapModel, renderConceptMap } from "./concept-map.mjs";
@@ -690,24 +690,63 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     return true;
   }
 
+  // The one answer-surface builder for free-text predictions. A ONE-line ask
+  // keeps the plain input (Enter submits — drill cadence, unchanged); a
+  // SEVERAL-line ask gets the growing one-line-box widget, whose Enter builds
+  // line structure and whose empty-Enter submits (question-ui.createLinesInput).
+  // Both are handed back behind the same tiny surface so the lock/grade path
+  // below reads the same either way.
+  const makeAnswerSurface = ({ multi, placeholder, onSubmit }) => {
+    if (multi) {
+      const w = createLinesInput({ placeholder, onSubmit });
+      return {
+        el: w.el, multi: true, input: null,
+        get text() { return w.getValue(); },
+        setText: (t) => w.setValue(t),
+        setReadOnly: (v) => w.setReadOnly(v),
+        mark: (ok) => w.applyResult({ correct: ok }),
+        focus: () => w.focus(),
+      };
+    }
+    const el = createAnswerInput({ singleLine: true, placeholder });
+    return {
+      el, multi: false, input: el,
+      get text() { return el.value; },
+      setText: (t) => { el.value = t; },
+      setReadOnly: (v) => { el.readOnly = v; },
+      mark: (ok) => { el.classList.toggle("ok", ok); el.classList.toggle("bad", !ok); },
+      focus: () => el.focus(),
+    };
+  };
+
   function execPredictOutput(ask) {
     events.emit("quiz-question", { kind: ask.kind });
     const isState = ask.kind === "predict-state";
     const hints = [...(ask.hints ?? [])];
     const totalHints = hints.length;
-    let ta = null;
+    // A predict-state answer is ONE value (and its "gone" chip fills one box),
+    // so it is single-line whatever the ask says; only free output prediction
+    // grows boxes.
+    const multi = !ask.singleLine && !isState;
+    let ans = null;
     const card = ui.addInteractiveCard({
       teach: ask.teach, context: ask.context, form: ask.form ?? ask.kind,
+      multiline: multi,
       prompt: ask.prompt
         ?? "Before you run it: what will this program print? Type the exact output.",
       render: (body) => {
         // One-thing-at-a-time asks (drills, single-print programs) get a
-        // single-line input; free prediction keeps the textarea.
-        ta = createAnswerInput({
-          singleLine: ask.singleLine,
-          placeholder: isState ? "the value it holds…" : ask.singleLine ? "what this prints…" : "type your predicted output…",
+        // single-line input; a several-line prediction gets the line boxes,
+        // where Enter on an empty last box submits.
+        ans = makeAnswerSurface({
+          multi,
+          placeholder: isState ? "the value it holds…" : multi ? "one printed line…" : "what this prints…",
+          onSubmit: () => doLock(),
         });
-        body.appendChild(ta);
+        body.appendChild(ans.el);
+        // predict-state only: the "gone" token has to be discoverable, not
+        // guessed (ladder §R4b W4). Typing any accepted alias still works.
+        if (isState) body.appendChild(createGoneChip(ans.input));
         return null;
       },
       actions: [],
@@ -717,10 +756,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     batch = [];
 
     const doLock = async () => {
-      const text = ta.value;
+      const text = ans.text;
       if (!text.trim()) { card.setNote("Type what you think it prints first"); return; }
       const ranCode = editor.getValue(); // grade-what-runs: snapshot for review/retry
-      ta.readOnly = true;
+      ans.setReadOnly(true);
       card.setActions([]);
       card.setNote("Running it for real…");
       // The reveal: the console grows NOW, so the eye lands on the real run
@@ -728,7 +767,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       ui.beginReveal?.({ memory: isState });
       const summary = await actions.trace();
       if (!summary) {
-        ta.readOnly = false;
+        ans.setReadOnly(false);
         card.setNote("The run couldn't start (is another one going?) — try again");
         armLockActions();
         return;
@@ -743,17 +782,20 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         return;
       }
       const result = q.grade({ text });
-      ta.classList.toggle("ok", result.correct);
-      ta.classList.toggle("bad", !result.correct);
+      ans.mark(result.correct);
       // The in-card reveal (practice surface): the grade's expected text IS
       // the real run's output (predict-output) / the probed value
       // (predict-state). Stage handles have no reveal method — they keep the
       // classic wrong-only expected block below, byte-identical.
-      card.reveal?.({ text: result.expected.text, correct: result.correct, kind: ask.kind });
+      const goneTruth = isState && result.expected.gone === true;
+      card.reveal?.({
+        text: result.expected.text, correct: result.correct, kind: ask.kind, gone: goneTruth,
+      });
       if (!result.correct && !card.reveal) {
         appendExpected(card.body, {
-          label: isState ? "What it really held:" : "What it really printed:",
-          text: result.expected.text,
+          label: goneTruth ? "It holds nothing:"
+            : isState ? "What it really held:" : "What it really printed:",
+          text: goneTruth ? "that name is gone" : result.expected.text,
         });
       }
       // Met grant (lesson-kb-binding §4): a clean first-attempt correct
@@ -781,7 +823,11 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
         review: {
           kind: ask.kind, form: ask.form, opts: ask.opts, code: ranCode,
-          expectedText: result.expected.text, teach: ask.teach, context: ask.context,
+          expectedText: result.expected.text, expectedGone: goneTruth,
+          // The retry widget must match the live one (several-line answers get
+          // the line boxes, not a textarea) — the ask's shape rides along.
+          multiline: multi,
+          teach: ask.teach, context: ask.context,
         },
       });
     };
@@ -801,25 +847,28 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         prompt: ask.prompt, ok: false, verdict: "skipped",
         lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: ask.kind,
         misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
-        review: { kind: ask.kind, form: ask.form, opts: ask.opts, code: editor.getValue(), teach: ask.teach, context: ask.context },
+        review: { kind: ask.kind, form: ask.form, opts: ask.opts, code: editor.getValue(), multiline: multi, teach: ask.teach, context: ask.context },
       }) },
     ]);
-    // Enter submits on single-line asks — drill cadence.
-    if (ask.singleLine) {
-      ta.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" && !ta.readOnly) doLock();
+    // Enter submits on single-line asks — drill cadence. Several-line asks
+    // submit through the widget's own empty-Enter gesture (wired as onSubmit).
+    if (!multi) {
+      ans.input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !ans.input.readOnly) doLock();
       });
     }
     armLockActions();
     setWaiting({
       type: "ask",
       kind: ask.kind,
-      lock: (text) => { if (text != null) ta.value = text; return doLock(); },
+      // Driver API (plp.tutor.lockPrediction): a "\n"-joined string fills the
+      // line boxes one line per box — every existing caller keeps working.
+      lock: (text) => { if (text != null) ans.setText(text); return doLock(); },
       skip: () => resolveAsk(card, {
         prompt: ask.prompt, ok: false, verdict: "skipped",
         lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: ask.kind,
         misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
-        review: { kind: ask.kind, form: ask.form, opts: ask.opts, code: editor.getValue(), teach: ask.teach, context: ask.context },
+        review: { kind: ask.kind, form: ask.form, opts: ask.opts, code: editor.getValue(), multiline: multi, teach: ask.teach, context: ask.context },
       }),
     });
     return true;
@@ -845,18 +894,22 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     const script = [...(ask.stdinScript ?? [])];
     const hints = [...(ask.hints ?? [])];
     const totalHints = hints.length;
-    let ta = null;
+    let ans = null;
     const card = ui.addInteractiveCard({
       teach: ask.teach, context: ask.context, form: ask.form ?? ask.kind,
       stdinScript: script,
+      multiline: true,
       prompt: ask.prompt
         ?? "Someone types the answers shown. What does the whole console show?",
       render: (body) => {
-        ta = createAnswerInput({
-          singleLine: false,
-          placeholder: "type the whole console transcript…",
+        // A transcript is several lines by construction — line boxes, one per
+        // console line, with the empty-Enter submit.
+        ans = makeAnswerSurface({
+          multi: true,
+          placeholder: "one console line…",
+          onSubmit: () => doLock(),
         });
-        body.appendChild(ta);
+        body.appendChild(ans.el);
         return null;
       },
       actions: [],
@@ -876,16 +929,16 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     });
 
     const doLock = async () => {
-      const text = ta.value;
+      const text = ans.text;
       if (!text.trim()) { card.setNote("Type what you think the console shows first"); return; }
       const ranCode = editor.getValue(); // grade-what-runs: snapshot for review/retry
-      ta.readOnly = true;
+      ans.setReadOnly(true);
       card.setActions([]);
       card.setNote("Running it for real…");
       ui.beginReveal?.({ memory: false });
       const res = await actions.traceWithScript?.(script);
       if (!res?.summary) {
-        ta.readOnly = false;
+        ans.setReadOnly(false);
         card.setNote("The run couldn't start (is another one going?) — try again");
         armLockActions();
         return;
@@ -902,8 +955,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       const noEcho = c.consoleTextNoEcho;
       const got = normalizeOutput(text);
       const correct = got === normalizeOutput(full) || got === normalizeOutput(noEcho);
-      ta.classList.toggle("ok", correct);
-      ta.classList.toggle("bad", !correct);
+      ans.mark(correct);
       card.reveal?.({ text: full, correct, kind: "predict-io" });
       if (!correct && !card.reveal) {
         appendExpected(card.body, { label: "What the console really showed:", text: full });
@@ -952,7 +1004,8 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     setWaiting({
       type: "ask",
       kind: "predict-io",
-      lock: (text) => { if (text != null) ta.value = text; return doLock(); },
+      // Driver API: "\n"-joined text fills one box per line (see above).
+      lock: (text) => { if (text != null) ans.setText(text); return doLock(); },
       skip: () => resolveAsk(card, skipDesc("skipped")),
     });
     return true;
@@ -1296,7 +1349,9 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       const ranCode = editor.getValue(); // grade-what-runs: snapshot for review
       const summary = await actions.trace();
       const q = summary
-        ? generateQuestion("trace-table", ctx(), { names: ask.probeNames, maxBlanks: ask.maxBlanks })
+        ? generateQuestion("trace-table", ctx(), {
+          names: ask.probeNames, maxBlanks: ask.maxBlanks, frames: ask.frames === true,
+        })
         : null;
       if (!q) {
         const desc = {
@@ -1315,7 +1370,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       const expectedById = Object.fromEntries(q.blanks.map((b) => [b.id, b.expected]));
       const baseReview = () => ({
         kind: "trace-table", form: ask.form,
-        opts: { names: ask.probeNames, maxBlanks: ask.maxBlanks },
+        opts: { names: ask.probeNames, maxBlanks: ask.maxBlanks, frames: ask.frames === true },
         code: ranCode,
         table: { rows: q.rows, expectedById },
         teach: ask.teach, context: ask.context,
@@ -1611,6 +1666,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       items: r.items, answerOrder: r.answerOrder, canonical: r.canonical,
       picked: r.picked, actual: r.actual, pickerCode: r.kind === "predict-the-error" ? r.code : undefined,
       teach: r.teach, context: r.context, stdinScript: r.stdinScript,
+      multiline: r.multiline === true, // retry widget matches the live one
       // Single-answer kinds get the single-input widget; trace-table gets
       // a fresh blank table (the UI branches on kind — retryAnswer takes a
       // text string or an answersById map accordingly).

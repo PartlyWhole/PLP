@@ -675,6 +675,21 @@ button.pr-quiet:hover { color: var(--t-ink); text-decoration: underline; }
 .pr-retry-verdict { margin: 0; }
 .pr-retry-verdict:empty { display: none; }
 .pr-retry-note { flex-basis: 100%; margin: 0; font-size: var(--fs-meta); }
+/* predict-state: the quiet "the name is gone" affordance (ladder §R4b W4) */
+.tutor-gone-chip {
+  align-self: flex-start; margin-top: 4px;
+  font-size: var(--fs-meta); padding: 3px 12px; border-radius: var(--r-pill);
+  border: 1px solid var(--t-border); background: var(--t-surface-1);
+  color: var(--t-ink-dim);
+}
+.tutor-gone-chip:hover { color: var(--t-ink); border-color: var(--t-border-strong); }
+/* trace-table frame rows: a step taken INSIDE a call, indented and named */
+.tutor-trace-table .trace-frame-row > td:first-child { padding-left: var(--sp-3); }
+.tutor-trace-table .trace-frame-row { background: var(--t-code-bg); }
+.trace-frame-label {
+  display: inline-block; margin-right: 6px;
+  font-size: var(--fs-meta); color: var(--t-ink-dim);
+}
 /* trace-table retry: buttons row under the (swappable) table slot */
 .pr-table-slot { overflow-x: auto; }
 .pr-retry-cancel { font-size: var(--fs-meta); color: var(--t-ink-dim); }
@@ -835,6 +850,31 @@ button.pr-quiet:hover { color: var(--t-ink); text-decoration: underline; }
   transition: border-color var(--dur-1) var(--ease-out), background-color var(--dur-1) var(--ease-out);
 }
 input.tutor-output-line { min-height: 38px; height: 38px; resize: none; }
+/* The growing one-line-box answer widget (question-ui.createLinesInput): one
+   compact monospace row per printed line, a quiet ✕ per extra row, and a quiet
+   "+ another line" for touch users who never press Enter. */
+.tutor-lines { display: flex; flex-direction: column; gap: var(--sp-1, 4px); width: 100%; }
+.tutor-lines-rows { display: flex; flex-direction: column; gap: 4px; }
+.tutor-lines-row { display: flex; align-items: center; gap: 6px; }
+input.tutor-lines-input {
+  flex: 1 1 auto; min-height: 32px; height: 32px; width: auto;
+  padding: var(--sp-1, 4px) var(--sp-2);
+}
+.tutor-lines-del {
+  flex: 0 0 auto; border: none; background: none; padding: 0 6px; line-height: 1;
+  font-size: var(--fs-meta); color: var(--t-ink-dim); cursor: pointer;
+  transition: color var(--dur-1) var(--ease-out);
+}
+.tutor-lines-del:hover { color: var(--t-ink); }
+/* The first box has no ✕ — but it keeps the SLOT, so every box is the same
+   width and the stack reads as lines of one block of output. */
+.tutor-lines-del[hidden] { display: block; visibility: hidden; }
+.tutor-lines-add {
+  align-self: flex-start; border: none; background: none; padding: 2px 0;
+  font-size: var(--fs-meta); color: var(--t-ink-dim); cursor: pointer;
+}
+.tutor-lines-add:hover { color: var(--t-ink); }
+.pr-retry .tutor-lines { flex: 1 1 220px; }
 .tutor-output-input.ok { border-color: var(--t-success); background: var(--t-success-soft); }
 .tutor-output-input.bad { border-color: var(--t-miss); background: var(--t-miss-soft); }
 .tutor-card .tutor-expected { margin-top: 6px; animation: t-reveal-in var(--dur-2) var(--ease-out); }
@@ -914,6 +954,7 @@ input.tutor-output-line { min-height: 38px; height: 38px; resize: none; }
   .cm-node.cm-flash,
   .tutor-card .tutor-expected { animation: none; }
   .tutor-output-input,
+  .tutor-lines-del,
   .t-meter-fill,
   .cm-node,
   .tutor-feed .tutor-card.openable { transition: none; }

@@ -37,7 +37,11 @@ export function docSamples(kb) {
       specs.push({ key: `${ex.id}|A`, run: prog.code });
       specs.push({ key: `${ex.id}|B`, run: prog.contrastCode });
     } else if (ex.form === "predict-state") {
-      specs.push({ key: `${ex.id}|state`, run: `${prog.code}print(${prog.probeName})\n` });
+      // A GONE probe (ladder §R4b W4) names a function local that no longer
+      // exists once the call ends: `print(<probe>)` would RAISE, so the
+      // sample runs the program ALONE and the reference states the absence.
+      if (prog.probeGone) specs.push({ key: `${ex.id}|out`, run: prog.code });
+      else specs.push({ key: `${ex.id}|state`, run: `${prog.code}print(${prog.probeName})\n` });
     } else if (ex.form === "trace-table") {
       // The blanks derive from the live trace at runtime; the reference can
       // only show the watched names' END values (docgen is stdout-only).
@@ -207,8 +211,14 @@ export function renderReference(kb, outputs, waivers = []) {
       L.push(outBlock(get(`${ex.id}|B`)));
     } else if (ex.form === "predict-state") {
       L.push(fence(prog.code));
-      L.push(`After it runs, \`${prog.probeName}\` holds:`);
-      L.push(outBlock(get(`${ex.id}|state`)));
+      if (prog.probeGone) {
+        L.push("prints:");
+        L.push(outBlock(get(`${ex.id}|out`)));
+        L.push(`After it runs, \`${prog.probeName}\` is gone — it was a local of the call.`);
+      } else {
+        L.push(`After it runs, \`${prog.probeName}\` holds:`);
+        L.push(outBlock(get(`${ex.id}|state`)));
+      }
     } else if (ex.form === "trace-table") {
       L.push(fence(prog.code));
       L.push(`Step-table walkthrough over \`${prog.probeNames.join("`, `")}\` (blanks derive from the live trace); the watched names end holding:`);

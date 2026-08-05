@@ -69,6 +69,222 @@ export function createAnswerInput({ singleLine = false, placeholder = "" } = {})
   return el;
 }
 
+// The growing one-line-box widget: the answer surface for every ask whose
+// answer is SEVERAL printed lines (predict-output with ask.multiline,
+// predict-io, and their retries).
+//
+// Why not a textarea: in a textarea Enter means "newline", so there was no
+// keyboard way to SUBMIT a multi-line answer at all (the Enter-submits binding
+// only ever existed on single-line asks). Here Enter is a line-structure key
+// and the "I'm done" gesture is a second Enter on an empty last box.
+//
+// CRITICAL: exactly ONE box is rendered to start, always. The number of boxes
+// must never hint at how many lines the program prints — the learner adds them.
+//
+// Key map (per box):
+//   Enter, last box, non-empty   → append a box below and focus it
+//   Enter, non-last box          → focus the next box (never adds)
+//   Enter, last box, empty, ≥2   → drop that box and SUBMIT
+//   Enter, last box, empty, only → nothing (an empty answer is rejected anyway)
+//   Backspace, empty non-first box, caret at 0 → drop it, caret at end of prev
+//   ArrowUp / ArrowDown          → previous / next box (caret start / end)
+//   paste containing newlines    → split across boxes from the caret out
+//
+// View contract matches the other renderers: collect() → { text } with the
+// boxes joined by "\n" (trailing empties dropped) — byte-identical to what the
+// textarea produced, so GRADING IS UNCHANGED.
+export function createLinesInput({
+  placeholder = "",
+  onSubmit = null,
+  label = "your answer — one box per printed line",
+} = {}) {
+  const wrap = document.createElement("div");
+  wrap.className = "tutor-lines";
+  wrap.setAttribute("role", "group");
+  wrap.setAttribute("aria-label", label);
+  const rowsEl = document.createElement("div");
+  rowsEl.className = "tutor-lines-rows";
+  wrap.appendChild(rowsEl);
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "tutor-lines-add";
+  addBtn.textContent = "+ another line";
+  wrap.appendChild(addBtn);
+
+  let frozen = false;
+  let readOnly = false;
+  const boxes = () => [...rowsEl.querySelectorAll("input.tutor-lines-input")];
+  const locked = (input) => frozen || readOnly || input.readOnly || input.disabled;
+  const caretTo = (input, where) => {
+    input.focus();
+    const pos = where === "start" ? 0 : input.value.length;
+    try { input.setSelectionRange(pos, pos); } catch { /* not selectable */ }
+  };
+  const relabel = () => {
+    const list = boxes();
+    list.forEach((input, i) => {
+      input.setAttribute("aria-label", `output line ${i + 1}`);
+      const del = input.parentElement.querySelector(".tutor-lines-del");
+      if (del) del.hidden = i === 0; // ✕ on every box after the first
+    });
+  };
+
+  function removeRow(input) {
+    const list = boxes();
+    if (list.length <= 1) return;
+    input.parentElement.remove();
+    relabel();
+  }
+
+  function makeRow(value = "", after = null) {
+    const row = document.createElement("div");
+    row.className = "tutor-lines-row";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "tutor-output-input tutor-output-line tutor-lines-input";
+    input.value = value;
+    input.placeholder = placeholder;
+    // Same code-not-prose mobile hardening createAnswerInput applies: exact
+    // output comparison dies quietly under autocapitalize/autocorrect.
+    input.spellcheck = false;
+    input.setAttribute("autocapitalize", "off");
+    input.setAttribute("autocorrect", "off");
+    input.setAttribute("autocomplete", "off");
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "tutor-lines-del";
+    del.textContent = "✕";
+    del.title = "remove this line";
+    del.setAttribute("aria-label", "remove this line");
+    del.addEventListener("click", () => {
+      if (frozen || readOnly) return;
+      const list = boxes();
+      const i = list.indexOf(input);
+      removeRow(input);
+      const next = boxes();
+      caretTo(next[Math.min(i, next.length - 1)], "end");
+    });
+    row.append(input, del);
+
+    input.addEventListener("keydown", (e) => {
+      if (locked(input)) return;
+      const list = boxes();
+      const i = list.indexOf(input);
+      const isLast = i === list.length - 1;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (!isLast) { caretTo(list[i + 1], "end"); return; }
+        if (input.value !== "") { caretTo(makeRow("", row), "start"); return; }
+        if (list.length >= 2) { removeRow(input); onSubmit?.(); }
+        return; // one empty box: an empty answer, nothing to submit
+      }
+      if (e.key === "Backspace" && input.value === "" && i > 0 && (input.selectionStart ?? 0) === 0) {
+        e.preventDefault();
+        removeRow(input);
+        caretTo(boxes()[i - 1], "end");
+        return;
+      }
+      if (e.key === "ArrowUp" && i > 0) { e.preventDefault(); caretTo(list[i - 1], "start"); return; }
+      if (e.key === "ArrowDown" && !isLast) { e.preventDefault(); caretTo(list[i + 1], "end"); }
+    });
+
+    // Paste is how a learner who copied output from elsewhere answers: the
+    // newlines become boxes rather than vanishing into one.
+    input.addEventListener("paste", (e) => {
+      if (locked(input)) return;
+      const text = e.clipboardData?.getData("text") ?? "";
+      if (!text.includes("\n") && !text.includes("\r")) return; // let the browser paste
+      e.preventDefault();
+      const parts = text.replace(/\r\n?/g, "\n").split("\n");
+      const start = input.selectionStart ?? input.value.length;
+      const end = input.selectionEnd ?? start;
+      const tail = input.value.slice(end);
+      input.value = input.value.slice(0, start) + parts[0];
+      let cur = input;
+      for (let k = 1; k < parts.length; k++) cur = makeRow(parts[k], cur.parentElement);
+      const caret = cur.value.length;
+      cur.value += tail;
+      caretTo(cur, "end");
+      try { cur.setSelectionRange(caret, caret); } catch { /* not selectable */ }
+    });
+
+    if (after) after.insertAdjacentElement("afterend", row);
+    else rowsEl.appendChild(row);
+    relabel();
+    return input;
+  }
+
+  addBtn.addEventListener("click", () => {
+    if (frozen || readOnly) return;
+    caretTo(makeRow("", rowsEl.lastElementChild), "start");
+  });
+
+  makeRow(); // exactly one box, always
+
+  const values = () => boxes().map((input) => input.value);
+  const trimmed = () => {
+    const list = values();
+    while (list.length && list[list.length - 1] === "") list.pop();
+    return list;
+  };
+  const setValue = (text) => {
+    rowsEl.textContent = "";
+    const parts = String(text ?? "").split("\n");
+    for (const p of parts) makeRow(p);
+    if (!boxes().length) makeRow();
+  };
+
+  return {
+    el: wrap,
+    focus: () => boxes()[0]?.focus(),
+    getValue: () => trimmed().join("\n"),
+    setValue,
+    setReadOnly(v) {
+      readOnly = Boolean(v);
+      for (const input of boxes()) input.readOnly = readOnly;
+      addBtn.disabled = readOnly || frozen;
+      for (const b of wrap.querySelectorAll(".tutor-lines-del")) b.disabled = readOnly || frozen;
+    },
+    get readOnly() { return readOnly; },
+    collect: () => ({ text: trimmed().join("\n") }),
+    applyResult(result, { reveal = true } = {}) {
+      void reveal; // the caller owns the reveal block (tutor card / quiz panel)
+      const ok = result?.correct === true;
+      const bad = result?.correct === false;
+      wrap.classList.toggle("ok", ok);
+      wrap.classList.toggle("bad", bad);
+      for (const input of boxes()) {
+        input.classList.toggle("ok", ok);
+        input.classList.toggle("bad", bad);
+      }
+    },
+    freeze() {
+      frozen = true;
+      for (const input of boxes()) input.disabled = true;
+      for (const b of wrap.querySelectorAll("button")) b.disabled = true;
+    },
+    line: null,
+    wide: false,
+  };
+}
+
+// The "gone" affordance for predict-state asks (ladder §R4b W4): a child
+// should never have to GUESS the magic word for "there is no such name", so
+// a quiet chip fills the box with the canonical token. Rendered only for
+// predict-state — every accepted alias still grades right if typed by hand.
+export function createGoneChip(input) {
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "tutor-gone-chip";
+  chip.textContent = "the name is gone";
+  chip.addEventListener("click", () => {
+    if (input.readOnly || input.disabled) return;
+    input.value = "gone";
+    input.focus();
+  });
+  return chip;
+}
+
 // The one "what it really printed" reveal block. Idempotent per container.
 export function appendExpected(container, { label = "actual output:", text } = {}) {
   if (text == null || container.querySelector(".tutor-expected")) return;
@@ -114,6 +330,15 @@ export function renderTraceTable(body, q) {
     line.className = "uid";
     line.textContent = String(r.line);
     const codeTd = document.createElement("td");
+    // Frame rows (opt-in `frames: true`) read as a step taken INSIDE a call:
+    // indented, with the frame named before the code.
+    if (r.frame) {
+      tr.classList.add("trace-frame-row");
+      const tag = document.createElement("span");
+      tag.className = "trace-frame-label";
+      tag.textContent = r.frame;
+      codeTd.appendChild(tag);
+    }
     const codeEl = document.createElement("code");
     codeEl.textContent = r.codeText;
     codeTd.appendChild(codeEl);

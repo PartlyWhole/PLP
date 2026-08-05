@@ -270,8 +270,8 @@ whose program does not merely run — it **pauses**. The ask carries a
 `stdinScript`, the card SHOWS it as chips beside the program ("someone
 types: `7` ⏎ then `3` ⏎") because the typing is deliberately scaffolded:
 WHERE the typed text lands in the transcript is what is tested, not what
-the learner invents. The answer widget is the multiline textarea — a
-transcript is several lines by construction.
+the learner invents. The answer widget is the growing line-box widget
+(below) — a transcript is several lines by construction.
 
 Execution goes through `runner.traceWithScript(lines)`, the single scripted
 -input driver (also exposed as `plp.traceWithStdin` for the K-series, so
@@ -295,6 +295,42 @@ the local echo is a presentation choice, not a concept. A clean
 first-attempt correct answer before the final hint GRANTS met
 (design/lesson-kb-binding.md §4). Review re-shows the chips with the
 program; the retry re-runs the same script, which is deterministic.
+
+### The answer widget for several-line asks
+
+A multi-line answer used to be a **textarea**, and that was a real defect:
+in a textarea Enter means "newline", and the Enter-submits binding only
+ever existed on single-line asks — so there was NO keyboard way to submit
+a multi-line answer at all, and the first-time mechanics line still
+promised one ("type your answer, press Enter — the program really runs").
+
+The replacement is `question-ui.createLinesInput` — a growing stack of
+ONE-LINE boxes, used by every several-line ask (predict-output with
+`ask.multiline`, predict-io, and their review retries):
+
+| key | on the LAST box | on a non-last box |
+|---|---|---|
+| Enter, box non-empty | append a box below, focus it | focus the next box |
+| Enter, box empty | ≥2 boxes: drop it and **submit**; alone: nothing | focus the next box |
+| Backspace at caret 0, box empty | drop it, caret at end of the previous box (never the first box) ||
+| ArrowUp / ArrowDown | previous box (caret start) / next box (caret end) ||
+| paste containing newlines | split across boxes from the caret out, creating boxes ||
+
+It starts with **exactly one box, always** — the number of boxes must
+never hint at how many lines the program prints; the learner adds them.
+A quiet ✕ per extra box and a "+ another line" button keep the touch path
+whole (no keyboard trick is ever required). `collect()` joins the boxes
+with `"\n"` after dropping trailing empties, so the graded string is
+byte-identical to what the textarea produced — **grading is unchanged**,
+and `plp.tutor.lockPrediction("a\nb")` still works (it splits into boxes).
+
+The first-time mechanics line is keyed off the **widget actually built**
+(the `multiline` flag the runtime passes to the practice surface), not the
+form name — predict-output is one box when the program prints one line and
+the box stack when it prints several, so the form alone cannot say which
+sentence is true. Multi-box asks read "one box per printed line — Enter
+starts the next line, then press Check"; each variant is shown once
+(`plp.practice.v1`, keyed `form` vs `form#lines`).
 
 **One question at a time**: every generated program produces exactly one
 line of output (single-line input, Enter to submit); the one

@@ -346,6 +346,234 @@ test.describe("PLP questions (Q-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
+  test("predict-state: an unbound probe asks the GONE question — every alias right, a value wrong", async ({ page }) => {
+    await page.goto(SITE);
+    await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
+    await page.waitForFunction(() => Boolean(window.plp));
+    // `m` lives only inside the frame: after the call it is gone from globals.
+    await page.evaluate(() => window.plp.editor.setValue(
+      "def shout(word):\n    m = word + \"!\"\n    return m\nr = shout(\"hi\")\n"));
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    const r = await page.evaluate((ctxSrc) => {
+      const ctx = eval(ctxSrc);
+      const q = window.plp.questions.generateQuestion("predict-state", ctx, { name: "m" });
+      const bound = window.plp.questions.generateQuestion("predict-state", ctx, { name: "r" });
+      const aliases = ["gone", "GONE", "  Nothing ", "not defined", "Not  Defined",
+        "undefined", "no such name"];
+      return {
+        gone: q.gone,
+        prompt: q.prompt,
+        expected: q.grade({ text: "gone" }).expected,
+        aliases: aliases.map((a) => q.grade({ text: a }).correct),
+        value: q.grade({ text: '"hi!"' }).correct,
+        empty: q.grade({ text: "" }).correct,
+        nonsense: q.grade({ text: "None" }).correct,
+        // Bound names are untouched: the value grades, "gone" does not.
+        boundGone: bound.gone,
+        boundRight: bound.grade({ text: "'hi!'" }).correct,
+        boundGoneAnswer: bound.grade({ text: "gone" }).correct,
+        boundExpected: bound.grade({ text: "" }).expected,
+      };
+    }, ctxExpr);
+    expect(r.gone).toBe(true);
+    expect(r.prompt).toContain("what does `m` hold");
+    expect(r.expected).toEqual({ text: "gone", gone: true });
+    expect(r.aliases).toEqual([true, true, true, true, true, true, true]);
+    expect(r.value).toBe(false); // typing a value is WRONG
+    expect(r.empty).toBe(false);
+    expect(r.nonsense).toBe(false); // `None` is a value, not "no such name"
+    expect(r.boundGone).toBeUndefined();
+    expect(r.boundRight).toBe(true);
+    expect(r.boundGoneAnswer).toBe(false);
+    expect(r.boundExpected).toEqual({ text: '"hi!"' });
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("trace-table over a call: rows land on the call site; frame rows are opt-in", async ({ page }) => {
+    await page.goto(SITE);
+    await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
+    await page.waitForFunction(() => Boolean(window.plp));
+    await page.evaluate(() => window.plp.editor.setValue(
+      "def double(n):\n    return n * 2\nv = 4\nx = double(v)\ny = double(x)\nprint(y)\n"));
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    const r = await page.evaluate((ctxSrc) => {
+      const ctx = eval(ctxSrc);
+      const shape = (q) => (q?.rows ?? []).map((row) => ({
+        line: row.line, frame: row.frame ?? null, code: row.codeText,
+        cells: row.cells.map((c) => `${c.name}=${c.blank ? "?" : c.value}`),
+      }));
+      const plain = window.plp.questions.generateQuestion("trace-table", ctx, { names: ["x", "y"] });
+      const framed = window.plp.questions.generateQuestion(
+        "trace-table", ctx, { names: ["n", "x", "y"], frames: true });
+      const framedOff = window.plp.questions.generateQuestion(
+        "trace-table", ctx, { names: ["n", "x", "y"] });
+      const framedRight = Object.fromEntries(framed.blanks.map((b) => [b.id, b.expected]));
+      return {
+        plain: shape(plain),
+        plainLabels: plain.blanks.map((b) => b.label),
+        framed: shape(framed),
+        framedLabels: framed.blanks.map((b) => b.label),
+        framedRight: framed.grade(framedRight).correct,
+        framedWrong: framed.grade({ ...framedRight, [framed.blanks[0].id]: "999" }).correct,
+        framedOff: shape(framedOff),
+      };
+    }, ctxExpr);
+    // Default (frames off): module names only, attributed to the CALL lines.
+    expect(r.plain).toEqual([
+      { line: 4, frame: null, code: "x = double(v)", cells: ["x=?", "y=—"] },
+      { line: 5, frame: null, code: "y = double(x)", cells: ["x=8", "y=?"] },
+    ]);
+    expect(r.plainLabels).toEqual(["step 1 · x", "step 2 · y"]);
+    // frames: true walks INTO the call — the parameter bind is its own row.
+    expect(r.framed).toEqual([
+      { line: 4, frame: "double()", code: "x = double(v)", cells: ["n=?", "x=—", "y=—"] },
+      { line: 4, frame: null, code: "x = double(v)", cells: ["n=—", "x=?", "y=—"] },
+      { line: 5, frame: "double()", code: "y = double(x)", cells: ["n=?", "x=—", "y=—"] },
+      { line: 5, frame: null, code: "y = double(x)", cells: ["n=—", "x=8", "y=?"] },
+    ]);
+    expect(r.framedLabels).toEqual([
+      "step 1 · double() · n", "step 2 · x", "step 3 · double() · n", "step 4 · y",
+    ]);
+    expect(r.framedRight).toBe(true);
+    expect(r.framedWrong).toBe(false);
+    // Same names WITHOUT the flag: `n` never appears — frame rows are opt-in.
+    expect(r.framedOff).toEqual(r.plain.map((row) => ({
+      ...row, cells: ["n=—", ...row.cells],
+    })));
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  // The growing one-line-box widget (question-ui.createLinesInput) is the
+  // answer surface for every several-line ask. It has no generator either, so
+  // it is unit-checked directly: one box to start (the count must never hint
+  // at how many lines print), Enter as the line-structure key, empty-Enter as
+  // the submit gesture, and a collect() byte-identical to the old textarea's.
+  test("createLinesInput: one box to start, Enter grows/moves, empty-Enter submits, Backspace merges, paste splits", async ({ page }) => {
+    await page.goto(SITE);
+    await page.waitForFunction(() => Boolean(window.plp?.questionUI));
+    const r = await page.evaluate(() => {
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      let submits = 0;
+      const view = window.plp.questionUI.createLinesInput({
+        placeholder: "one line…", onSubmit: () => { submits += 1; },
+      });
+      host.appendChild(view.el);
+      const boxes = () => [...host.querySelectorAll("input.tutor-lines-input")];
+      const key = (input, k) => {
+        input.focus();
+        input.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+      };
+      const type = (i, text) => { const b = boxes()[i]; b.focus(); b.value = text; };
+      const out = {};
+      out.startCount = boxes().length;
+      out.groupLabel = view.el.getAttribute("aria-label");
+      out.role = view.el.getAttribute("role");
+      out.hardened = boxes().every((b) => b.spellcheck === false
+        && b.getAttribute("autocapitalize") === "off"
+        && b.getAttribute("autocorrect") === "off"
+        && b.getAttribute("autocomplete") === "off");
+      out.firstHasNoDelete = boxes()[0].parentElement.querySelector(".tutor-lines-del").hidden;
+
+      // Enter on a non-empty LAST box appends and focuses the new one.
+      type(0, "alpha");
+      key(boxes()[0], "Enter");
+      out.afterEnter = boxes().length;
+      out.focusedIsLast = document.activeElement === boxes()[1];
+      out.secondHasDelete = boxes()[1].parentElement.querySelector(".tutor-lines-del").hidden === false;
+      out.labels = boxes().map((b) => b.getAttribute("aria-label"));
+
+      // Enter on a NON-last box only moves the focus (never adds).
+      type(1, "beta");
+      key(boxes()[0], "Enter");
+      out.afterMove = { count: boxes().length, focusedIndex: boxes().indexOf(document.activeElement) };
+
+      // "+ another line" is the no-keyboard path.
+      host.querySelector(".tutor-lines-add").click();
+      out.afterAdd = boxes().length;
+
+      // Backspace at the start of an empty non-first box merges upward.
+      key(boxes()[2], "Backspace");
+      out.afterBackspace = { count: boxes().length, focusedIndex: boxes().indexOf(document.activeElement) };
+
+      // Arrows walk the boxes.
+      key(boxes()[1], "ArrowUp");
+      out.afterUp = boxes().indexOf(document.activeElement);
+      key(boxes()[0], "ArrowDown");
+      out.afterDown = boxes().indexOf(document.activeElement);
+
+      // collect() joins with "\n" and drops trailing empties — exactly the
+      // string the old textarea produced.
+      out.collected = view.collect();
+      host.querySelector(".tutor-lines-add").click();
+      out.collectedTrailingEmpty = view.collect();
+
+      // Paste with newlines splits from the box pasted into.
+      const target = boxes()[boxes().length - 1];
+      target.focus();
+      target.value = "";
+      target.setSelectionRange(0, 0);
+      const dt = new DataTransfer();
+      dt.setData("text", "one\ntwo\nthree");
+      target.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      out.afterPaste = boxes().map((b) => b.value);
+
+      // The submit gesture: Enter on an EMPTY last box drops it and submits.
+      view.setValue("alpha\nbeta");
+      out.afterSetValue = boxes().map((b) => b.value);
+      key(boxes()[1], "Enter");            // grows
+      out.beforeSubmit = boxes().length;
+      key(boxes()[2], "Enter");            // empty last box → drop + submit
+      out.submits = submits;
+      out.afterSubmit = { count: boxes().length, text: view.collect().text };
+
+      // One empty box alone: nothing to submit.
+      view.setValue("");
+      key(boxes()[0], "Enter");
+      out.submitsAfterLone = submits;
+
+      // Marking + freezing.
+      view.setValue("alpha\nbeta");
+      view.applyResult({ correct: false });
+      out.marked = boxes().every((b) => b.classList.contains("bad"));
+      view.applyResult({ correct: true });
+      out.markedOk = boxes().every((b) => b.classList.contains("ok") && !b.classList.contains("bad"));
+      view.freeze();
+      out.frozen = boxes().every((b) => b.disabled)
+        && [...host.querySelectorAll(".tutor-lines button")].every((b) => b.disabled);
+      key(boxes()[0], "Enter");
+      out.frozenNoGrowth = boxes().length;
+      host.remove();
+      return out;
+    });
+    expect(r.startCount).toBe(1);          // never hint at the number of lines
+    expect(r.role).toBe("group");
+    expect(r.groupLabel).toBeTruthy();
+    expect(r.hardened).toBe(true);
+    expect(r.firstHasNoDelete).toBe(true);
+    expect(r.afterEnter).toBe(2);
+    expect(r.focusedIsLast).toBe(true);
+    expect(r.secondHasDelete).toBe(true);
+    expect(r.labels).toEqual(["output line 1", "output line 2"]);
+    expect(r.afterMove).toEqual({ count: 2, focusedIndex: 1 });
+    expect(r.afterAdd).toBe(3);
+    expect(r.afterBackspace).toEqual({ count: 2, focusedIndex: 1 });
+    expect(r.afterUp).toBe(0);
+    expect(r.afterDown).toBe(1);
+    expect(r.collected).toEqual({ text: "alpha\nbeta" });
+    expect(r.collectedTrailingEmpty).toEqual({ text: "alpha\nbeta" });
+    expect(r.afterPaste).toEqual(["alpha", "beta", "one", "two", "three"]);
+    expect(r.afterSetValue).toEqual(["alpha", "beta"]);
+    expect(r.beforeSubmit).toBe(3);
+    expect(r.submits).toBe(1);
+    expect(r.afterSubmit).toEqual({ count: 2, text: "alpha\nbeta" });
+    expect(r.submitsAfterLone).toBe(1);    // a lone empty box submits nothing
+    expect(r.marked).toBe(true);
+    expect(r.markedOk).toBe(true);
+    expect(r.frozen).toBe(true);
+    expect(r.frozenNoGrowth).toBe(2);
+  });
+
   test("quiz UI: constructs a memory answer and an evaluation sequence", async ({ page }) => {
     await page.goto(SITE);
     await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });

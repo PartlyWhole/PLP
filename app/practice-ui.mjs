@@ -11,7 +11,7 @@
 // serves the menu, the concept map, drills, and round summaries.
 
 import { buildStaticCard, buildControlButton, renderInline, verdictSpan } from "./tutor-widgets.mjs";
-import { renderOrderLines, renderErrorPicker } from "./question-ui.mjs";
+import { renderOrderLines, renderErrorPicker, createLinesInput } from "./question-ui.mjs";
 
 export function createPracticeUI({ layout, getCode }) {
   let onExit = null;
@@ -207,17 +207,19 @@ export function createPracticeUI({ layout, getCode }) {
   }
 
   // The proof block: what the program really did (live reveals and reviews).
-  function buildRevealBlock({ kind, text, correct }) {
+  function buildRevealBlock({ kind, text, correct, gone = false }) {
     const block = document.createElement("div");
     block.className = `pr-reveal ${correct ? "good" : "open"}`;
     const label = document.createElement("span");
     label.className = "pr-reveal-label";
-    label.textContent = kind === "predict-state" ? "it really holds"
+    // The "gone" truth is not a value — never print one (ladder §R4b W4).
+    label.textContent = gone ? "it holds nothing"
+      : kind === "predict-state" ? "it really holds"
       : kind === "trace-table" ? "your table, graded"
         : kind === "predict-the-error" ? "it really stopped with"
           : kind === "predict-io" ? "the console really showed" : "it printed";
     const pre = document.createElement("pre");
-    pre.textContent = text ?? "";
+    pre.textContent = gone ? "that name is gone" : (text ?? "");
     block.append(label, pre);
     return block;
   }
@@ -236,21 +238,35 @@ export function createPracticeUI({ layout, getCode }) {
     "predict-the-error": "tap the line it stops on, then the kind — it really runs",
     "predict-io": "type the WHOLE console — prompts, the typed lines, and the output",
   };
-  function mechanicsLineFor(form) {
+  // A form is not enough to key the mechanics line: predict-output is a single
+  // box when the program prints one line and the growing line-box widget when
+  // it prints several, and the Enter mechanics differ. So the line is keyed off
+  // the WIDGET actually built (the `multiline` flag the runtime passes), with
+  // the multi-box copy overriding by form. Seen-once state is keyed the same
+  // way, so a learner who met the one-box form still gets the boxes explained.
+  const MECHANICS_LINES = {
+    "predict-exact-output": "one box per printed line — Enter starts the next line, then press Check",
+    "predict-output": "one box per printed line — Enter starts the next line, then press Check",
+    "spot-the-difference": "one box per printed line — Enter starts the next line, then press Check",
+  };
+  function mechanicsLineFor(form, multiline = false) {
     let seen;
     try { seen = JSON.parse(localStorage.getItem("plp.practice.v1")) ?? {}; } catch { seen = {}; }
     seen.forms ??= {};
-    if (!form || seen.forms[form]) return null;
-    seen.forms[form] = true;
+    const key = multiline ? `${form}#lines` : form;
+    if (!form || seen.forms[key]) return null;
+    const text = (multiline ? MECHANICS_LINES[form] : null) ?? MECHANICS[form] ?? null;
+    if (!text) return null;
+    seen.forms[key] = true;
     try { localStorage.setItem("plp.practice.v1", JSON.stringify(seen)); } catch { /* ephemeral */ }
-    return MECHANICS[form] ?? null;
+    return text;
   }
 
   // `program: false` suppresses the program block (and its open-in-editor
   // escape): forms whose widget IS the program — order-the-lines, where the
   // dealt arrangement lives in the rows themselves — would otherwise show the
   // same lines twice, once uneditable.
-  function addInteractiveCard({ prompt, render, teach, context, form, stdinScript, program = true }) {
+  function addInteractiveCard({ prompt, render, teach, context, form, stdinScript, multiline = false, program = true }) {
     const el = document.createElement("div");
     el.className = "pr-question tutor-question";
     const code = getCode();
@@ -328,7 +344,7 @@ export function createPracticeUI({ layout, getCode }) {
     // The runtime renders its own input (and binds its Enter handler) into
     // the body we provide — same contract as the stage.
     const view = render?.(answer) ?? null;
-    const mech = mechanicsLineFor(form);
+    const mech = mechanicsLineFor(form, multiline);
     if (mech) {
       const m = document.createElement("p");
       m.className = "pr-mechanics hint";
@@ -392,10 +408,10 @@ export function createPracticeUI({ layout, getCode }) {
       },
       freeze() { el.classList.add("frozen"); },
       // The in-card reveal: what the program REALLY did, right under it.
-      reveal({ text, correct, kind }) {
+      reveal({ text, correct, kind, gone = false }) {
         el.classList.remove("is-running");
         revealSlot.textContent = "";
-        const block = buildRevealBlock({ kind, text, correct });
+        const block = buildRevealBlock({ kind, text, correct, gone });
         // Reflect on it: the graded run's trace is already in the memory
         // model, so the IDE is one tap from scrubbing what really happened —
         // always for predict-state (the state IS the answer), and on any
@@ -733,7 +749,7 @@ export function createPracticeUI({ layout, getCode }) {
     revealSlot.className = "pr-reveal-slot";
     el.appendChild(revealSlot);
     if (desc.expectedText !== undefined) {
-      revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: desc.expectedText, correct: desc.ok }));
+      revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: desc.expectedText, correct: desc.ok, gone: desc.expectedGone === true }));
     }
 
     if (desc.onRetry && desc.kind === "order-the-lines" && orderSlot) {
@@ -959,18 +975,32 @@ export function createPracticeUI({ layout, getCode }) {
     } else if (desc.onRetry) {
       const wrap = document.createElement("div");
       wrap.className = "pr-retry";
-      // predict-io's answer is a whole transcript — several lines — so its
-      // retry widget must be the textarea, like its live card.
-      const multiline = desc.kind === "predict-io";
-      const input = document.createElement(multiline ? "textarea" : "input");
-      input.className = "tutor-output-input";
-      if (multiline) input.rows = 4;
-      input.placeholder = "have another go…";
-      // Same code-not-prose hardening as createAnswerInput (ladder §R5).
-      input.spellcheck = false;
-      input.setAttribute("autocapitalize", "off");
-      input.setAttribute("autocorrect", "off");
-      input.setAttribute("autocomplete", "off");
+      // Several-line answers (predict-io's transcript; a predict-output ask
+      // whose program prints more than one line) retry through the same
+      // growing line-box widget as the live card — never a textarea, which has
+      // no keyboard submit.
+      const multiline = desc.kind === "predict-io" || desc.multiline === true;
+      const lines = multiline
+        ? createLinesInput({ placeholder: "have another go…", onSubmit: () => go() })
+        : null;
+      let input;
+      if (multiline) {
+        input = lines.el;
+      } else {
+        input = document.createElement("input");
+        input.className = "tutor-output-input";
+        input.placeholder = "have another go…";
+        // Same code-not-prose hardening as createAnswerInput (ladder §R5).
+        input.spellcheck = false;
+        input.setAttribute("autocapitalize", "off");
+        input.setAttribute("autocorrect", "off");
+        input.setAttribute("autocomplete", "off");
+      }
+      const readAnswer = () => (multiline ? lines.getValue() : input.value);
+      const setBusy = (busy) => {
+        if (multiline) lines.setReadOnly(busy);
+        else input.readOnly = busy;
+      };
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "primary";
@@ -981,13 +1011,13 @@ export function createPracticeUI({ layout, getCode }) {
       note.className = "hint pr-retry-note";
       note.textContent = "retries are for you — your score keeps the first try";
       const go = async () => {
-        if (!input.value.trim() || btn.disabled) return;
+        if (!readAnswer().trim() || btn.disabled) return;
         btn.disabled = true;
-        input.readOnly = true;
+        setBusy(true);
         verdictOut.textContent = "running it for real…";
-        const res = await desc.onRetry(input.value);
+        const res = await desc.onRetry(readAnswer());
         btn.disabled = false;
-        input.readOnly = false;
+        setBusy(false);
         verdictOut.textContent = "";
         if (!res) { verdictOut.textContent = "couldn't run just now — try again in a moment"; return; }
         verdictOut.appendChild(verdictSpan(res.ok, res.ok ? "✓ that's it!" : "✗ not yet — the real answer is above"));
@@ -997,6 +1027,8 @@ export function createPracticeUI({ layout, getCode }) {
         }
       };
       btn.addEventListener("click", go);
+      // Single-line retries submit on Enter; multi-line ones on the widget's
+      // empty-Enter gesture (wired as its onSubmit above).
       if (!multiline) input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !input.readOnly) go(); });
       wrap.append(input, btn, verdictOut, note);
       el.appendChild(wrap);

@@ -13,49 +13,40 @@
 //   (expansion ladder §R4b waves 1–3) — prose moved to
 //   kb/concepts/functions.mjs alongside the analyzer's def/call/return
 //   grammar and abstract call frames.
-// - 002D local-scope-inside / 002E locals-shadow-globals: wave 4. They need
-//   the predict-state form to grow a canonical "gone" answer token (a name
-//   that no longer exists is not a value the current form can express).
-// - 002J mutable-arg-shared: wave 5 (objId pass-through through a frame).
+// - 002D local-scope-inside / 002E locals-shadow-globals: WIRED (expansion
+//   ladder §R4b wave 4) — prose moved to kb/concepts/functions.mjs once
+//   predict-state grew its canonical "gone" answer token.
+// - 002J mutable-arg-shared: WIRED (expansion ladder §R4b wave 5) — prose
+//   moved to kb/concepts/functions.mjs alongside the analyzer's objId
+//   pass-through through a call frame (rule-mutable-arg) and the matching
+//   frame-teardown withdrawal of local names from the objects table.
+// - 001Q for-else-no-break: UNWIRED BY DECISION (owner call, after the
+//   concept's own trap sprang on an experienced reader). `for ... else` is
+//   rare in real Python and several style guides discourage writing it; more
+//   to the point, its SYNTAX reads as an error before it reads as a rule, so
+//   a discover-first encounter teaches nothing — a learner who concludes
+//   "this program is broken" has not met the concept, only doubted the app.
+//   The tag stays active and permanent (the ledger never forgets an
+//   allocation); the prose waits here, and the analyzer KEEPS its
+//   forElseNoBreak rule so any future generated for-else program fails the
+//   closure check loudly instead of teaching an untaught concept.
+//
+// The module is also the designated home for the NEXT minted-but-unwired
+// concept, and the documentation of why that state is legal at all: the
+// ledger may run ahead of the loaded set (invariant 10, K-1 is directional).
 
 export default [
   {
-    tag: "002D",
-    slug: "local-scope-inside",
-    kind: "core",
-    parents: ["0029"],
-    statement: "Names bound inside a function exist only inside it; outside, they are gone.",
-    wrongAnswer: "the inside name still readable after the call",
-    card: "Names made inside a function live only INSIDE that run. When "
-      + "the function ends, they are gone.\n\n"
-      + "```py\ndef f():\n    inside = 5\n    print(inside)\nf()\n```\n\n"
-      + "`inside` exists during the call — printing it afterwards would be "
-      + "an error, because outside the function there is no such name.",
-  },
-  {
-    tag: "002E",
-    slug: "locals-shadow-globals",
+    tag: "001Q",
+    slug: "for-else-no-break",
     kind: "edge",
-    parents: ["002D"],
-    statement: "A name bound inside a function hides the outer name of the same spelling; the outer one is untouched.",
-    wrongAnswer: "the outer name changed by the inner assignment",
-    card: "If a function binds a name that also exists outside, the inside "
-      + "one is a SEPARATE name that hides the outer one — the outer value "
-      + "is untouched.\n\n"
-      + "```py\nx = 1\ndef f():\n    x = 99\nf()\nprint(x)\n```\n\n"
-      + "This prints `1`: the function's `x` was its own, and it vanished "
-      + "when the call ended.",
-  },
-  {
-    tag: "002J",
-    slug: "mutable-arg-shared",
-    kind: "edge",
-    parents: ["0029", "000H"],
-    statement: "Passing a list passes the SAME list — a mutation inside the function shows outside.",
-    wrongAnswer: "the outer list unchanged after the call",
-    card: "Passing a list does not copy it: the parameter is another name "
-      + "for the SAME list. A change inside shows outside.\n\n"
-      + "```py\ndef add(xs):\n    xs.append(9)\nnums = [1, 2]\nadd(nums)\nprint(nums)\n```\n\n"
-      + "This prints `[1, 2, 9]`: `xs` and `nums` were one list.",
-  },
+    parents: ["001N"],
+    statement: "A loop's else runs only when the loop finished without a break.",
+    wrongAnswer: "else tied to the if, or else runs every time",
+    card: "A loop can have an `else`. It runs only if the loop finished "
+      + "normally — that is, WITHOUT hitting a `break`.\n\n"
+      + "```py\nfor x in [1, 2, 3]:\n    if False:\n        break\nelse:\n    print(\"done\")\n```\n\n"
+      + "No break happens, so the loop's `else` runs and this prints "
+      + "`done`.",
+  }
 ];

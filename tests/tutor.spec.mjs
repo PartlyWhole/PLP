@@ -127,7 +127,11 @@ test.describe("PLP tutor (T-series)", () => {
         right: q.grade({ text: "[1, 2, 3]" }).correct,
         rightSpacey: q.grade({ text: " [1,2,3] " }).correct, // whitespace forgiven
         wrongUnmutated: q.grade({ text: "[1, 2]" }).correct,
-        unbound: missing, // no such name → null (cannot ask)
+        // No such name at the end → the GONE question, not null.
+        unboundGone: missing.gone,
+        unboundExpected: missing.grade({ text: "gone" }).expected,
+        unboundRight: missing.grade({ text: "  NOTHING " }).correct,
+        unboundValue: missing.grade({ text: "[1, 2, 3]" }).correct,
       };
     });
     expect(r.prompt).toContain("what does `a` hold");
@@ -135,7 +139,10 @@ test.describe("PLP tutor (T-series)", () => {
     expect(r.right).toBe(true);
     expect(r.rightSpacey).toBe(true);
     expect(r.wrongUnmutated).toBe(false);
-    expect(r.unbound).toBeNull();
+    expect(r.unboundGone).toBe(true);
+    expect(r.unboundExpected).toEqual({ text: "gone", gone: true });
+    expect(r.unboundRight).toBe(true);
+    expect(r.unboundValue).toBe(false);
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
@@ -1014,6 +1021,59 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
+  test("predict-state \"gone\": a vanished local grades right on the token, wrong on a value, and the reveal prints no value", async ({ page }) => {
+    await setup(page);
+    // Inline drill lesson (the trace-table tests' pattern). `m` is a FUNCTION
+    // LOCAL: after the call there is no such module name, so the answer is
+    // the gone token, never a value (ladder §R4b W4).
+    const install = () => page.evaluate(() => {
+      localStorage.removeItem("plp.kb.met.v1");
+      localStorage.removeItem("plp.kb.v1");
+      const lesson = {
+        id: "ps-gone-inline",
+        title: "Gone",
+        steps: [
+          { loadCode: "def shout(word):\n    m = word + \"!\"\n    return m\nr = shout(\"hi\")\n" },
+          { ask: { kind: "predict-state", opts: { name: "m" }, singleLine: true, concept: "000H", prompt: "After it runs, what does `m` hold?" } },
+          { pause: true },
+          { done: "done" },
+        ],
+      };
+      localStorage.setItem("plp.tutor.v1", JSON.stringify({
+        lessonId: lesson.id, drillLesson: lesson, resumeIndex: 0, cards: [],
+      }));
+      location.reload();
+    });
+
+    // A VALUE is wrong — the learner who thinks the local survives misses.
+    await install();
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    expect((await page.evaluate(() => window.plp.tutor.ask())).kind).toBe("predict-state");
+    // The affordance: a child should not have to guess the magic word.
+    await expect(page.locator(".tutor-gone-chip").last()).toHaveText("the name is gone");
+    await page.evaluate(() => window.plp.tutor.lockPrediction("'hi!'"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("wrong");
+    // The reveal never prints a value — it says the name is gone.
+    const reveal = await page.evaluate(() => {
+      const b = [...document.querySelectorAll(".pr-reveal")].pop();
+      return b && { label: b.querySelector(".pr-reveal-label").textContent, text: b.querySelector("pre").textContent };
+    });
+    expect(reveal).toEqual({ label: "it holds nothing", text: "that name is gone" });
+    expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
+
+    // The token is right — and a clean first attempt still grants met.
+    await install();
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    await page.evaluate(() => window.plp.tutor.lockPrediction("gone"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
+    expect(Object.keys(await page.evaluate(() => window.plp.tutor.met()))).toEqual(["000H"]);
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
   test("drill round: seeded session, miss stats, explain cards, reload-restores same round", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => localStorage.removeItem("plp.drills.v1"));
@@ -1358,6 +1418,54 @@ test.describe("PLP tutor (T-series)", () => {
     await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
     expect(await page.evaluate(() => window.plp.tutor.ask())).toEqual({ kind: "trace-table" });
   }
+
+  test("trace-table frames: an opt-in ask walks INTO the call — indented frame rows, call-site lines", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => {
+      localStorage.removeItem("plp.kb.met.v1");
+      localStorage.removeItem("plp.kb.v1");
+      const lesson = {
+        id: "tt-frames-inline",
+        title: "Trace table (frames)",
+        steps: [
+          { loadCode: "def double(n):\n    return n * 2\nv = 4\nx = double(v)\ny = double(x)\n" },
+          { ask: { kind: "trace-table", probeNames: ["n", "x", "y"], frames: true, maxBlanks: 8, prompt: "Fill in the table.", concept: "0009" } },
+          { pause: true },
+          { done: "done" },
+        ],
+      };
+      localStorage.setItem("plp.tutor.v1", JSON.stringify({
+        lessonId: lesson.id, drillLesson: lesson, resumeIndex: 0, cards: [],
+      }));
+      location.reload();
+    });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await page.evaluate(() => {
+      if (!document.body.classList.contains("practice")) window.plp.tutor.toggleSurface();
+    });
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    // Four rows: the parameter bind inside each call, then each module bind.
+    const rows = await page.evaluate(() => [...document.querySelectorAll("#practice .tutor-trace-table tr")]
+      .slice(1)
+      .map((tr) => ({
+        frame: tr.classList.contains("trace-frame-row"),
+        label: tr.querySelector(".trace-frame-label")?.textContent ?? null,
+        line: tr.children[1].textContent,
+        code: tr.querySelector("code").textContent,
+      })));
+    expect(rows).toEqual([
+      { frame: true, label: "double()", line: "4", code: "x = double(v)" },
+      { frame: false, label: null, line: "4", code: "x = double(v)" },
+      { frame: true, label: "double()", line: "5", code: "y = double(x)" },
+      { frame: false, label: null, line: "5", code: "y = double(x)" },
+    ]);
+    // All four cells are computed → all four are blanks; the real trace grades.
+    await expect(page.locator("#practice .tutor-trace-table input[data-blank-id]")).toHaveCount(4);
+    await page.evaluate(() => window.plp.tutor.submit({ b0: "4", b1: "8", b2: "8", b3: "16" }));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
 
   test("trace-table ask: lint accepts the kind; silent trace; non-empty gate; per-cell marks; wrong grants nothing", async ({ page }) => {
     await setup(page);
@@ -1956,8 +2064,12 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#practice .pr-stdin .pr-reveal-label")).toHaveText("someone types:");
     await expect(page.locator("#practice .pr-stdin-chip code")).toHaveText(["blue"]);
     await expect(page.locator("#practice .pr-mechanics")).toContainText("type the WHOLE console");
-    // The answer widget is the multiline textarea (a transcript is not one line).
-    await expect(page.locator("#practice .pr-answer textarea")).toHaveCount(1);
+    // The answer widget is the growing line-box widget (a transcript is not one
+    // line) — and it starts with EXACTLY ONE box: the number of boxes must
+    // never hint at how many lines the console shows.
+    await expect(page.locator("#practice .pr-answer textarea")).toHaveCount(0);
+    await expect(page.locator("#practice .pr-answer .tutor-lines")).toHaveCount(1);
+    await expect(page.locator("#practice .pr-answer .tutor-lines-input")).toHaveCount(1);
 
     // A wrong answer — the concept's own misconception: output with no pause,
     // no prompt and no typed line.
@@ -2045,8 +2157,10 @@ test.describe("PLP tutor (T-series)", () => {
 
     await page.evaluate(() => window.plp.tutor.review(0));
     await expect(page.locator("#practice .pr-review .pr-stdin-chip code")).toHaveText(["blue"]);
-    // The retry widget is the textarea, not the one-line input.
-    await expect(page.locator("#practice .pr-review .pr-retry textarea")).toHaveCount(1);
+    // The retry widget matches the live card: the growing line boxes (never a
+    // textarea, which has no keyboard submit), one box to start.
+    await expect(page.locator("#practice .pr-review .pr-retry textarea")).toHaveCount(0);
+    await expect(page.locator("#practice .pr-review .pr-retry .tutor-lines-input")).toHaveCount(1);
 
     const res = await page.evaluate(() => window.plp.tutor.retry(0, "moon\nYour name? blue\nblue"));
     expect(res.ok).toBe(true);
@@ -2062,6 +2176,86 @@ test.describe("PLP tutor (T-series)", () => {
     expect(after.met).toEqual({}); // a retry never grants
     expect(after.editor).toBe(liveCode);
     await page.evaluate(() => window.plp.tutor.closeReview());
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  // ---- the growing line-box answer widget (multi-line asks) ---------------
+  // The defect this covers: a MULTI-line ask used a textarea, so there was NO
+  // keyboard way to submit (Enter-submits was bound only for single-line asks)
+  // and the first-time mechanics line claimed otherwise. Driven end to end on
+  // the practice surface against a REAL drill deal — the seed is scanned for,
+  // never hardcoded blind, because the KB pool moves.
+  async function startMultilineRound(page) {
+    await page.evaluate(() => {
+      for (const k of ["plp.kb.v1", "plp.kb.met.v1", "plp.kb.tmpl.v1", "plp.tutor.v1", "plp.practice.v1"]) {
+        localStorage.removeItem(k);
+      }
+    });
+    const seed = await page.evaluate(async () => {
+      const mod = await import("./app/kb-session.mjs");
+      for (let s = 0; s < 24; s++) {
+        const built = await mod.buildKBSession("loops", { seed: s, count: 1, focus: "001E" });
+        const ask = built?.steps?.find((x) => x.ask)?.ask;
+        if (ask?.kind === "predict-output" && ask.singleLine === false) return s;
+      }
+      return null;
+    });
+    expect(seed, "no multi-line predict-output deal found in the loops pool").not.toBeNull();
+    await page.evaluate((s) =>
+      window.plp.tutor.startDrill("loops", { focus: "001E", seed: s, count: 1 }), seed);
+    await page.waitForFunction(() => window.plp.tutor.ask()?.kind === "predict-output", null, { timeout: 30_000 });
+    return seed;
+  }
+
+  test("multi-line predict-output: one box to start, Enter builds lines, double-Enter submits — and the mechanics line no longer lies", async ({ page }) => {
+    await setup(page);
+    const seed = await startMultilineRound(page);
+
+    // Exactly ONE box: the widget must never hint at how many lines print.
+    await expect(page.locator("#practice .pr-answer .tutor-lines-input")).toHaveCount(1);
+    await expect(page.locator("#practice .pr-answer textarea")).toHaveCount(0);
+    // The mechanics line describes THIS widget — the old copy promised a plain
+    // Enter submit that never existed on multi-line asks.
+    const mech = page.locator("#practice .pr-mechanics");
+    await expect(mech).toContainText("one box per printed line");
+    await expect(mech).not.toContainText("press Enter — the program really runs");
+
+    // Two lines, typed the way a learner types them, then the "I'm done"
+    // gesture: Enter on an empty last box submits and drops that box.
+    const boxes = page.locator("#practice .pr-answer .tutor-lines-input");
+    await boxes.nth(0).click();
+    await page.keyboard.type("20");
+    await page.keyboard.press("Enter");
+    await expect(boxes).toHaveCount(2);
+    await page.keyboard.type("90");
+    await page.keyboard.press("Enter");
+    await expect(boxes).toHaveCount(3);
+    await page.keyboard.press("Enter"); // empty last box → drop it and submit
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
+    await expect(boxes).toHaveCount(2); // the empty box is gone from the answer
+
+    // It graded against the REAL run, exactly as before: the recorded answer is
+    // the "\n"-joined boxes, and the truth is the console's own text.
+    const st = await page.evaluate(() => window.plp.tutor.state());
+    const rec = await page.evaluate(() => window.plp.tutor.feed().findLast((c) => c.type === "question-frozen"));
+    const real = await page.evaluate(() => window.plp.console.text());
+    expect(rec.answerText).toBe("20\n90");
+    expect(rec.review.expectedText).toBe(real);
+    expect(st.lastAnswer).toBe(real.replace(/\n$/, "") === "20\n90" ? "correct" : "wrong");
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+
+    // Driver-API compatibility: the same round, answered through
+    // lockPrediction with a "\n"-joined string, still grades right.
+    await setup(page);
+    await startMultilineRound(page);
+    await page.evaluate((t) => window.plp.tutor.lockPrediction(t), real.replace(/\n$/, ""));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
+    // One box per predicted line — lockPrediction split it, nothing was lost.
+    expect(await page.evaluate(() => window.plp.editor.getValue())).toBeTruthy();
+    await expect(page.locator("#practice .pr-answer .tutor-lines-input"))
+      .toHaveCount(real.replace(/\n$/, "").split("\n").length);
+    expect(seed).toBeGreaterThanOrEqual(0);
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 });

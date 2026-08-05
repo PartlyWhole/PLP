@@ -111,17 +111,4 @@ export default [
       + "This prints just `2`: the pass for 1 is skipped, but the loop goes "
       + "on.",
   },
-  {
-    tag: "001Q",
-    slug: "for-else-no-break",
-    kind: "edge",
-    parents: ["001N"],
-    statement: "A loop's else runs only when the loop finished without a break.",
-    wrongAnswer: "else tied to the if, or else runs every time",
-    card: "A loop can have an `else`. It runs only if the loop finished "
-      + "normally — that is, WITHOUT hitting a `break`.\n\n"
-      + "```py\nfor x in [1, 2, 3]:\n    if False:\n        break\nelse:\n    print(\"done\")\n```\n\n"
-      + "No break happens, so the loop's `else` runs and this prints "
-      + "`done`.",
-  },
 ];

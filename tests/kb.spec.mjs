@@ -110,6 +110,11 @@ function fp(ex, src) {
 }
 
 function footprintSources(ex, prog) {
+  // A GONE probe (ladder §R4b wave 4) names a local that no longer exists at
+  // program end: appending `print(<probe>)` would RAISE instead of revealing,
+  // so the program stands alone. Salience does not suffer — the body's local
+  // bind is what emits 002D in the first place.
+  if (ex.form === "predict-state" && prog.probeGone) return [prog.code];
   if (ex.form === "predict-state" && prog.probeName) return [`${prog.code}print(${prog.probeName})\n`];
   if (ex.form === "spot-the-difference") return [prog.code, prog.contrastCode];
   // trace-table probes every watched name (they survive to program end —
@@ -470,14 +475,51 @@ test.describe("PLP knowledge base (K-series)", () => {
     expect(tags("def f():\n    return\nprint(f())\n")).toEqual(["0005", "0027", "0028", "002H"]);
 
     // --- scope: the frame VANISHES, and a function is not a value --------
-    // A local that shadows a module name leaves the outer one untouched — and
-    // is a fresh local binding, never a rebind of the module name (no 000A).
+    // 12. A body statement that binds a NEW name makes a local (002D
+    //     rule-local); when the module env already binds that spelling, the
+    //     local HIDES it (002E rule-shadow) and the outer one is untouched —
+    //     a fresh local binding, never a rebind of the module name (no 000A).
     expect(tags("x = 1\ndef f():\n    x = 99\nf()\nprint(x)\n"))
+      .toEqual(["0003", "0005", "0006", "0027", "0028", "002D", "002E"]);
+    // 13. A local with no module twin is 002D alone.
+    expect(tags('def f():\n    w = "hi"\n    print(w)\nf()\n'))
+      .toEqual(["0005", "0006", "0027", "0028", "002D"]);
+    // 14. DEVIATION from the ladder's sketch, and load-bearing: a PARAMETER
+    //     binding is NOT 002D. 002D is a CHILD of 0029, so charging it to a
+    //     plain parameter would push every 0029/002F/002J exercise out of its
+    //     own closure (E1). Rebinding a parameter is likewise not a new local.
+    expect(tags("def f(n):\n    print(n)\nf(5)\n"))
+      .toEqual(["0003", "0005", "0006", "0027", "0028", "0029"]);
+    expect(tags("def f(xs):\n    xs = [7]\nnums = [1, 2]\nf(nums)\nprint(nums)\n"))
+      .toEqual(["0003", "0005", "0006", "000A", "000D", "0027", "0028", "0029"]);
+    // 15. A mutation through a PARAMETER's objId, observed afterwards through
+    //     the caller's own name, is 002J (rule-mutable-arg) — alongside the
+    //     plain two-names alias observation it also is (000H, its parent).
+    expect(tags("def add(xs):\n    xs.append(9)\nnums = [1, 2]\nadd(nums)\nprint(nums)\n"))
+      .toEqual(["0003", "0005", "0006", "000D", "000G", "000H", "0027", "0028", "0029", "002J"]);
+    // …and a call that only READS the list emits neither.
+    expect(tags("def show(xs):\n    print(xs)\nnums = [1, 2]\nshow(nums)\nprint(nums)\n"))
+      .toEqual(["0003", "0005", "0006", "000D", "0027", "0028", "0029"]);
+    // A body that only reads a MODULE name emits neither 002D nor 002E.
+    expect(tags("y = 1\ndef f():\n    print(y)\nf()\n"))
       .toEqual(["0003", "0005", "0006", "0027", "0028"]);
     // Locals never survive the call, and a function value is not concrete —
     // neither appears in the end-state store the inv-9 oracle probes.
     const scoped = kb.footprint("v = 2\ndef f():\n    inside = 5\n    print(inside)\nf()\n");
     expect(scoped.finalTypes).toEqual({ v: "int" });
+    // FRAME TEARDOWN, the known hazard (ladder §R4b A4): binding a parameter
+    // to a list adds the parameter's NAME to that object's name set, and the
+    // objects table is program-global. If teardown did not withdraw it, the
+    // stale name would make the list look SHARED forever — and `+=` on a list
+    // is gated on exactly that (it is only in the subset when the list really
+    // has two names). After a non-mutating call, `nums += [3]` must therefore
+    // still be judged unshared, not silently promoted to 0023.
+    expect(kb.footprint("def show(xs):\n    print(xs)\nnums = [1, 2]\nshow(nums)\nnums += [3]\nprint(nums)\n").error?.code)
+      .toBe("unmapped-syntax");
+    // The same withdrawal keeps a LATER genuine alias honest rather than
+    // pre-poisoned: two module names really sharing still reads as 000H.
+    expect(tags("def show(xs):\n    print(xs)\nnums = [1, 2]\nshow(nums)\nb = nums\nb.append(3)\nprint(nums)\n"))
+      .toContain("000H");
 
     // --- the negatives ---------------------------------------------------
     const err = (src) => kb.footprint(src).error;
@@ -504,17 +546,18 @@ test.describe("PLP knowledge base (K-series)", () => {
     expect(err("def g():\n    print(1)\nh = g\n")?.code).toBe("unmapped-syntax");
   });
 
-  test("K-fnattr: a trace-table row over a CALL is attributed to the callee's line (why frame-aware tables are deferred)", async ({ page }) => {
+  test("K-fnattr: a trace-table row over a CALL is attributed to the CALL SITE, not the callee's line", async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto(SITE);
     await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
-    // The wave-3 `two-calls-chain` table (ladder §R4b) would watch MODULE
-    // names across two calls. The VALUES are right, but the row's line is the
-    // callee's `return` line, not the `x = double(v)` line the binding
-    // belongs to — so the table would label rows with a line the watched name
-    // is not assigned on. This test PINS that behavior: when it changes,
-    // frame-aware tables (and the deferred exercise) can be revisited.
+    // The wave-3 `two-calls-chain` table (ladder §R4b) watches MODULE names
+    // across two calls. A module binding produced by a call is first OBSERVED
+    // at a position inside the callee (the `return` line group), which used to
+    // label the row with a line the watched name is never assigned on. The
+    // builder now attributes a globals-scope change to the module-level
+    // statement that owns the frame — the CALL SITE. This test is the
+    // regression guard for that attribution.
     const code = "def double(n):\n    return n * 2\nv = 4\nx = double(v)\ny = double(x)\nprint(y)\n";
     const got = await page.evaluate(async (src) => {
       window.plp.editor.setValue(src);
@@ -527,17 +570,18 @@ test.describe("PLP knowledge base (K-series)", () => {
       return {
         reason: summary?.terminal_reason,
         rows: (q?.rows ?? []).map((r) => ({ line: r.line, cells: r.cells.map((c) => `${c.name}=${c.value}`) })),
+        code: (q?.rows ?? []).map((r) => r.codeText),
         errors: window.plp.checkErrors(),
       };
     }, code);
     expect(got.reason).toBe("completed");
     expect(got.errors).toEqual([]);
-    // Values: correct. Line attribution: the callee's `return` line (2), NOT
-    // the call lines (4 and 5).
+    // Values AND lines: each row sits on the call that produced the binding.
     expect(got.rows).toEqual([
-      { line: 2, cells: ["x=8", "y=—"] },
-      { line: 2, cells: ["x=8", "y=16"] },
+      { line: 4, cells: ["x=8", "y=—"] },
+      { line: 5, cells: ["x=8", "y=16"] },
     ]);
+    expect(got.code).toEqual(["x = double(v)", "y = double(x)"]);
   });
 
   test("K-6: generators and selection are deterministic (inv 16)", () => {

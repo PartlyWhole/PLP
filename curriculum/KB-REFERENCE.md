@@ -8,8 +8,8 @@
 
 ## Overview
 
-- **85 concepts** — 4 structural / 59 core / 22 edge.
-- **167 exercises** across 8 topics.
+- **87 concepts** — 4 structural / 60 core / 23 edge.
+- **173 exercises** across 8 topics.
 - **Forms:** fill-one-blank, order-the-lines, predict-exact-output, predict-io, predict-state, predict-the-error, spot-the-difference, trace-table, write-the-line.
 
 ## Topics
@@ -19,9 +19,9 @@
 - **Strings** (`strings`): 000E, 000Y, 000Z, 0010, 0011, 0012, 0013, 0014, 002P
 - **Lists & aliasing** (`lists`): 000D, 000F, 000G, 000H, 001Z, 0020, 0021, 0022, 0023, 0024, 0025, 002M, 002Q
 - **Conditions & logic** (`logic`): 0015, 0016, 0017, 0018, 0019, 001A, 001B, 001C, 001D, 002K
-- **Loops & ranges** (`loops`): 001E, 001F, 001G, 001H, 001J, 001K, 001M, 001N, 001P, 001Q
+- **Loops & ranges** (`loops`): 001E, 001F, 001G, 001H, 001J, 001K, 001M, 001N, 001P
 - **Dicts & tuples** (`structures`): 001R, 001S, 001T, 001V, 001W, 001X, 001Y, 002R
-- **Functions** (`functions`): 0027, 0028, 0029, 002A, 002B, 002C, 002F, 002G, 002H
+- **Functions** (`functions`): 0027, 0028, 0029, 002A, 002B, 002C, 002D, 002E, 002F, 002G, 002H, 002J
 - **Structural roots**: 0001, 0002, 0003, 0004
 
 ## Concept graph
@@ -111,7 +111,6 @@ graph TD
   001M["001M while-repeats-while-true"]
   001N["001N break-exits"]
   001P["001P continue-skips"]
-  001Q("001Q for-else-no-break")
   end
   subgraph structures [Dicts & tuples]
   001R["001R dict-lookup-by-key"]
@@ -130,9 +129,12 @@ graph TD
   002A["002A return-hands-back-value"]
   002B["002B return-vs-print"]
   002C["002C return-exits-function"]
+  002D["002D local-scope-inside"]
+  002E("002E locals-shadow-globals")
   002F["002F args-evaluated-first"]
   002G["002G call-in-expression"]
   002H("002H none-when-no-return")
+  002J("002J mutable-arg-shared")
   end
   0001 --> 0005
   0004 --> 0005
@@ -211,7 +213,6 @@ graph TD
   001E --> 001N
   0017 --> 001P
   001E --> 001P
-  001N --> 001Q
   0007 --> 001R
   000E --> 001R
   001R --> 001S
@@ -242,11 +243,15 @@ graph TD
   0028 --> 002A
   002A --> 002B
   002A --> 002C
+  0029 --> 002D
+  002D --> 002E
   0009 --> 002F
   0029 --> 002F
   0008 --> 002G
   002A --> 002G
   002B --> 002H
+  000H --> 002J
+  0029 --> 002J
   000B --> 002K
   0018 --> 002K
   000D --> 002M
@@ -420,7 +425,7 @@ xs.append(v) changes the existing list, adding v at the end.
 b = a does not copy a list — one list, two names, so a change through either shows through both.
 
 - Parents: 000C, 000G
-- Children: 0023, 0024
+- Children: 0023, 0024, 002J
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000A ← 000C ← 000D ← 000G
 - Characteristic wrong answer: the list as it was before the change
 - Exercises: alias-chain, alias-chain-hard, alias-latent-state, alias-trap, chal-alias-in-loop, trace-alias
@@ -780,7 +785,7 @@ while re-tests before every pass and stops the moment the test is False.
 break leaves the whole loop immediately.
 
 - Parents: 001E, 0017
-- Children: 001Q
+- Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 000D ← 0015 ← 0016 ← 0017 ← 001E
 - Characteristic wrong answer: the loop finishes the remaining items anyway
 - Exercises: break-order, break-stops, chal-accumulate-until-break, trace-break
@@ -794,16 +799,6 @@ continue skips the rest of this pass and goes on to the next one.
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 000D ← 0015 ← 0016 ← 0017 ← 001E
 - Characteristic wrong answer: the loop exits instead of continuing
 - Exercises: continue-order, continue-skips-one
-
-### 001Q · for-else-no-break — edge
-
-A loop's else runs only when the loop finished without a break.
-
-- Parents: 001N
-- Children: —
-- Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 000D ← 0015 ← 0016 ← 0017 ← 001E ← 001N
-- Characteristic wrong answer: else tied to the if, or else runs every time
-- Exercises: for-else-runs
 
 ### 001R · dict-lookup-by-key — core
 
@@ -980,7 +975,7 @@ name() runs the stored body now, once per call.
 Calling f(v) binds the argument v to the parameter name for that run of the body.
 
 - Parents: 0028, 0006
-- Children: 002F
+- Children: 002D, 002F, 002J
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0027 ← 0028
 - Characteristic wrong answer: the parameter keeping an old or unrelated value
 - Exercises: param-gets-value, pick-the-argument
@@ -1015,6 +1010,26 @@ return leaves the function immediately; lines after it do not run.
 - Characteristic wrong answer: the lines after return also running
 - Exercises: early-exit
 
+### 002D · local-scope-inside — core
+
+Names bound inside a function exist only inside it; outside, they are gone.
+
+- Parents: 0029
+- Children: 002E
+- Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0027 ← 0028 ← 0029
+- Characteristic wrong answer: the inside name still readable after the call
+- Exercises: local-vanishes, local-vs-printed
+
+### 002E · locals-shadow-globals — edge
+
+A name bound inside a function hides the outer name of the same spelling; the outer one is untouched.
+
+- Parents: 002D
+- Children: —
+- Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0027 ← 0028 ← 0029 ← 002D
+- Characteristic wrong answer: the outer name changed by the inner assignment
+- Exercises: shadow-state, shadow-untouched
+
 ### 002F · args-evaluated-first — core
 
 Arguments are computed down to values before the call starts.
@@ -1033,7 +1048,7 @@ A call is an expression: its returned value takes part in the surrounding calcul
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 0027 ← 0028 ← 002A
 - Characteristic wrong answer: the call's value ignored by the surrounding math
-- Exercises: call-slots-in
+- Exercises: call-slots-in, two-calls-chain
 
 ### 002H · none-when-no-return — edge
 
@@ -1044,6 +1059,16 @@ Falling off the end of a function (or a bare return) hands back None.
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 0027 ← 0028 ← 002A ← 002B
 - Characteristic wrong answer: the last computed value coming back by itself
 - Exercises: nothing-comes-back
+
+### 002J · mutable-arg-shared — edge
+
+Passing a list passes the SAME list — a mutation inside the function shows outside.
+
+- Parents: 0029, 000H
+- Children: —
+- Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000A ← 000C ← 000D ← 000G ← 000H ← 0027 ← 0028 ← 0029
+- Characteristic wrong answer: the outer list unchanged after the call
+- Exercises: append-or-rebuild, same-list-inside
 
 ### 002K · branch-picks-binding — core
 
@@ -1293,6 +1318,40 @@ nums.append(88)
 After it runs, `nums` holds:
 ```
 [1, 9, 42, 88]
+```
+
+### append-or-rebuild — focus 002J (mutable-arg-shared)
+
+- Form: `spot-the-difference` · Role: review · Topic: functions
+- Assumed: 0005, 0006, 000A, 000D, 000G, 000H, 0027, 0028, 0029
+- Contrast: 000H
+- Shapes: append-vs-rebuild · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+def greet(xs):
+    xs.append(10)
+vals = [4, 7]
+greet(vals)
+print(vals)
+```
+prints:
+```
+[4, 7, 10]
+```
+
+Program B (predicted):
+```py
+def greet(xs):
+    xs = [4, 7, 10]
+vals = [4, 7]
+greet(vals)
+print(vals)
+```
+prints:
+```
+[4, 7]
 ```
 
 ### append-order — focus 000G (append-mutates)
@@ -2584,26 +2643,6 @@ prints:
 5
 ```
 
-### for-else-runs — focus 001Q (for-else-no-break)
-
-- Form: `predict-exact-output` · Role: intro · Topic: loops
-- Assumed: 0005, 0006, 000D, 0015, 0016, 0017, 001E, 001N
-- Shapes: no-break, break-fires · Variants: plain
-- Sample (provenance: seed k=0):
-
-```py
-for x in [2, 8, 3]:
-    if x == 2:
-        print(x)
-        break
-else:
-    print("ready")
-```
-prints:
-```
-2
-```
-
 ### for-visits — focus 001E (loop-for-visits-each)
 
 - Form: `predict-exact-output` · Role: intro · Topic: loops
@@ -2872,6 +2911,46 @@ print(nums)
 prints:
 ```
 [3, 1, 3]
+```
+
+### local-vanishes — focus 002D (local-scope-inside)
+
+- Form: `predict-state` · Role: intro · Topic: functions
+- Assumed: 0005, 0006, 0027, 0028, 0029
+- Shapes: one-call, two-calls, local-and-param · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def report(word):
+    s = "blue"
+    print(word)
+    print(s)
+report("fish")
+```
+prints:
+```
+fish
+blue
+```
+After it runs, `s` is gone — it was a local of the call.
+
+### local-vs-printed — focus 002D (local-scope-inside)
+
+- Form: `predict-exact-output` · Role: review · Topic: functions
+- Assumed: 0005, 0006, 0027, 0028, 0029
+- Shapes: print-second-local, print-first-local, print-param-not-local · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def greet():
+    w = "moon"
+    msg = "sun"
+    print(msg)
+greet()
+```
+prints:
+```
+sun
 ```
 
 ### loop-collect — focus 001K (loop-build-list)
@@ -3678,6 +3757,70 @@ prints:
 15
 ```
 
+### same-list-inside — focus 002J (mutable-arg-shared)
+
+- Form: `predict-exact-output` · Role: intro · Topic: functions
+- Assumed: 0005, 0006, 000D, 000G, 000H, 0027, 0028, 0029
+- Shapes: append-then-print, append-twice, longer-list · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def bark(nums):
+    nums.append(19)
+xs = [3, 8, 6]
+bark(xs)
+print(xs)
+```
+prints:
+```
+[3, 8, 6, 19]
+```
+
+### shadow-state — focus 002E (locals-shadow-globals)
+
+- Form: `predict-state` · Role: review · Topic: functions
+- Assumed: 0005, 0006, 0027, 0028, 002D
+- Shapes: probe-outer-after-shadow, probe-outer-after-two-calls · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+n = "sun"
+def show():
+    n = "drum"
+    print(n)
+show()
+show()
+```
+After it runs, `n` holds:
+```
+drum
+drum
+sun
+```
+
+### shadow-untouched — focus 002E (locals-shadow-globals)
+
+- Form: `predict-exact-output` · Role: intro · Topic: functions
+- Assumed: 0005, 0006, 0027, 0028, 002D
+- Shapes: shadow-then-outer, shadow-two-calls · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+x = "fish"
+def bark():
+    x = "cat"
+    print(x)
+bark()
+bark()
+print(x)
+```
+prints:
+```
+cat
+cat
+fish
+```
+
 ### shallow-copy-latent — focus 0025 (copy-is-shallow)
 
 - Form: `predict-state` · Role: review · Topic: lists
@@ -4298,6 +4441,27 @@ print(x)
 prints:
 ```
 7
+```
+
+### two-calls-chain — focus 002G (call-in-expression)
+
+- Form: `trace-table` · Role: review · Topic: functions
+- Assumed: 0005, 0006, 0008, 0009, 0027, 0028, 002A
+- Shapes: second-call-uses-first, second-call-scaled · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def bark():
+    return 6 + 6
+n = bark()
+score = bark() * 2
+print(score)
+```
+Step-table walkthrough over `n`, `score` (blanks derive from the live trace); the watched names end holding:
+```
+24
+12
+24
 ```
 
 ### two-questions — focus 0026 (input-pauses-for-value)
