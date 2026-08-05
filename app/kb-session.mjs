@@ -69,7 +69,7 @@ export function spliceBlank(code, blank, replacement) {
 // frontier), and it fades out as answers accumulate.
 const COLD_ANSWERS = 24;      // bias is gone once this many answers exist
 const COLD_STEP_PENALTY = 0.2; // per unseen ancestor, at zero answers
-function weightOf(stats, ex, cold) {
+function weightOf(stats, ex, cold, templateStats) {
   const level = kb.concepts.get(ex.focus)?.kind === "core" ? 3 : 1;
   const s = stats?.[ex.focus];
   const novelty = !s || !s.seen ? 1.5 : 1;
@@ -87,7 +87,17 @@ function weightOf(stats, ex, cold) {
       frontierBias = 1 - (1 - pen) * cold.coldness;
     }
   }
-  return level * novelty * missRate * frontierBias;
+  // Proven material recedes (never disappears): a concept the learner has
+  // met AND practiced cleanly keeps only a quarter of its weight, and an
+  // INTRO exercise on an already-familiar concept yields to its reviews.
+  let mastery = 1;
+  if (cold?.met.has(ex.focus) && s?.seen >= 4 && s.missed / s.seen <= 0.25) mastery = 0.25;
+  const introFade = ex.role === "intro" && s?.seen >= 2 ? 0.4 : 1;
+  // Template retirement: the exact exercise the learner already answered
+  // RIGHT fades per success — fresh templates on the same concept win.
+  const t = templateStats?.[ex.id];
+  const templateFade = t?.right ? 1 / (1 + 0.75 * t.right) : 1;
+  return level * novelty * missRate * frontierBias * mastery * introFade * templateFade;
 }
 
 // The learner's worst concept: highest missed/seen among tags with a miss.
@@ -112,7 +122,7 @@ function worstConceptOf(stats) {
 // the learner's met tag set (lesson-kb-binding §5) feeding the cold-start
 // frontier bias; `prevKey` carries the previous chunk's last-dealt key so
 // endless chunks keep the no-repeat guarantee across the boundary.
-export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met = [], prevKey = null } = {}) {
+export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met = [], prevKey = null, templateStats = {} } = {}) {
   let pool = poolFor(topic);
   if (focus) {
     const focused = pool.filter((ex) => ex.focus === focus);
@@ -172,7 +182,7 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met 
     const basePool = forceHere ? worstPool : pool;
     let chosen = null, fallback = null, last = null;
     for (let attempt = 0; attempt < 50; attempt++) {
-      const ex = weightedPick(rng, basePool, stats, cold);
+      const ex = weightedPick(rng, basePool, stats, cold, templateStats);
       const prog = ex.generator.generate(Math.floor(rng() * 0x100000000));
       const fs = `${ex.form}|${prog.shape}`;
       const cand = { ex, prog, fs };
@@ -372,8 +382,8 @@ export function drillTopicFor(tags) {
   return best ?? "all";
 }
 
-function weightedPick(rng, pool, stats, cold) {
-  const weights = pool.map((ex) => weightOf(stats, ex, cold));
+function weightedPick(rng, pool, stats, cold, templateStats) {
+  const weights = pool.map((ex) => weightOf(stats, ex, cold, templateStats));
   const total = weights.reduce((a, w) => a + w, 0);
   let roll = rng() * total;
   for (let j = 0; j < pool.length; j++) {

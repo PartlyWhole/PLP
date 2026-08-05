@@ -300,11 +300,14 @@ export default [
         const t = int(rng, 4, 7);
         const d = int(rng, 1, 3);
         const start = shape === "if-taken" ? t + 2 : t - 2;
+        // Two computed blanks: the test's value (True/False decides
+        // everything) and the one rebind the winning branch runs. The
+        // literal first bind renders as a given, not a blank.
         return {
-          code: `n = ${start}\nif n > ${t}:\n    n = n - ${d}\nelse:\n    n = n + ${d}\nprint(n)\n`,
-          probeNames: ["n"],
+          code: `n = ${start}\nbig = n > ${t}\nif big:\n    n = n - ${d}\nelse:\n    n = n + ${d}\nprint(n)\n`,
+          probeNames: ["big", "n"],
           shape, variant: "plain",
-          variantCard: "Only ONE of the two rebind lines ever runs — the table has exactly one branch row, and which line number it is tells you which branch won.",
+          variantCard: "First work out `big` — that True/False picks the branch, and only the branch that runs gets to rebind `n`. The row's line number tells you which one won.",
         };
       },
     },

@@ -986,6 +986,43 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
+  test("proven material recedes: a template answered right fades; a mastered concept yields its weight", async ({ page }) => {
+    await setup(page);
+    const r = await page.evaluate(async () => {
+      const { buildKBSession } = await import("./app/kb-session.mjs");
+      const warm = { "0005": { seen: 24, missed: 0 } };
+      const tally = (opts) => {
+        const byTemplate = {}, byFocus = {};
+        for (let seed = 1; seed <= 8; seed++) {
+          const l = buildKBSession("state", { seed, count: 8, stats: { ...warm, ...(opts.stats ?? {}) }, ...opts });
+          for (const s of l.steps) {
+            if (!s.ask) continue;
+            byTemplate[s.ask.template] = (byTemplate[s.ask.template] ?? 0) + 1;
+            byFocus[s.ask.concept] = (byFocus[s.ask.concept] ?? 0) + 1;
+          }
+        }
+        return { byTemplate, byFocus };
+      };
+      const base = tally({});
+      const topTemplate = Object.entries(base.byTemplate).sort((a, b) => b[1] - a[1])[0][0];
+      const afterRight = tally({ templateStats: { [topTemplate]: { seen: 5, right: 5 } } });
+      // Mastery: 000A met + practiced cleanly → its exercises yield weight.
+      const afterMastery = tally({ met: ["000A"], stats: { "000A": { seen: 6, missed: 0 } } });
+      return {
+        topTemplate,
+        before: base.byTemplate[topTemplate],
+        after: afterRight.byTemplate[topTemplate] ?? 0,
+        focusBefore: base.byFocus["000A"] ?? 0,
+        focusAfter: afterMastery.byFocus["000A"] ?? 0,
+      };
+    });
+    // The exact question you already got right stops dominating…
+    expect(r.after).toBeLessThan(r.before);
+    // …and a concept you've mastered recedes (but never vanishes by fiat —
+    // this is a weight, not a gate).
+    expect(r.focusAfter).toBeLessThan(r.focusBefore);
+  });
+
   test("a correct answer holds the card: verdict + reveal stay up until Continue (Enter works)", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
@@ -1075,7 +1112,7 @@ test.describe("PLP tutor (T-series)", () => {
         id: "tt-inline",
         title: "Trace table",
         steps: [
-          { loadCode: "a = 0\nb = [1, 2]\na = a + 1\n" },
+          { loadCode: "a = 0\nb = [1, 2]\nb = b + [3]\na = a + 1\n" },
           { ask: { kind: "trace-table", probeNames: ["a", "b"], maxBlanks: 8, prompt: "Fill in the table.", concept: "0009" } },
           { pause: true }, // hold the graded card (drill cadence) for the DOM assertions
           { done: "done" },
@@ -1107,31 +1144,31 @@ test.describe("PLP tutor (T-series)", () => {
     await startTraceTableRound(page);
     // The silent trace really ran: the record store is populated.
     expect(await page.evaluate(() => window.plp.memory.steps().length)).toBeGreaterThan(0);
-    // The table rendered with one input per blank (a@1, b@2, a@3).
-    await expect(page.locator("#practice .tutor-trace-table input[data-blank-id]")).toHaveCount(3);
+    // Literal binds are givens; the two COMPUTED changes are the blanks.
+    await expect(page.locator("#practice .tutor-trace-table input[data-blank-id]")).toHaveCount(2);
 
     // Non-empty gate: a partial submit sets the note and stays waiting.
-    await page.evaluate(() => window.plp.tutor.submit({ b0: "0", b1: "", b2: "1" }));
+    await page.evaluate(() => window.plp.tutor.submit({ b0: "[1, 2, 3]", b1: "" }));
     expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
     await expect(page.locator("#practice .pr-note")).toContainText("Fill every box first");
 
     // One wrong cell: ok false, per-cell marks, the truth beside the miss.
-    await page.evaluate(() => window.plp.tutor.submit({ b0: "0", b1: "[1,2]", b2: "999" }));
+    await page.evaluate(() => window.plp.tutor.submit({ b0: "[1,2,3]", b1: "999" }));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
     const s = await page.evaluate(() => window.plp.tutor.state());
     expect(s.lastAnswer).toBe("wrong");
-    await expect(page.locator("#practice .tutor-trace-table input.ok")).toHaveCount(2); // container spacing forgiven on b1
+    await expect(page.locator("#practice .tutor-trace-table input.ok")).toHaveCount(1); // container spacing forgiven on b0
     await expect(page.locator("#practice .tutor-trace-table input.bad")).toHaveCount(1);
     await expect(page.locator("#practice .tutor-trace-table .tutor-cell-truth")).toContainText("1");
-    await expect(page.locator("#practice .pr-reveal pre")).toContainText("2 of 3 steps right");
-    await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("2 of 3");
+    await expect(page.locator("#practice .pr-reveal pre")).toContainText("1 of 2 steps right");
+    await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("1 of 2");
     // The record froze with the review snapshot; the score counted a miss.
     const rec = await page.evaluate(() =>
       window.plp.tutor.feed().findLast((c) => c.type === "question-frozen"));
     expect(rec.ok).toBe(false);
     expect(rec.review.kind).toBe("trace-table");
-    expect(rec.review.table.rows.length).toBe(3);
-    expect(rec.review.answersById.b2).toBe("999");
+    expect(rec.review.table.rows.length).toBe(4);
+    expect(rec.review.answersById.b1).toBe("999");
     expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0009": { seen: 1, missed: 1 } });
     // A wrong table grants no met.
     expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
@@ -1141,7 +1178,7 @@ test.describe("PLP tutor (T-series)", () => {
   test("trace-table ask: clean all-correct first attempt grants met; review shows the completed table with the table-shaped retry", async ({ page }) => {
     await setup(page);
     await startTraceTableRound(page);
-    await page.evaluate(() => window.plp.tutor.submit({ b0: "0", b1: "[1, 2]", b2: "1" }));
+    await page.evaluate(() => window.plp.tutor.submit({ b0: "[1, 2, 3]", b1: "1" }));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
     await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("✓ Every step right");
@@ -1155,7 +1192,7 @@ test.describe("PLP tutor (T-series)", () => {
     // single-input one).
     await page.evaluate(() => window.plp.tutor.review(0));
     await expect(page.locator("#practice .pr-review .tutor-trace-table")).toBeVisible();
-    await expect(page.locator("#practice .pr-review .tutor-trace-table code.ok")).toHaveCount(3);
+    await expect(page.locator("#practice .pr-review .tutor-trace-table code.ok")).toHaveCount(2);
     await expect(page.locator("#practice .pr-review .pr-retry.pr-retry-table")).toHaveCount(1);
     await expect(page.locator("#practice .pr-review .pr-retry input")).toHaveCount(0);
     await page.evaluate(() => window.plp.tutor.closeReview());
@@ -1166,7 +1203,7 @@ test.describe("PLP tutor (T-series)", () => {
     await setup(page);
     await startTraceTableRound(page);
     // Miss the table on the first (scored) attempt.
-    await page.evaluate(() => window.plp.tutor.submit({ b0: "0", b1: "[1, 2]", b2: "999" }));
+    await page.evaluate(() => window.plp.tutor.submit({ b0: "[1, 2, 3]", b1: "999" }));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
     const liveCode = await page.evaluate(() => window.plp.editor.getValue());
     await expect(page.locator("#practice .pr-dot.miss")).toHaveCount(1);
@@ -1180,7 +1217,7 @@ test.describe("PLP tutor (T-series)", () => {
     // Starting the retry swaps in a FRESH blank table: no graded marks, no
     // truth anywhere, one empty input per blank.
     await page.locator("#practice .pr-retry-table button.primary", { hasText: "Try it again" }).click();
-    await expect(page.locator("#practice .pr-review .tutor-trace-table input[data-blank-id]")).toHaveCount(3);
+    await expect(page.locator("#practice .pr-review .tutor-trace-table input[data-blank-id]")).toHaveCount(2);
     await expect(page.locator("#practice .pr-review .tutor-trace-table code.ok, #practice .pr-review .tutor-trace-table code.bad")).toHaveCount(0);
     await expect(page.locator("#practice .pr-review .tutor-trace-table .hint")).toHaveCount(0);
 
@@ -1195,13 +1232,12 @@ test.describe("PLP tutor (T-series)", () => {
     await page.locator("#practice .pr-retry-table button.primary", { hasText: "Check my answers" }).click();
     await expect(page.locator("#practice .pr-retry-verdict")).toContainText("Fill every box first");
     const inputs = page.locator("#practice .pr-review .tutor-trace-table input[data-blank-id]");
-    await inputs.nth(0).fill("0");
-    await inputs.nth(1).fill("[1, 2]");
-    await inputs.nth(2).fill("1");
+    await inputs.nth(0).fill("[1, 2, 3]");
+    await inputs.nth(1).fill("1");
     await page.locator("#practice .pr-retry-table button.primary", { hasText: "Check my answers" }).click();
     await expect(page.locator("#practice .pr-retry-verdict")).toContainText("✓ every step!", { timeout: 30_000 });
     // The re-graded table shows every cell right.
-    await expect(page.locator("#practice .pr-review .tutor-trace-table code.ok")).toHaveCount(3);
+    await expect(page.locator("#practice .pr-review .tutor-trace-table code.ok")).toHaveCount(2);
 
     // Score of record untouched; the retry only decorates.
     const after = await page.evaluate(() => ({

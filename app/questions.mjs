@@ -409,6 +409,19 @@ function traceTableQuestion(ctx, opts = {}) {
       cells,
     };
   });
+  // A cell whose value can be read verbatim off its own line is a GIVEN,
+  // never a blank: `x = 1` asks for transcription, not prediction. Plain
+  // literal assignments (name = number/text/bool/plain-literal list or
+  // dict) show their value as scaffolding; computed rebinds, loop
+  // variables, and aliasing reads stay blanked — those are the thinking.
+  const LIT = String.raw`(?:-?\d+(?:\.\d+)?|"[^"]*"|'[^']*'|True|False)`;
+  const LITERAL_ASSIGN_RE = new RegExp(
+    String.raw`^\s*[A-Za-z_]\w*\s*=\s*(?:${LIT}|\[(?:\s|,|${LIT})*\]|\{(?:\s|,|:|${LIT})*\})\s*$`,
+  );
+  for (const r of allRows) {
+    if (LITERAL_ASSIGN_RE.test(r.codeText)) for (const c of r.cells) c.blank = false;
+  }
+
   // maxBlanks elision: keep the leading rows whose blanks fit in
   // maxBlanks − 2, mark the gap, and keep the final row's blanks.
   const blankCount = (r) => r.cells.filter((c) => c.blank).length;
@@ -433,6 +446,10 @@ function traceTableQuestion(ctx, opts = {}) {
       blanks.push({ id, label: `step ${r.step} · ${c.name}`, expected: c.value });
     }
   }
+  // Fewer than two REAL blanks isn't a walkthrough — the caller skips
+  // (and the K-10 contract holds every trace-table exercise to ≥2 on
+  // every seed, so this is a runtime safety net, not a routine path).
+  if (blanks.length < 2) return null;
   const eq = (got, want) => normalizeAnswer(got) === normalizeAnswer(want)
     || canonicalizeContainers(got) === canonicalizeContainers(want);
   return {

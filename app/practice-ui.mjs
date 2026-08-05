@@ -90,6 +90,12 @@ export function createPracticeUI({ layout, getCode }) {
     document.body.classList.add("practice");
     root.hidden = false;
     layout.setExercisesVisible?.(true);
+    // Cards built while the surface was hidden (reload-resume path) hold
+    // CodeMirror instances that measured a display:none layout — refresh
+    // them now or the program boxes render as empty strips.
+    requestAnimationFrame(() => {
+      body.querySelectorAll(".CodeMirror").forEach((el) => el.CodeMirror?.refresh());
+    });
     // Coming back from the editor with the program changed? Offer to put
     // the question's program back (never silently — the learner may want
     // to grade their edited version; the interpreter judges what runs).

@@ -200,14 +200,14 @@ test.describe("PLP questions (Q-series)", () => {
     await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
     await page.waitForFunction(() => Boolean(window.plp));
     await page.evaluate(() => window.plp.editor.setValue(
-      "a = 0\nb = [1, 2]\na = a + 1\na = a + 1\nprint(a)\n"));
+      "a = 0\nb = [1, 2]\nb = b + [3]\na = a + 1\na = a + 1\na = a + 1\nprint(a)\n"));
     expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
     const r = await page.evaluate((ctxSrc) => {
       const ctx = eval(ctxSrc);
       const q = window.plp.questions.generateQuestion("trace-table", ctx, { names: ["a", "b"] });
       const right = Object.fromEntries(q.blanks.map((x) => [x.id, x.expected]));
       const bBlank = q.blanks.find((x) => x.label.endsWith("· b"));
-      const tight = { ...right, [bBlank.id]: "[1,2]" }; // container display spacing forgiven
+      const tight = { ...right, [bBlank.id]: "[1,2,3]" }; // container display spacing forgiven
       const oneWrong = { ...right, [q.blanks[0].id]: "999" };
       const small = window.plp.questions.generateQuestion("trace-table", ctx, { names: ["a", "b"], maxBlanks: 3 });
       return {
@@ -223,34 +223,41 @@ test.describe("PLP questions (Q-series)", () => {
         smallRows: small.rows.map((row) => (row.elided ? "…" : row.line)),
         smallBlanks: small.blanks.map((x) => x.label),
         none: window.plp.questions.generateQuestion("trace-table", ctx, { names: ["zzz"] }),
+        // A single computed change is not a walkthrough: `b` alone has one
+        // real blank (its literal bind is a given), so the builder refuses.
+        thin: window.plp.questions.generateQuestion("trace-table", ctx, { names: ["b"] }),
       };
     }, ctxExpr);
-    // The print line changes nothing watched → only 4 rows kept.
-    expect(r.rows.map((row) => row.line)).toEqual([1, 2, 3, 4]);
+    // The print line changes nothing watched → 6 rows kept.
+    expect(r.rows.map((row) => row.line)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(r.rows[0].code).toBe("a = 0");
-    // Row 1: `a` is the change (blank); `b` is unbound → "—" given.
+    // LITERAL binds are GIVENS, not blanks — `a = 0` would be transcription.
     expect(r.rows[0].cells).toEqual([
-      { name: "a", blank: true, value: undefined },
+      { name: "a", blank: false, value: "0" },
       { name: "b", blank: false, value: "—" },
     ]);
-    // Row 2: `b` binds (blank); `a` carries its value as a given.
     expect(r.rows[1].cells).toEqual([
+      { name: "a", blank: false, value: "0" },
+      { name: "b", blank: false, value: "[1, 2]" },
+    ]);
+    // Computed changes are the blanks: b = b + [3], then each a = a + 1.
+    expect(r.rows[2].cells).toEqual([
       { name: "a", blank: false, value: "0" },
       { name: "b", blank: true, value: undefined },
     ]);
-    // Rows 3–4: `a` changes each time; `b` carries.
-    expect(r.rows[2].cells[1]).toEqual({ name: "b", blank: false, value: "[1, 2]" });
-    expect(r.labels).toEqual(["step 1 · a", "step 2 · b", "step 3 · a", "step 4 · a"]);
-    expect(r.expected).toEqual(["0", "[1, 2]", "1", "2"]);
+    expect(r.labels).toEqual(["step 3 · b", "step 4 · a", "step 5 · a", "step 6 · a"]);
+    expect(r.expected).toEqual(["[1, 2, 3]", "1", "2", "3"]);
     expect(r.right.correct).toBe(true);
-    expect(r.tight).toBe(true); // "[1,2]" ≡ "[1, 2]"
+    expect(r.tight).toBe(true); // "[1,2,3]" ≡ "[1, 2, 3]"
     expect(r.oneWrong.correct).toBe(false); // all-or-nothing
     expect(r.oneWrong.perBlank.b0).toBe(false);
     expect(Object.values(r.oneWrong.perBlank).filter(Boolean).length).toBe(3);
-    // Elision under maxBlanks 3: first maxBlanks−2 rows' blanks, gap, final row.
-    expect(r.smallRows).toEqual([1, "…", 4]);
-    expect(r.smallBlanks).toEqual(["step 1 · a", "step 4 · a"]);
+    // Elision under maxBlanks 3: given-only rows + the first blank fit in
+    // maxBlanks−2, gap, final row's blank.
+    expect(r.smallRows).toEqual([1, 2, 3, "…", 6]);
+    expect(r.smallBlanks).toEqual(["step 3 · b", "step 6 · a"]);
     expect(r.none).toBeNull(); // no watched name ever binds
+    expect(r.thin).toBeNull(); // <2 real blanks → not a walkthrough
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 

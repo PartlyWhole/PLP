@@ -3031,15 +3031,17 @@ Step-table walkthrough over `a`, `b` (blanks derive from the live trace); the wa
 
 ```py
 n = 4
-if n > 6:
+big = n > 6
+if big:
     n = n - 2
 else:
     n = n + 2
 print(n)
 ```
-Step-table walkthrough over `n` (blanks derive from the live trace); the watched names end holding:
+Step-table walkthrough over `big`, `n` (blanks derive from the live trace); the watched names end holding:
 ```
 6
+False
 6
 ```
 

@@ -437,6 +437,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     record({ type: "question-frozen", prompt, ok, verdict, answerText, concept, ...(review ? { review } : {}) });
     store.lastAnswer = lastAnswer;
     if (concept) bumpDrillStats(concept, lastAnswer === "correct");
+    if (template) bumpTemplateStats(template, ok);
     // The score tracker (drills only): session right-count and streak on a
     // first-attempt basis — the same basis as everything else. The all-time
     // best streak persists separately (plp.score.v1).
@@ -455,6 +456,22 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     }
     events.emit("quiz-graded", { kind, correct: ok, template, concept });
     resume();
+  }
+
+  // Per-template (exercise-id) results: selection uses these to RETIRE the
+  // exact questions the learner already answered right — fresh templates on
+  // the same concept win. Separate store; the tag-keyed kb stats shape is
+  // pinned (K-series migrations).
+  const KB_TMPL_KEY = "plp.kb.tmpl.v1";
+  function loadTemplateStats() {
+    try { return JSON.parse(localStorage.getItem(KB_TMPL_KEY)) ?? {}; } catch { return {}; }
+  }
+  function bumpTemplateStats(template, ok) {
+    const t = loadTemplateStats();
+    const s = t[template] ??= { seen: 0, right: 0 };
+    s.seen += 1;
+    if (ok) s.right += 1;
+    try { localStorage.setItem(KB_TMPL_KEY, JSON.stringify(t)); } catch { /* ephemeral */ }
   }
 
   function loadLifetimeScore() {
@@ -937,6 +954,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         count: store.endlessCount,
         stats: loadDrillStats(),
         met: Object.keys(loadMetStore()),
+        templateStats: loadTemplateStats(),
         prevKey: lastAsk ? `${lastAsk.form}|${lastAsk.shape}|${lastAsk.concept}` : null,
       });
       if (built && !lintLesson(built).length) {
@@ -1003,6 +1021,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       count: opts.count, // unset lets the compiler pick (8, or 4 for a focus round)
       stats: loadDrillStats(),
       met: Object.keys(loadMetStore()), // feeds the cold-start frontier bias
+      templateStats: loadTemplateStats(), // retires already-solved templates
       focus: opts.focus, // targeted practice: one concept's own exercises
     });
     if (!built) throw new Error(`unknown drill topic: ${topic}`);
