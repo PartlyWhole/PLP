@@ -25,6 +25,7 @@ export default [
         if (shape === "add-times") {
           return {
             code: `print(${a} + ${b} * ${c})\n`, shape, variant: "plain",
+            misconception: String((a + b) * c), // strict left-to-right
             variantCard: `\`${b} * ${c}\` happens first (\`${b * c}\`), then \`${a} + ${b * c}\` `
               + `is ${a + b * c}. Going left to right would wrongly give ${(a + b) * c}.`,
           };
@@ -32,6 +33,7 @@ export default [
         if (shape === "times-add") {
           return {
             code: `print(${a} * ${b} + ${c})\n`, shape, variant: "plain",
+            misconception: String(a * (b + c)), // "+ first"
             variantCard: `\`${a} * ${b}\` happens first (\`${a * b}\`), then \`${a * b} + ${c}\` `
               + `is ${a * b + c}. Doing the \`+\` first would wrongly give ${a * (b + c)}.`,
           };
@@ -39,6 +41,7 @@ export default [
         const big = a + 8; // keep the subtraction non-negative
         return {
           code: `print(${big} - ${b} * ${c})\n`, shape, variant: "plain",
+          misconception: String((big - b) * c), // strict left-to-right
           variantCard: `\`${b} * ${c}\` happens first (\`${b * c}\`), then \`${big} - ${b * c}\` `
             + `is ${big - b * c}. Going left to right would wrongly give ${(big - b) * c}.`,
         };
@@ -194,6 +197,7 @@ export default [
           const a2 = a * c;
           return {
             code: `print(${a2} / ${b} / ${c})\n`, shape, variant: "even-div",
+            misconception: String(a2 / b / c), // the int, without the .0
             variantCard: `Even chained, \`/\` stays a float: \`${a2} / ${b} / ${c}\` is ${(a2 / b / c).toFixed(1)}.`,
           };
         }
@@ -201,11 +205,13 @@ export default [
           // * and / share precedence and go left to right, no float surprises.
           return {
             code: `print(${b} * ${a / b} / ${b})\n`, shape, variant: "even-div",
+            misconception: String((b * (a / b)) / b), // the int, without the .0
             variantCard: `\`*\` and \`/\` go left to right; the \`/\` still makes the result a float: ${((b * (a / b)) / b).toFixed(1)}.`,
           };
         }
         return {
           code: `print(${a} / ${b})\n`, shape, variant: "even-div",
+          misconception: String(a / b), // the int, without the .0
           variantCard: `\`/\` is true division and ALWAYS gives a float — even `
             + `when it divides evenly. So \`${a} / ${b}\` is ${(a / b).toFixed(1)} `
             + `(with the .0), not ${a / b}.`,
@@ -231,10 +237,11 @@ export default [
         if (shape === "str-then-digit") {
           return {
             code: `print(str(${n}) + "${d}")\n`, shape, variant: "plain",
+            misconception: String(n + d), // did arithmetic on the text
             variantCard: `\`str(${n})\` is the text \`"${n}"\`, joined to \`"${d}"\` gives \`${n}${d}\` — not ${n + d}.`,
           };
         }
-        if (shape === "digit-then-str") return { code: `print("${d}" + str(${n}))\n`, shape, variant: "plain" };
+        if (shape === "digit-then-str") return { code: `print("${d}" + str(${n}))\n`, shape, variant: "plain", misconception: String(d + n) };
         return { code: `print(str(${n}) + "${w}")\n`, shape, variant: "plain" };
       },
     },
@@ -335,12 +342,65 @@ export default [
         if (shape === "two-digit-strings") {
           return {
             code: `print("${a}" + "${b}")\n`, shape, variant: "plain",
+            misconception: String(a + b), // added the digits
             variantCard: `\`"${a}"\` and \`"${b}"\` are text, so \`+\` joins them into \`${a}${b}\` — not the number ${a + b}.`,
           };
         }
-        if (shape === "three-digit-strings") return { code: `print("${a}" + "${b}" + "${c}")\n`, shape, variant: "plain" };
+        if (shape === "three-digit-strings") return { code: `print("${a}" + "${b}" + "${c}")\n`, shape, variant: "plain", misconception: String(a + b + c) };
         const nm = pick(rng, strNames);
-        return { code: `${nm} = "${a}"\nprint(${nm} + "${b}")\n`, shape, variant: "plain" };
+        return { code: `${nm} = "${a}"\nprint(${nm} + "${b}")\n`, shape, variant: "plain", misconception: String(a + b) };
+      },
+    },
+  },
+
+  {
+    // Hard sibling (R1.3): three mixed-precedence operators in one line —
+    // availability-gated on met(000N), so it deals only after the two-op
+    // intro lands. The misconception is the strict left-to-right value.
+    id: "precedence-gauntlet-hard",
+    topic: "numbers",
+    focus: "000N", // op-precedence
+    assumed: ["0005", "0008"],
+    role: "review",
+    difficulty: "hard",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["plus-times-minus", "minus-times-plus", "times-plus-times"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["plus-times-minus", "minus-times-plus", "times-plus-times"]);
+        let a = int(rng, 2, 6), b = int(rng, 2, 4), c = int(rng, 2, 4), d = int(rng, 1, 4);
+        if (shape === "times-plus-times") {
+          const real = a * b + c * d;
+          const ltr = ((a * b) + c) * d;
+          if (real === ltr) d += 1; // keep the wrong path genuinely wrong (rng-free nudge)
+          return {
+            code: `print(${a} * ${b} + ${c} * ${d})\n`, shape, variant: "plain",
+            misconception: String(((a * b) + c) * d),
+            variantCard: `Both \`*\` happen first: ${a * b} + ${c * d} = ${a * b + c * d}. `
+              + `Marching left to right would wrongly give ${((a * b) + c) * d}.`,
+          };
+        }
+        if (shape === "minus-times-plus") {
+          const big = a + b * c; // keeps the subtraction non-negative
+          const real = big - b * c + d;
+          const ltr = (big - b) * c + d;
+          return {
+            code: `print(${big} - ${b} * ${c} + ${d})\n`, shape, variant: "plain",
+            misconception: String(ltr),
+            variantCard: `\`${b} * ${c}\` happens first (${b * c}); then left to right: `
+              + `${big} - ${b * c} + ${d} = ${real}. Doing the \`-\` first would give ${ltr}.`,
+          };
+        }
+        const real = a + b * c - d;
+        const ltr = (a + b) * c - d;
+        return {
+          code: `print(${a} + ${b} * ${c} - ${d})\n`, shape: "plus-times-minus", variant: "plain",
+          misconception: String(ltr),
+          variantCard: `\`${b} * ${c}\` happens first (${b * c}); then left to right: `
+            + `${a} + ${b * c} - ${d} = ${real}. Left-to-right throughout would give ${ltr}.`,
+        };
       },
     },
   },
@@ -371,6 +431,7 @@ export default [
           code: `print(${a} // ${b})\n`,
           aOutput: String(Math.floor(a / b)),
           contrastCode: `print(${a} // ${c})\n`,
+          misconception: String(Math.floor(a / b)), // "the changed line changes nothing" (= aOutput)
           shape: "divisor-change", variant: "plain",
           variantCard: `\`${a} // ${b}\` is ${Math.floor(a / b)} — how many whole \`${b}\`s fit. `
             + `Divide the same ${a} by ${c} instead and only ${Math.floor(a / c)} fit; the remainder is dropped either way.`,

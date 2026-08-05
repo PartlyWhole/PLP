@@ -237,13 +237,38 @@ test.describe("PLP knowledge base (K-series)", () => {
     expect(orphans, "concepts unreachable from the roots").toEqual([]);
   });
 
-  test("K-4: static exercise contract — assumed ⊆ ancestors(focus), focus ∉ assumed, contrast ∈ assumed (inv 5)", () => {
+  test("K-4: static exercise contract — assumed ⊆ ancestors(focus), focus ∉ assumed, contrast ∈ assumed; challenge relaxation scoped to its role (inv 5, R1)", () => {
     for (const ex of kb.exercises) {
       const anc = kb.ancestors(ex.focus);
-      const outside = ex.assumed.filter((t) => !anc.has(t));
-      expect(outside, `${ex.id}: assumed tags outside ancestors(${ex.focus})`).toEqual([]);
+      expect(["intro", "review", "challenge"]).toContain(ex.role);
+      if (ex.role === "challenge") {
+        // R1.2 DECIDED CONTRACT: braids non-empty, known, non-structural,
+        // ⊆ assumed, disjoint from the focus lineage; assumed ⊆
+        // ancestors(focus) ∪ braids ∪ ⋃ancestors(braid) — the relaxation
+        // exists ONLY for this role, compensated by the dynamic met gate.
+        expect(Array.isArray(ex.braids) && ex.braids.length > 0, `${ex.id}: challenge needs braids`).toBe(true);
+        const closure = new Set(anc);
+        for (const b of ex.braids) {
+          expect(kb.concepts.has(b), `${ex.id}: braid ${b} known`).toBe(true);
+          expect(kb.structural.has(b), `${ex.id}: braid ${b} non-structural`).toBe(false);
+          expect(ex.assumed.includes(b), `${ex.id}: braid ${b} in assumed`).toBe(true);
+          expect(b === ex.focus || anc.has(b), `${ex.id}: braid ${b} must sit OUTSIDE the focus lineage`).toBe(false);
+          closure.add(b);
+          for (const a of kb.ancestors(b)) closure.add(a);
+        }
+        const outside = ex.assumed.filter((t) => !closure.has(t));
+        expect(outside, `${ex.id}: assumed tags outside the challenge closure`).toEqual([]);
+      } else {
+        expect(ex.braids, `${ex.id}: braids are challenge-only`).toBeUndefined();
+        const outside = ex.assumed.filter((t) => !anc.has(t));
+        expect(outside, `${ex.id}: assumed tags outside ancestors(${ex.focus})`).toEqual([]);
+      }
       expect(ex.assumed.includes(ex.focus), `${ex.id}: focus in assumed`).toBe(false);
-      expect(["intro", "review"]).toContain(ex.role);
+      // difficulty: "hard" (R1.3) is a review/challenge-only marker.
+      if (ex.difficulty !== undefined) {
+        expect(ex.difficulty).toBe("hard");
+        expect(["review", "challenge"], `${ex.id}: hard is review/challenge only`).toContain(ex.role);
+      }
       // A contrast exercise still meets exactly one new thing: the contrasted
       // concept must be an ancestor of the focus AND already assumed (§2.8).
       if (ex.contrast) {
@@ -364,6 +389,14 @@ test.describe("PLP knowledge base (K-series)", () => {
     expect(kb.frontier(met).has("0023")).toBe(false);
     met.add("0021");
     expect(kb.frontier(met).has("0023")).toBe(true);
+
+    // Challenge gate (R1.2): chal-alias-in-loop needs focus 000H met AND
+    // every assumed tag met — 001E and 001K are still missing here.
+    expect(kb.offerable(met).map((e) => e.id)).not.toContain("chal-alias-in-loop");
+    met.add("001E");
+    expect(kb.offerable(met).map((e) => e.id)).not.toContain("chal-alias-in-loop");
+    met.add("001K");
+    expect(kb.offerable(met).map((e) => e.id)).toContain("chal-alias-in-loop");
   });
 
   test("K-rng: kb mulberry32 matches the pinned stream (drift guard, Node side)", () => {
@@ -402,9 +435,12 @@ test.describe("PLP knowledge base (K-series)", () => {
         // spot-the-difference runs TWO programs: A (its real output must equal
         // the shown aOutput) and B (the predicted one, a normal predict-output).
         if (ex.form === "spot-the-difference") {
+          // B is the graded program; its real output must differ from the
+          // designed misconception (aOutput unless the generator overrides —
+          // R1.1's "the moved line changed nothing" check IS the A≠B oracle).
           return [
             { code: prog.code, form: "predict-output", name: null, target: prog.aOutput },
-            { code: prog.contrastCode, form: "predict-output", name: null, target: null },
+            { code: prog.contrastCode, form: "predict-output", name: null, target: null, mis: prog.misconception ?? prog.aOutput },
           ];
         }
         // fill-one-blank's `code` is the FULL correct program; grade it as
@@ -416,6 +452,7 @@ test.describe("PLP knowledge base (K-series)", () => {
           names: prog.probeNames ?? null,
           maxBlanks: prog.maxBlanks ?? 8,
           target: prog.targetOutput ?? null,
+          mis: ex.form === "trace-table" ? null : prog.misconception ?? null,
         }];
       });
 
@@ -458,6 +495,7 @@ test.describe("PLP knowledge base (K-series)", () => {
           out.push({
             reason: summary?.terminal_reason,
             gradable: Boolean(q),
+            expected,
             oneLine: form === "predict-state" ? !(expected ?? "").includes("\n") : (expected !== null && !expected.includes("\n")),
             matchesTarget: target != null ? (expected === String(target).replace(/\n+$/, "")) : true,
             errors: window.plp.checkErrors(),
@@ -479,6 +517,13 @@ test.describe("PLP knowledge base (K-series)", () => {
         }
         // The interpreter is the fill target's ground truth.
         expect(r.matchesTarget, `${ex.id} program ${i}: real output must equal the fill target`).toBe(true);
+        // R1.1: the designed misconception is never what really happens —
+        // checked here for the forms whose graded truth K-oracles lacks
+        // (spot-the-difference's program B; predict-state's probed value).
+        if (programs[i].mis != null && r.expected != null) {
+          expect(r.expected.trim(), `${ex.id} program ${i}: misconception must differ from the graded answer`)
+            .not.toBe(String(programs[i].mis).trim());
+        }
         expect(r.errors).toEqual([]);
       });
     }
@@ -500,6 +545,13 @@ test.describe("PLP knowledge base (K-series)", () => {
         const fp = kb.footprint(source);
         expect(fp.error, `${ex.id} seed ${k}: analyzer error ${JSON.stringify(fp.error)}`).toBeUndefined();
         const names = Object.keys(fp.finalTypes);
+        const prog = ex.generator.generate(seedFor(ex.id, k));
+        // The designed misconception must differ from the graded truth. Here
+        // realOut is program `code`'s printed output, so the check applies to
+        // the printed-answer forms; spot-the-difference (graded against B)
+        // and predict-state (graded against the probed value) are checked in
+        // K-10 instead, where their real expected answer is in hand.
+        const misCheckable = !["spot-the-difference", "predict-state", "trace-table", "fill-one-blank"].includes(ex.form);
         items.push({
           id: ex.id, seed: k, source,
           jsAst: jsAst(source),
@@ -507,6 +559,7 @@ test.describe("PLP knowledge base (K-series)", () => {
           names,
           types: names.map((n) => fp.finalTypes[n]),
           wrongAnswer: kb.concepts.get(ex.focus).wrongAnswer,
+          misconception: misCheckable ? prog.misconception ?? null : null,
           probe: buildOracleProbe(source, names),
         });
       }
@@ -549,6 +602,14 @@ test.describe("PLP knowledge base (K-series)", () => {
       // teaches nothing).
       expect(it.wrongAnswer.trim(), `${it.id} seed ${it.seed}: wrongAnswer must differ from real output`)
         .not.toBe(realOut.trim());
+
+      // R1.1 discrimination floor: the instance's DESIGNED misconception is
+      // never the truth — a "designed wrong" equal to the real output would
+      // record a confusion for a correct mental model.
+      if (it.misconception != null) {
+        expect(it.misconception.trim(), `${it.id} seed ${it.seed}: misconception must differ from real output`)
+          .not.toBe(realOut.trim());
+      }
 
       // inv 9 — each surviving name's runtime type matches the abstract store.
       for (let j = 0; j < it.types.length; j++) {
@@ -646,6 +707,92 @@ test.describe("PLP knowledge base (K-series)", () => {
     }
     expect(total).toBe(30);
     expect(core / total, `core fraction ${core}/${total}`).toBeGreaterThanOrEqual(0.6);
+  });
+
+  test("K-chal: challenges and hard siblings are availability-FILTERED, never dealt cold, dealt when earned (R1)", async () => {
+    const { buildKBSession } = await import("../app/kb-session.mjs");
+    const challengeIds = new Set(kb.exercises.filter((e) => e.role === "challenge").map((e) => e.id));
+    const hardIds = new Set(kb.exercises.filter((e) => e.difficulty === "hard").map((e) => e.id));
+    expect(challengeIds.size).toBe(8);
+    expect(hardIds.size).toBe(5);
+
+    // (a) Empty-met compiles NEVER deal challenges or hard siblings — the
+    // fixture-stability proof: the filtered pool is the pre-R1 pool.
+    for (const topic of ["all", "lists", "loops", "numbers", "strings", "structures"]) {
+      for (const seed of [1, 2, 7, 23, 41, 42]) {
+        const l = buildKBSession(topic, { seed, count: 8 });
+        for (const s of l.steps) {
+          if (!s.ask) continue;
+          expect(challengeIds.has(s.ask.template), `${topic}/${seed}: challenge ${s.ask.template} dealt with empty met`).toBe(false);
+          expect(hardIds.has(s.ask.template), `${topic}/${seed}: hard sibling ${s.ask.template} dealt with empty met`).toBe(false);
+        }
+      }
+    }
+
+    // (b) Met-saturated compiles deal challenges, with the selection floors
+    // intact (no consecutive form|shape, no consecutive concept repeat).
+    const allMet = [...kb.concepts.keys()].filter((t) => !kb.structural.has(t));
+    const stats = Object.fromEntries(allMet.map((t) => [t, { seen: 5, missed: 1 }]));
+    let challengesDealt = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+      const l = buildKBSession("all", { seed, count: 10, met: allMet, stats });
+      const asks = l.steps.filter((s) => s.ask).map((s) => s.ask);
+      for (let i = 1; i < asks.length; i++) {
+        expect(`${asks[i].form}|${asks[i].shape}` !== `${asks[i - 1].form}|${asks[i - 1].shape}`, `seed ${seed}: fs repeat at ${i}`).toBe(true);
+      }
+      challengesDealt += asks.filter((a) => challengeIds.has(a.template)).length;
+    }
+    expect(challengesDealt, "met-saturated rounds must actually deal challenges").toBeGreaterThan(0);
+
+    // Challenges never grant met: a challenge is only ever offerable/dealt
+    // when its focus is ALREADY met (the filter above), so the tutor's
+    // idempotent grantMet("first grant wins") is structurally a no-op on
+    // every challenge resolution — assert the gate that guarantees it.
+    for (const ex of kb.exercises.filter((e) => e.role === "challenge")) {
+      const missingFocus = new Set(allMet.filter((t) => t !== ex.focus));
+      expect(kb.offerable(missingFocus).some((e) => e.id === ex.id),
+        `${ex.id} offerable without its focus met`).toBe(false);
+    }
+
+    // (c) offerable: removing ONE braid tag from met removes exactly that
+    // braid's challenges — nothing else changes.
+    const metSet = new Set(allMet);
+    const before = kb.offerable(metSet).map((e) => e.id);
+    metSet.delete("001K"); // braid of chal-alias-in-loop + chal-sum-of-built-list
+    const after = new Set(kb.offerable(metSet).map((e) => e.id));
+    const removed = before.filter((id) => !after.has(id));
+    // Every removed exercise either focuses 001K, assumes it, or (challenge)
+    // braids it; the two 001K-braided challenges are among them.
+    expect(removed).toContain("chal-alias-in-loop");
+    expect(removed).toContain("chal-sum-of-built-list");
+    for (const id of removed) {
+      const ex = kb.exercises.find((e) => e.id === id);
+      expect(ex.focus === "001K" || ex.assumed.includes("001K"), `${id} removed without referencing 001K`).toBe(true);
+    }
+  });
+
+  test("K-mc: designed misconceptions are rng-free-derived, single-line (per the multiline law), and typed as strings (R1.1)", () => {
+    let carrying = 0;
+    for (const ex of kb.exercises) {
+      for (let k = 0; k < 40; k++) {
+        const prog = ex.generator.generate(seedFor(ex.id, k));
+        if (prog.misconception === undefined) continue;
+        carrying += 1;
+        expect(typeof prog.misconception, `${ex.id} seed ${k}: misconception is a string`).toBe("string");
+        expect(prog.misconception.length > 0, `${ex.id} seed ${k}: misconception non-empty`).toBe(true);
+        if (!ex.multiline) {
+          expect(prog.misconception.includes("\n"), `${ex.id} seed ${k}: misconception single-line`).toBe(false);
+        }
+        // spot-the-difference's designed wrong is A's shown output when a
+        // generator emits one explicitly (the compiler stamps aOutput
+        // otherwise) — either way it must never equal program B's target
+        // (enforced against real execution in K-10).
+        if (ex.form === "spot-the-difference" && prog.misconception !== undefined) {
+          expect(prog.misconception, `${ex.id} seed ${k}: spot-diff misconception is aOutput`).toBe(prog.aOutput);
+        }
+      }
+    }
+    expect(carrying, "a meaningful share of generated programs carry a designed misconception").toBeGreaterThan(100);
   });
 
   test("K-doc: curriculum/KB-REFERENCE.md is byte-identical to a fresh regeneration with real outputs (inv 15)", async ({ page }) => {

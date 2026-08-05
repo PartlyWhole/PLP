@@ -70,7 +70,14 @@ export function spliceBlank(code, blank, replacement) {
 const COLD_ANSWERS = 24;      // bias is gone once this many answers exist
 const COLD_STEP_PENALTY = 0.2; // per unseen ancestor, at zero answers
 function weightOf(stats, ex, cold, templateStats) {
-  const level = kb.concepts.get(ex.focus)?.kind === "core" ? 3 : 1;
+  // Challenges weigh like core reviews (R1.2): they only exist once the
+  // focus and all assumed are met, so kind-based levelling would misprice
+  // an edge-focused challenge. Hard siblings (R1.3) are availability-gated
+  // on met(focus); once available they are the material mastery should
+  // yield TO, so they skip the mastery discount and fade half as fast.
+  const challenge = ex.role === "challenge";
+  const hard = ex.difficulty === "hard";
+  const level = challenge || kb.concepts.get(ex.focus)?.kind === "core" ? 3 : 1;
   const s = stats?.[ex.focus];
   const novelty = !s || !s.seen ? 1.5 : 1;
   const missRate = s?.seen ? 1 + 2 * (s.missed / s.seen) : 1;
@@ -91,12 +98,14 @@ function weightOf(stats, ex, cold, templateStats) {
   // met AND practiced cleanly keeps only a quarter of its weight, and an
   // INTRO exercise on an already-familiar concept yields to its reviews.
   let mastery = 1;
-  if (cold?.met.has(ex.focus) && s?.seen >= 4 && s.missed / s.seen <= 0.25) mastery = 0.25;
+  if (!challenge && !hard && cold?.met.has(ex.focus) && s?.seen >= 4 && s.missed / s.seen <= 0.25) mastery = 0.25;
   const introFade = ex.role === "intro" && s?.seen >= 2 ? 0.4 : 1;
   // Template retirement: the exact exercise the learner already answered
   // RIGHT fades per success — fresh templates on the same concept win.
+  // Hard siblings decay at half rate: the preference for hard material
+  // EMERGES as the easy templates fade, no boost constant (R1.3).
   const t = templateStats?.[ex.id];
-  const templateFade = t?.right ? 1 / (1 + 0.75 * t.right) : 1;
+  const templateFade = t?.right ? 1 / (1 + (hard ? 0.375 : 0.75) * t.right) : 1;
   return level * novelty * missRate * frontierBias * mastery * introFade * templateFade;
 }
 
@@ -113,17 +122,39 @@ function worstConceptOf(stats) {
   return worst;
 }
 
+// The most-hit misconceived tag (R1.1). Accepts {tag: hits} or the tutor's
+// persisted {tag: {hits, at}} shape; ties break by tag (deterministic).
+function worstMisconceptionOf(misconceptions) {
+  let worst = null, hits = 0;
+  for (const tag of Object.keys(misconceptions ?? {}).sort()) {
+    const v = misconceptions[tag];
+    const h = typeof v === "number" ? v : v?.hits ?? 0;
+    if (h > hits) { worst = tag; hits = h; }
+  }
+  return worst;
+}
+
 // Compile a practice round into an ordinary lesson script. Deterministic
-// under (topic, seed, count, stats, focus, met, prevKey) — a persisted
-// session rebuilds exactly. `focus` (a concept tag) narrows the pool to
+// under (topic, seed, count, stats, focus, met, prevKey, templateStats,
+// misconceptions) — a persisted session rebuilds exactly. `focus` (a concept tag) narrows the pool to
 // that concept's own exercises — the concept map's "Practice this ▶" /
 // "Try it anyway ▶" — with a shorter default round and a guaranteed
 // teach-first opener (the learner explicitly asked to learn it). `met` is
 // the learner's met tag set (lesson-kb-binding §5) feeding the cold-start
 // frontier bias; `prevKey` carries the previous chunk's last-dealt key so
 // endless chunks keep the no-repeat guarantee across the boundary.
-export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met = [], prevKey = null, templateStats = {} } = {}) {
-  let pool = poolFor(topic);
+export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met = [], prevKey = null, templateStats = {}, misconceptions = {} } = {}) {
+  const metSet = new Set(met);
+  const available = (t) => metSet.has(t) || kb.structural.has(t);
+  // Availability is a pool FILTER, never a weight (R1.2/R1.3): challenges
+  // deal only once the focus AND every assumed tag are met; hard siblings
+  // deal only once their focus is met. With an empty met set the pool is
+  // byte-identical to the pre-R1 pool, so seed fixtures cannot shift.
+  let pool = poolFor(topic).filter((ex) => {
+    if (ex.role === "challenge") return metSet.has(ex.focus) && ex.assumed.every(available);
+    if (ex.difficulty === "hard") return metSet.has(ex.focus);
+    return true;
+  });
   if (focus) {
     const focused = pool.filter((ex) => ex.focus === focus);
     if (focused.length) pool = focused;
@@ -164,6 +195,26 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met 
   let missSlot = -1;
   if (worstPool.length) missSlot = Math.floor(rng() * count);
 
+  // Misconception follow-up slot (R1.1): when the tutor has recorded that a
+  // wrong answer MATCHED an exercise's designed misconception, one slot is
+  // reserved for that confusion's tag — preferring the contrast exercise
+  // built for exactly that confusion, else the tag's reviews, else any of
+  // its exercises. The rng draw is guarded exactly like the worst slot
+  // (only when the tag has pool exercises), so compiles without recorded
+  // misconceptions keep their rng stream byte-identical. When the
+  // misconceived tag IS the worst concept, the two slots merge into one.
+  const mcTag = focus ? null : worstMisconceptionOf(misconceptions);
+  let mcPool = [];
+  if (mcTag) {
+    const contrastP = pool.filter((ex) => ex.contrast === mcTag);
+    const reviewP = pool.filter((ex) => ex.focus === mcTag && ex.role !== "intro");
+    mcPool = contrastP.length ? contrastP : reviewP.length ? reviewP : pool.filter((ex) => ex.focus === mcTag);
+  }
+  const mergedMc = Boolean(mcPool.length && mcTag === worstTag && worstPool.length);
+  let mcSlot = -1;
+  if (mcPool.length && !mergedMc) mcSlot = Math.floor(rng() * count);
+  let mcDealt = false;
+
   // prevKey format: `form|shape|concept` — the (form, shape) half is the
   // hard no-repeat floor (design §5.3 / inv 14); the concept half is a soft
   // preference so the same concept never deals twice in a row when
@@ -179,7 +230,13 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met 
     // miss-return slot narrows the pick to the worst concept's exercises —
     // skipped (deferred one slot) if that concept was just dealt.
     const forceHere = !forcedReturn && missSlot >= 0 && i >= missSlot && prevConcept !== worstTag;
-    const basePool = forceHere ? worstPool : pool;
+    // The follow-up slot defers (like the worst slot) while its whole pool
+    // would repeat the previous concept, and yields to the worst slot when
+    // both land on the same index (it deals one slot later instead).
+    const mcForceHere = !mcDealt && mcSlot >= 0 && i >= mcSlot && !forceHere
+      && !mcPool.every((ex) => ex.focus === prevConcept);
+    const dealFollowUp = (forceHere && mergedMc) || mcForceHere;
+    const basePool = forceHere ? (mergedMc ? mcPool : worstPool) : mcForceHere ? mcPool : pool;
     let chosen = null, fallback = null, last = null;
     for (let attempt = 0; attempt < 50; attempt++) {
       const ex = weightedPick(rng, basePool, stats, cold, templateStats);
@@ -194,6 +251,7 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met 
     }
     chosen ??= fallback ?? last;
     if (forceHere) forcedReturn = true;
+    if (dealFollowUp) mcDealt = true;
     prevFS = chosen.fs;
     prevConcept = chosen.ex.focus;
     cold?.dealt.add(chosen.ex.focus);
@@ -237,6 +295,10 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met 
         context: { code: prog.code, output: prog.aOutput },
         prompt: "One line changed. What does it print now?",
       };
+      // Every spot-the-difference has the same designed wrong answer: "the
+      // moved line changed nothing" — program A's shown output (R1.1;
+      // rng-free, and K-10's A≠B oracle guarantees it differs from truth).
+      if (prog.misconception === undefined) ask.misconception = prog.aOutput;
     } else if (ex.form === "fill-one-blank") {
       // The learner sees the program with a hole; grading substitutes the
       // typed token and runs it (design §5.2). loadCode shows the hole.
@@ -281,6 +343,13 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met 
       };
     }
     if (teach) ask.teach = teach;
+    // Misconception plumbing (R1.1): the generator's designed wrong answer
+    // for THIS instance rides on the ask (rng-free by construction), plus
+    // the tag the confusion belongs to when it isn't the focus itself.
+    if (prog.misconception !== undefined) ask.misconception = prog.misconception;
+    const mo = prog.misconceptionOf ?? ex.misconceptionOf;
+    if (ask.misconception !== undefined && mo) ask.misconceptionOf = mo;
+    if (dealFollowUp) ask.followUp = true;
     steps.push({ ask });
     // After a miss: the program's variant card if it has one (the specific
     // values just asked), else the concept's canonical rule card.
@@ -385,6 +454,11 @@ export function drillTopicFor(tags) {
 function weightedPick(rng, pool, stats, cold, templateStats) {
   const weights = pool.map((ex) => weightOf(stats, ex, cold, templateStats));
   const total = weights.reduce((a, w) => a + w, 0);
+  // Degenerate totals (all-zero, NaN, Infinity) would otherwise silently
+  // collapse to pool[0] — fall back to a uniform seeded pick instead, so
+  // availability stays a pool FILTER and never an accidental weight-zero
+  // gate (R1.2; the draw still consumes exactly one rng() either way).
+  if (!(total > 0) || !Number.isFinite(total)) return pool[Math.floor(rng() * pool.length)];
   let roll = rng() * total;
   for (let j = 0; j < pool.length; j++) {
     roll -= weights[j];

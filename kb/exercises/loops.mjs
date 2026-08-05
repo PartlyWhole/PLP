@@ -45,16 +45,20 @@ export default [
       generate(seed) {
         const rng = mulberry32(seed);
         const n = int(rng, 3, 6);
+        // The classic wrong list: counting all the way TO n, stop included.
+        const withStop = `[${Array.from({ length: n + 1 }, (_, i) => i).join(", ")}]`;
         if (pick(rng, ["bare-range", "named-range"]) === "named-range") {
           return {
             code: `xs = list(range(${n}))\nprint(xs)\n`,
             shape: "named-range", variant: "plain",
+            misconception: withStop,
             variantCard: `\`range(${n})\` counts from 0 and stops before ${n}: ${Array.from({ length: n }, (_, i) => i).join(", ")}.`,
           };
         }
         return {
           code: `print(list(range(${n})))\n`,
           shape: "bare-range", variant: "plain",
+          misconception: withStop,
           variantCard: `\`range(${n})\` counts from 0 and stops before ${n}: ${Array.from({ length: n }, (_, i) => i).join(", ")}.`,
         };
       },
@@ -352,6 +356,81 @@ export default [
           code: `for x in [${items.join(", ")}]:\n    if x == ${t}:\n        print(x)\n        break\nelse:\n    print("${word}")\n`,
           shape: "no-break", variant: "plain",
           variantCard: `No item equals \`${t}\`, so \`break\` never fires and the loop's \`else\` runs, printing \`${word}\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Hard sibling (R1.3): a NEGATIVE step — range runs downhill, stopping
+    // before the stop from above. Availability-gated on met(001H).
+    id: "range-countdown-hard",
+    topic: "loops",
+    focus: "001H", // range-step
+    assumed: ["0005", "0006", "001E", "001F", "001G"],
+    role: "review",
+    difficulty: "hard",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["countdown", "named-countdown"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["countdown", "named-countdown"]);
+        const s = int(rng, 2, 3);            // step size (negated below)
+        const start = int(rng, 8, 12);
+        const stop = start - s * int(rng, 2, 3) - 1; // ≥2 values, stop below start
+        const seq = [];
+        for (let v = start; v > stop; v -= s) seq.push(v);
+        const card = `\`range(${start}, ${stop}, -${s})\` counts DOWN from ${start} by ${s}, `
+          + `stopping before it reaches ${stop}: [${seq.join(", ")}].`;
+        if (shape === "named-countdown") {
+          return {
+            code: `xs = list(range(${start}, ${stop}, -${s}))\nprint(xs)\n`,
+            shape, variant: "plain",
+            misconception: "[]", // "start > stop, so the range must be empty"
+            variantCard: card,
+          };
+        }
+        return {
+          code: `print(list(range(${start}, ${stop}, -${s})))\n`,
+          shape: "countdown", variant: "plain",
+          misconception: "[]",
+          variantCard: card,
+        };
+      },
+    },
+  },
+
+  {
+    // Hard sibling (R1.3): TWO names move per pass and the while-condition
+    // watches the accumulator, not the counter. ≤3 iterations by
+    // construction; every pass changes both watched names.
+    id: "trace-while-two-names-hard",
+    topic: "loops",
+    focus: "001M", // while-repeats-while-true
+    assumed: ["0005", "0006", "0008", "0009", "000A", "000B", "0015"],
+    role: "review",
+    difficulty: "hard",
+    form: "trace-table",
+    generator: {
+      shapes: ["total-gated"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const step = int(rng, 2, 3);   // how much i climbs each pass
+        const i0 = int(rng, 1, 2);
+        // Choose the bound so the loop runs exactly 2 or 3 passes: simulate
+        // three passes of the i-sequence and cut between pass 2 and 3.
+        const t1 = i0, t2 = i0 + (i0 + step), t3 = t2 + (i0 + 2 * step);
+        const bound = pick(rng, [t2, t3]); // total < bound fails after pass 2 or 3
+        return {
+          code: `i = ${i0}\ntotal = 0\nwhile total < ${bound}:\n    total = total + i\n    i = i + ${step}\nprint(total)\n`,
+          probeNames: ["i", "total"],
+          shape: "total-gated", variant: "plain",
+          variantCard: `The test watches \`total\`, not \`i\` — each pass adds the CURRENT \`i\` `
+            + `then grows \`i\` by ${step}. Totals run ${t1}, ${t2}${bound === t3 ? `, ${t3}` : ""}; `
+            + `the loop stops the moment \`total < ${bound}\` fails.`,
         };
       },
     },

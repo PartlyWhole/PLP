@@ -9,7 +9,7 @@
 ## Overview
 
 - **71 concepts** — 4 structural / 49 core / 18 edge.
-- **128 exercises** across 7 topics.
+- **141 exercises** across 7 topics.
 - **Forms:** fill-one-blank, predict-exact-output, predict-state, spot-the-difference, trace-table.
 
 ## Topics
@@ -384,7 +384,7 @@ b = a does not copy a list — one list, two names, so a change through either s
 - Children: 0023, 0024
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000A ← 000C ← 000D ← 000G
 - Characteristic wrong answer: the list as it was before the change
-- Exercises: alias-chain, alias-latent-state, alias-trap, trace-alias
+- Exercises: alias-chain, alias-chain-hard, alias-latent-state, alias-trap, chal-alias-in-loop, trace-alias
 
 ### 000J · print-multi-args — core
 
@@ -424,7 +424,7 @@ In a, b = b, a the whole right side is evaluated before either name rebinds — 
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0008
 - Characteristic wrong answer: the left-to-right answer, e.g. 20 for 2 + 3 * 4
-- Exercises: fill-precedence-op, precedence-mix
+- Exercises: fill-precedence-op, precedence-gauntlet-hard, precedence-mix
 
 ### 000P · div-yields-float — core
 
@@ -544,7 +544,7 @@ s[a:b] is the characters from position a up to but not including b.
 - Children: 0012, 0024
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E
 - Characteristic wrong answer: includes the character at position b
-- Exercises: fill-slice-stop, slice-two-ends
+- Exercises: chal-slice-of-concat, fill-slice-stop, slice-two-ends
 
 ### 0012 · slice-open-ended — core
 
@@ -704,7 +704,7 @@ range(a, b, s) counts from a in steps of s, stopping before b.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D ← 001E ← 001F ← 001G
 - Characteristic wrong answer: includes the endpoint, or uses the wrong step
-- Exercises: fill-range-start, range-step-contrast, range-with-step
+- Exercises: fill-range-start, range-countdown-hard, range-step-contrast, range-with-step
 
 ### 001J · loop-accumulate — core
 
@@ -724,7 +724,7 @@ Appending once per pass grows a list one item per pass.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D ← 000G ← 001E
 - Characteristic wrong answer: the wrong length, or items in the wrong order
-- Exercises: loop-collect, trace-build-list
+- Exercises: chal-filter-build, loop-collect, trace-build-list
 
 ### 001M · while-repeats-while-true — core
 
@@ -734,7 +734,7 @@ while re-tests before every pass and stops the moment the test is False.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000B ← 0015 ← 0016
 - Characteristic wrong answer: one pass too many or one too few
-- Exercises: trace-while, while-counts-down
+- Exercises: chal-while-grows-string, trace-while, trace-while-two-names-hard, while-counts-down
 
 ### 001N · break-exits — core
 
@@ -744,7 +744,7 @@ break leaves the whole loop immediately.
 - Children: 001Q
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 000D ← 0015 ← 0016 ← 0017 ← 001E
 - Characteristic wrong answer: the loop finishes the remaining items anyway
-- Exercises: break-order, break-stops, trace-break
+- Exercises: break-order, break-stops, chal-accumulate-until-break, trace-break
 
 ### 001P · continue-skips — core
 
@@ -784,7 +784,7 @@ d[k] = v stores v under k — adding the key if it is new, replacing it if it ex
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E ← 001R
 - Characteristic wrong answer: the old value survives, or a new key is rejected
-- Exercises: dict-store, dict-store-latent, store-order, trace-dict-build
+- Exercises: chal-dict-under-branch, dict-store, dict-store-latent, store-order, trace-dict-build
 
 ### 001T · dict-get-default — core
 
@@ -844,7 +844,7 @@ len, sum, max, min compute one value from a whole list.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D
 - Characteristic wrong answer: an off-by-one count, or the wrong end of the range
-- Exercises: aggregate-one-value, fill-aggregate
+- Exercises: aggregate-one-value, chal-sum-of-built-list, fill-aggregate
 
 ### 0020 · extend-vs-append — edge
 
@@ -874,7 +874,7 @@ A list can hold lists; g[r][c] picks row r, then position c inside it.
 - Children: 0025
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000D ← 000E
 - Characteristic wrong answer: row and column swapped
-- Exercises: grid-lookup, nested-index-spot
+- Exercises: chal-grid-total, grid-far-corner-hard, grid-lookup, nested-index-spot
 
 ### 0023 · plus-eq-mutates-list — edge
 
@@ -1011,6 +1011,25 @@ print(a)
 prints:
 ```
 [2, 8, 87]
+```
+
+### alias-chain-hard — focus 000H (names-share-list)
+
+- Form: `predict-exact-output` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000A, 000C, 000D, 000G
+- Shapes: chain-append-read-middle · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+a = [1, 6]
+b = a
+c = b
+c.append(32)
+print(b)
+```
+prints:
+```
+[1, 6, 32]
 ```
 
 ### alias-latent-state — focus 000H (names-share-list)
@@ -1370,6 +1389,157 @@ print(2 < 4 < 5)
 prints:
 ```
 True
+```
+
+### chal-accumulate-until-break — focus 001N (break-exits)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: loops
+- Assumed: 0005, 0006, 0008, 0009, 000A, 000B, 000D, 0015, 0017, 001E, 001J
+- Shapes: break-at-second, break-at-third · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+total = 0
+for x in [4, 11, 1]:
+    if x > 7:
+        break
+    total = total + x
+print(total)
+```
+prints:
+```
+4
+```
+
+### chal-alias-in-loop — focus 000H (names-share-list)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: lists
+- Assumed: 0005, 0006, 000A, 000C, 000D, 000G, 001E, 001K
+- Shapes: loop-through-alias, loop-through-original · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+a = [5]
+b = a
+for x in [27, 54]:
+    b.append(x)
+print(a)
+```
+prints:
+```
+[5, 27, 54]
+```
+
+### chal-dict-under-branch — focus 001S (dict-key-assign)
+
+- Form: `predict-state` · Role: challenge · Topic: structures
+- Assumed: 0005, 0006, 0007, 0008, 000E, 0015, 0016, 0017, 0018, 001R
+- Shapes: if-adds, else-overwrites · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+d = {"a": 1}
+n = 3
+if n > 5:
+    d["b"] = 19
+else:
+    d["a"] = 30
+```
+After it runs, `d` holds:
+```
+{'a': 30}
+```
+
+### chal-filter-build — focus 001K (loop-build-list)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: loops
+- Assumed: 0005, 0006, 0008, 000D, 000G, 0015, 0016, 0017, 001E
+- Shapes: keep-big, keep-small · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+xs = []
+for x in [3, 7, 1, 7]:
+    if x < 4:
+        xs.append(x)
+print(xs)
+```
+prints:
+```
+[3, 1]
+```
+
+### chal-grid-total — focus 0022 (nested-lists)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: lists
+- Assumed: 0005, 0006, 0008, 0009, 000A, 000B, 000D, 000E, 001E, 001J
+- Shapes: sum-grid, count-cells · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+count = 0
+for row in [[3, 6], [5, 5]]:
+    for x in row:
+        count = count + 1
+print(count)
+```
+prints:
+```
+4
+```
+
+### chal-slice-of-concat — focus 0011 (slice-half-open)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: strings
+- Assumed: 0005, 0006, 0007, 000E, 000Y
+- Shapes: slice-joined, slice-into-name · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+s = "cat" + "jam"
+print(s[2:5])
+```
+prints:
+```
+tja
+```
+
+### chal-sum-of-built-list — focus 001Z (aggregate-builtins)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: lists
+- Assumed: 0005, 0006, 000D, 000G, 001E, 001K
+- Shapes: sum-collected, len-collected, max-collected · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+xs = [5]
+for x in [5, 6]:
+    xs.append(x)
+print(len(xs))
+```
+prints:
+```
+3
+```
+
+### chal-while-grows-string — focus 001M (while-repeats-while-true)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: loops
+- Assumed: 0005, 0006, 0007, 0008, 0009, 000A, 000B, 0015, 000Y
+- Shapes: grow-suffix, grow-prefix · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+s = "drum"
+n = 3
+while n > 0:
+    s = s + "*"
+    n = n - 1
+print(s)
+```
+prints:
+```
+drum***
 ```
 
 ### compare-values — focus 0015 (compare-ops)
@@ -2126,6 +2296,22 @@ prints:
 16
 ```
 
+### grid-far-corner-hard — focus 0022 (nested-lists)
+
+- Form: `predict-exact-output` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D, 000E
+- Shapes: far-corner, whole-last-row · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+g = [[5, 29, 8], [26, 24, 15], [25, 20, 28]]
+print(g[2][1])
+```
+prints:
+```
+20
+```
+
 ### grid-lookup — focus 0022 (nested-lists)
 
 - Form: `predict-exact-output` · Role: intro · Topic: lists
@@ -2556,6 +2742,21 @@ After it runs, `a` holds:
 [3, 6, 66]
 ```
 
+### precedence-gauntlet-hard — focus 000N (op-precedence)
+
+- Form: `predict-exact-output` · Role: review · Topic: numbers
+- Assumed: 0005, 0008
+- Shapes: plus-times-minus, minus-times-plus, times-plus-times · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+print(4 + 4 * 4 - 3)
+```
+prints:
+```
+17
+```
+
 ### precedence-mix — focus 000N (op-precedence)
 
 - Form: `predict-exact-output` · Role: intro · Topic: numbers
@@ -2666,6 +2867,22 @@ print("n")
 prints:
 ```
 n
+```
+
+### range-countdown-hard — focus 001H (range-step)
+
+- Form: `predict-exact-output` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 001E, 001F, 001G
+- Shapes: countdown, named-countdown · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+xs = list(range(10, 0, -3))
+print(xs)
+```
+prints:
+```
+[10, 7, 4, 1]
 ```
 
 ### range-start — focus 001G (range-start-stop)
@@ -3373,6 +3590,28 @@ Step-table walkthrough over `n` (blanks derive from the live trace); the watched
 ```
 -1
 -1
+```
+
+### trace-while-two-names-hard — focus 001M (while-repeats-while-true)
+
+- Form: `trace-table` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 0009, 000A, 000B, 0015
+- Shapes: total-gated · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+i = 2
+total = 0
+while total < 7:
+    total = total + i
+    i = i + 3
+print(total)
+```
+Step-table walkthrough over `i`, `total` (blanks derive from the live trace); the watched names end holding:
+```
+7
+8
+7
 ```
 
 ### tuple-comma — focus 001Y (tuple-by-comma)

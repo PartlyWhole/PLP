@@ -113,7 +113,7 @@ export default [
         const w = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
         const after = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
         if (shape === "runs") return { code: `if True:\n    print("${w}")\n`, shape, variant: "plain" };
-        if (shape === "skips") return { code: `if False:\n    print("${w}")\nprint("${after}")\n`, shape, variant: "plain" };
+        if (shape === "skips") return { code: `if False:\n    print("${w}")\nprint("${after}")\n`, shape, variant: "plain", misconception: w };
         if (shape === "compare-test") {
           const a = int(rng, 2, 9), b = int(rng, 2, 9);
           const runs = a > b;
@@ -122,6 +122,7 @@ export default [
             // the after-print when the branch is skipped.
             code: runs ? `if ${a} > ${b}:\n    print("${w}")\n` : `if ${a} > ${b}:\n    print("${w}")\nprint("${after}")\n`,
             shape, variant: "plain",
+            ...(runs ? {} : { misconception: w }), // read the skipped branch anyway
             variantCard: `\`${a} > ${b}\` is ${runs ? "True, so the block runs" : "False, so the block is skipped"}.`,
           };
         }
@@ -129,6 +130,7 @@ export default [
           return {
             code: `print("${after}")\nif False:\n    print("${w}")\n`,
             shape, variant: "plain",
+            misconception: w,
             variantCard: `\`${after}\` prints first; the \`if False\` block is skipped, so \`${w}\` never prints.`,
           };
         }
@@ -138,6 +140,7 @@ export default [
         return {
           code: `print("${after}")\nif ${a} > ${b}:\n    print("${w}")\n`,
           shape, variant: "plain",
+          misconception: w,
           variantCard: `\`${after}\` prints first; \`${a} > ${b}\` is False, so \`${w}\` is skipped.`,
         };
       },
@@ -163,6 +166,9 @@ export default [
           return {
             code: `if ${a} > ${b}:\n    print("${w1}")\nelse:\n    print("${w2}")\n`,
             shape, variant: "plain",
+            // The skipped branch's word (omitted when the two independent
+            // word draws collide — a shared word designs nothing).
+            ...(w1 === w2 ? {} : { misconception: a > b ? w2 : w1 }),
             variantCard: `\`${a} > ${b}\` is ${a > b ? `True, so the \`if\` branch prints \`${w1}\`` : `False, so the \`else\` branch prints \`${w2}\``} — one branch, never both.`,
           };
         }
@@ -170,6 +176,7 @@ export default [
         return {
           code: `if ${test}:\n    print("${w1}")\nelse:\n    print("${w2}")\n`,
           shape, variant: "plain",
+          ...(w1 === w2 ? {} : { misconception: shape === "then" ? w2 : w1 }),
           variantCard: `The test is \`${test}\`, so ${shape === "then" ? `the \`if\` block runs: \`${w1}\`` : `the \`else\` block runs: \`${w2}\``} — never both.`,
         };
       },
@@ -201,6 +208,8 @@ export default [
         return {
           code: `if ${t1}:\n    print("${w1}")\nelif ${t2}:\n    print("${w2}")\nelse:\n    print("${w3}")\n`,
           shape, variant: "plain",
+          // The nearest skipped branch's word (distinct by the splice draws).
+          misconception: shape === "if-wins" ? w2 : shape === "elif-wins" ? w1 : w1,
           variantCard: `The first true test wins: ${shape === "if-wins" ? `\`${w1}\`` : shape === "elif-wins" ? `\`${w2}\`` : `neither is true, so \`${w3}\``}.`,
         };
       },
@@ -257,6 +266,7 @@ export default [
           return {
             code: `print("${after}")\nx = []\nif x:\n    print("${w}")\n`,
             shape, variant: "plain",
+            misconception: w, // "[] is a value, so the block runs"
             variantCard: `\`${after}\` prints first; \`[]\` counts as false, so the block is skipped and \`${w}\` never prints.`,
           };
         }
@@ -264,6 +274,7 @@ export default [
         return {
           code: `x = ${val}\nif x:\n    print("${w}")\nprint("${after}")\n`,
           shape, variant: "plain",
+          misconception: w, // "the branch runs" (it is skipped — x is falsy)
           variantCard: `\`${val}\` counts as false, so the block is skipped. Only \`${after}\` prints.`,
         };
       },
@@ -340,6 +351,7 @@ export default [
           return {
             code: `n = ${start}\nif n > ${t}:\n    n = n - ${d}\nelse:\n    n = n + ${d}\nprint(n)\n`,
             shape, variant: "plain",
+            misconception: String(start > t ? start + d : start - d), // the skipped branch's rebind
             variantCard: `\`${start} > ${t}\` is ${start > t ? "True, so the if branch" : "False, so the else branch"} rebinds \`n\` — it ends holding ${result}.`,
           };
         }
@@ -348,6 +360,7 @@ export default [
         return {
           code: `n = ${start}\nif n > ${t}:\n    n = n - ${d}\nprint(n)\n`,
           shape, variant: "plain",
+          misconception: String(taken ? start : start - d), // got the branch decision backwards
           variantCard: taken
             ? `\`${start} > ${t}\` is True, so the rebind runs: \`n\` ends at ${start - d}.`
             : `\`${start} > ${t}\` is False, so the rebind is SKIPPED — \`n\` still holds ${start}.`,

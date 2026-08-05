@@ -1008,12 +1008,33 @@ test.describe("PLP tutor (T-series)", () => {
       const afterRight = tally({ templateStats: { [topTemplate]: { seen: 5, right: 5 } } });
       // Mastery: 000A met + practiced cleanly → its exercises yield weight.
       const afterMastery = tally({ met: ["000A"], stats: { "000A": { seen: 6, missed: 0 } } });
+
+      // Hard siblings (R1.3): with the hard sibling's focus met + warm,
+      // clean stats, the hard material's share RISES (it is exempt from
+      // the mastery discount) while the easy templates fade under it.
+      const tallyNumbers = (opts) => {
+        const byTemplate = {};
+        for (let seed = 1; seed <= 8; seed++) {
+          const l = buildKBSession("numbers", { seed, count: 8, ...opts });
+          for (const s of l.steps) {
+            if (!s.ask) continue;
+            byTemplate[s.ask.template] = (byTemplate[s.ask.template] ?? 0) + 1;
+          }
+        }
+        return byTemplate;
+      };
+      const numBase = tallyNumbers({ stats: {} });
+      const numWarm = tallyNumbers({ met: ["000N"], stats: { "000N": { seen: 6, missed: 0 } } });
       return {
         topTemplate,
         before: base.byTemplate[topTemplate],
         after: afterRight.byTemplate[topTemplate] ?? 0,
         focusBefore: base.byFocus["000A"] ?? 0,
         focusAfter: afterMastery.byFocus["000A"] ?? 0,
+        hardBefore: numBase["precedence-gauntlet-hard"] ?? 0,
+        hardAfter: numWarm["precedence-gauntlet-hard"] ?? 0,
+        easyBefore: numBase["precedence-mix"] ?? 0,
+        easyAfter: numWarm["precedence-mix"] ?? 0,
       };
     });
     // The exact question you already got right stops dominating…
@@ -1021,6 +1042,96 @@ test.describe("PLP tutor (T-series)", () => {
     // …and a concept you've mastered recedes (but never vanishes by fiat —
     // this is a weight, not a gate).
     expect(r.focusAfter).toBeLessThan(r.focusBefore);
+    // Hard sibling: unavailable cold, present once its focus is met, and its
+    // share rises while the easy intro template fades under mastery.
+    expect(r.hardBefore).toBe(0);
+    expect(r.hardAfter).toBeGreaterThan(0);
+    expect(r.easyAfter).toBeLessThan(r.easyBefore);
+  });
+
+  test("misconception follow-up slot: a recorded confusion reserves a deterministic slot; guards hold; contrast preferred (R1.1)", async ({ page }) => {
+    await setup(page);
+    const r = await page.evaluate(async () => {
+      const { buildKBSession } = await import("./app/kb-session.mjs");
+      // (a) A recorded 000H confusion deals a follow-up ask on 000H, on
+      // every seed, deterministically, with the repeat guards intact.
+      const out = { followUps: [], repeats: 0, nondet: false, contrastPick: null, cleanHasFollowUp: false };
+      for (const seed of [1, 5, 9, 23]) {
+        const opts = { seed, count: 8, misconceptions: { "000H": { hits: 2, at: 1 } } };
+        const l = buildKBSession("lists", opts);
+        const asks = l.steps.filter((s) => s.ask).map((s) => s.ask);
+        const fu = asks.filter((a) => a.followUp);
+        out.followUps.push(fu.map((a) => a.concept).join(","));
+        for (let i = 1; i < asks.length; i++) {
+          if (asks[i].concept === asks[i - 1].concept) out.repeats += 1;
+          if (`${asks[i].form}|${asks[i].shape}` === `${asks[i - 1].form}|${asks[i - 1].shape}`) out.repeats += 1;
+        }
+        if (JSON.stringify(l) !== JSON.stringify(buildKBSession("lists", opts))) out.nondet = true;
+      }
+      // (b) A confusion whose tag has a dedicated CONTRAST exercise deals it.
+      const c = buildKBSession("lists", { seed: 2, count: 8, misconceptions: { "0021": 3 } });
+      out.contrastPick = c.steps.filter((s) => s.ask && s.ask.followUp).map((s) => s.ask.template).join(",");
+      // (c) No recorded misconceptions ⇒ no follow-up flag anywhere.
+      const clean = buildKBSession("lists", { seed: 2, count: 8 });
+      out.cleanHasFollowUp = clean.steps.some((s) => s.ask?.followUp);
+      return out;
+    });
+    for (const fu of r.followUps) expect(fu).toContain("000H");
+    expect(r.repeats).toBe(0);
+    expect(r.nondet).toBe(false);
+    expect(r.contrastPick).toBe("plus-eq-contrast"); // contrast: "0021" wins the narrowed pool
+    expect(r.cleanHasFollowUp).toBe(false);
+  });
+
+  test("misconception loop end-to-end: the designed wrong answer bumps plp.kb.mc.v1; the next compile deals the follow-up; resolving it settles the entry (R1.1)", async ({ page }) => {
+    await setup(page);
+    // Inline drill lesson (pool-proof): the classic alias trap with its
+    // designed misconception riding on the ask, exactly as the compiler
+    // stamps it (alias-trap emits the unmutated list).
+    await page.evaluate(() => {
+      localStorage.removeItem("plp.kb.mc.v1");
+      localStorage.removeItem("plp.kb.v1");
+      const lesson = {
+        id: "mc-inline",
+        title: "Misconception",
+        steps: [
+          { loadCode: "a = [1, 8]\nb = a\nb.append(71)\nprint(a)\n" },
+          { ask: { kind: "predict-output", singleLine: true, concept: "000H", template: "alias-trap", misconception: "[1, 8]", prompt: "What does this print?" } },
+          { pause: true },
+          { loadCode: "a = [2, 9]\nb = a\nb.append(50)\nprint(a)\n" },
+          { ask: { kind: "predict-output", singleLine: true, concept: "000H", template: "alias-trap", followUp: true, prompt: "What does this print?" } },
+          { pause: true },
+          { done: "done" },
+        ],
+      };
+      localStorage.setItem("plp.tutor.v1", JSON.stringify({
+        lessonId: lesson.id, drillLesson: lesson, resumeIndex: 0, cards: [],
+      }));
+      location.reload();
+    });
+    await page.waitForFunction(() => Boolean(window.plp?.tutor));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    // Lock EXACTLY the designed wrong answer → wrong AND matched.
+    await page.evaluate(() => window.plp.tutor.lockPrediction("[1, 8]"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 30_000 });
+    let mc = await page.evaluate(() => window.plp.tutor.mcStats());
+    expect(mc["000H"]?.hits).toBe(1);
+    // The next compile (fed the store, as both call sites are) reserves the
+    // follow-up slot for 000H.
+    const dealt = await page.evaluate(async () => {
+      const { buildKBSession } = await import("./app/kb-session.mjs");
+      const l = buildKBSession("lists", { seed: 7, count: 8, misconceptions: window.plp.tutor.mcStats() });
+      return l.steps.filter((s) => s.ask && s.ask.followUp).map((s) => s.ask.concept);
+    });
+    expect(dealt).toContain("000H");
+    // Answering the follow-up (right this time) settles the entry.
+    await page.evaluate(() => window.plp.tutor.continue());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    await page.evaluate(() => window.plp.tutor.lockPrediction("[2, 9, 50]"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 30_000 });
+    mc = await page.evaluate(() => window.plp.tutor.mcStats());
+    expect(mc["000H"]).toBeUndefined();
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
   test("a correct answer holds the card: verdict + reveal stay up until Continue (Enter works)", async ({ page }) => {

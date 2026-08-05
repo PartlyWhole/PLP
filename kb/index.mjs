@@ -26,6 +26,7 @@ import logicExercises from "./exercises/logic.mjs";
 import loopExercises from "./exercises/loops.mjs";
 import structureExercises from "./exercises/structures.mjs";
 import formExercises from "./exercises/forms.mjs";
+import challengeExercises from "./exercises/challenges.mjs";
 import { footprint } from "./analyzer/footprint.mjs";
 
 const TAG_RE = /^[0-9A-HJKMNP-TV-Z]{4}$/; // Crockford base-32: no I L O U
@@ -61,7 +62,7 @@ export function loadKB() {
 
   const structural = new Set([...concepts.values()].filter((c) => c.kind === "structural").map((c) => c.tag));
 
-  const exercises = [...stateExercises, ...numberExercises, ...listExercises, ...stringExercises, ...logicExercises, ...loopExercises, ...structureExercises, ...formExercises];
+  const exercises = [...stateExercises, ...numberExercises, ...listExercises, ...stringExercises, ...logicExercises, ...loopExercises, ...structureExercises, ...formExercises, ...challengeExercises];
   const exIds = new Set();
   for (const ex of exercises) {
     if (exIds.has(ex.id)) throw new Error(`kb: duplicate exercise id ${ex.id}`);
@@ -71,6 +72,13 @@ export function loadKB() {
     for (const t of ex.assumed) {
       if (!concepts.has(t)) throw new Error(`kb: exercise ${ex.id} assumes unknown ${t}`);
       if (structural.has(t)) throw new Error(`kb: exercise ${ex.id} lists structural ${t} in assumed (structural tags are always permitted, never listed — design §2.8)`);
+    }
+    // difficulty: "hard" marks a sibling that is availability-gated on
+    // met(focus) at selection time (expansion ladder R1.3). Only reviews and
+    // challenges may carry it — intros must stay honestly easy (E11).
+    if (ex.difficulty !== undefined) {
+      if (ex.difficulty !== "hard") throw new Error(`kb: exercise ${ex.id} has invalid difficulty ${JSON.stringify(ex.difficulty)}`);
+      if (!["review", "challenge"].includes(ex.role)) throw new Error(`kb: exercise ${ex.id} is difficulty "hard" on role ${ex.role} (hard is review/challenge only)`);
     }
   }
 
@@ -89,6 +97,33 @@ export function loadKB() {
     return out;
   }
 
+  // Challenge validation (expansion ladder R1.2 — the DECIDED contract): a
+  // challenge introduces ZERO new things. `braids` names met material from
+  // OUTSIDE the focus lineage that the program weaves in; legality is the
+  // RELAXED closure assumed ⊆ ancestors(focus) ∪ braids ∪ ⋃ancestors(braid),
+  // scoped to this role only, compensated by the dynamic gate in offerable()
+  // (dealt only when focus AND every assumed tag are met).
+  for (const ex of exercises) {
+    if (ex.role !== "challenge") {
+      if (ex.braids !== undefined) throw new Error(`kb: exercise ${ex.id} has braids on role ${ex.role} (braids are challenge-only)`);
+      continue;
+    }
+    if (!Array.isArray(ex.braids) || !ex.braids.length) throw new Error(`kb: challenge ${ex.id} needs a non-empty braids list`);
+    const focusLineage = new Set([ex.focus, ...ancestors(ex.focus)]);
+    const closure = new Set(ancestors(ex.focus));
+    for (const b of ex.braids) {
+      if (!concepts.has(b)) throw new Error(`kb: challenge ${ex.id} braids unknown ${b}`);
+      if (structural.has(b)) throw new Error(`kb: challenge ${ex.id} braids structural ${b}`);
+      if (!ex.assumed.includes(b)) throw new Error(`kb: challenge ${ex.id} braid ${b} missing from assumed`);
+      if (focusLineage.has(b)) throw new Error(`kb: challenge ${ex.id} braid ${b} is in the focus lineage of ${ex.focus} (a braid must come from outside it)`);
+      closure.add(b);
+      for (const a of ancestors(b)) closure.add(a);
+    }
+    for (const t of ex.assumed) {
+      if (!closure.has(t)) throw new Error(`kb: challenge ${ex.id} assumes ${t} outside ancestors(focus) ∪ braids ∪ ancestors(braids)`);
+    }
+  }
+
   // met is the set of non-structural tags the student has answered
   // correctly at least once; structural tags are vacuously met (§2.8).
   const isMet = (met, tag) => structural.has(tag) || met.has(tag);
@@ -105,6 +140,8 @@ export function loadKB() {
 
   // Offerable (§2.8 dynamic contract): intros whose focus is on the
   // frontier, plus reviews of met concepts — always with assumed ⊆ met.
+  // Challenges (R1.2) are the strictest tier: focus met AND every assumed
+  // tag met — the dynamic gate that compensates the relaxed static closure.
   function offerable(met) {
     const front = frontier(met);
     return exercises.filter((ex) => {

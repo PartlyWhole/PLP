@@ -111,6 +111,7 @@ export default [
     focus: "000R", // mod-remainder — contrasted against // (its parent)
     assumed: ["0005", "0008", "000Q"],
     contrast: "000Q",
+    misconceptionOf: "000Q", // answering A's quotient = confusing % with //
     role: "review",
     form: "spot-the-difference",
     generator: {
@@ -259,6 +260,7 @@ export default [
     focus: "0023", // plus-eq-mutates-list — taught by contrasting += against + [x]
     assumed: ["0005", "0006", "000A", "000C", "000D", "000G", "000H", "0021"],
     contrast: "0021", // list-concat-new — an ancestor of the focus, in assumed (§2.8)
+    misconceptionOf: "0021", // answering A's output = thinking + [x] mutates like +=
     role: "review",
     form: "spot-the-difference",
     generator: {
@@ -300,6 +302,7 @@ export default [
           code: `a = [${items.join(", ")}]\nb = a\nb.append(${v})\n`,
           probeName: "a",
           shape: "append-through-alias", variant: "plain",
+          misconception: `[${items.join(", ")}]`, // the unmutated list ("b = a copied it")
           variantCard: `\`b = a\` did not copy the list — \`a\` and \`b\` are two names for `
             + `ONE list. Appending ${v} through \`b\` changed it, so \`a\` now holds `
             + `[${[...items, v].join(", ")}].`,
@@ -504,6 +507,7 @@ export default [
     focus: "001C", // and-or-return-operand — or hands back an operand, not True
     assumed: ["0005", "0016", "001A", "001B"],
     contrast: "001A", // bool-ops — parent of the focus
+    misconceptionOf: "001A", // answering A's bool = thinking or always yields True/False
     role: "review",
     form: "spot-the-difference",
     generator: {
@@ -640,6 +644,8 @@ export default [
           code: `a = [${items.join(", ")}]\nb = a[:]\nb.append(${v})\n`,
           probeName,
           shape, variant: "plain",
+          // The OTHER list's contents — aliasing/copying read backwards.
+          misconception: `[${(shape === "probe-original" ? [...items, v] : items).join(", ")}]`,
           variantCard: `\`a[:]\` made a real copy, so the append changed only \`b\`. `
             + `\`${probeName}\` holds [${held.join(", ")}].`,
         };
@@ -667,6 +673,7 @@ export default [
           code: `d = {"${k1}": ${v1}}\nd["${k2}"] = ${v2}\nd["${k1}"] = ${v3}\n`,
           probeName: "d",
           shape: "add-then-overwrite", variant: "plain",
+          misconception: `{'${k1}': ${v1}, '${k2}': ${v2}}`, // missed the overwrite
           variantCard: `\`"${k2}"\` is new, so it is added (${v2}); then \`"${k1}"\` is overwritten from ${v1} `
             + `to ${v3}. \`d\` ends holding {'${k1}': ${v3}, '${k2}': ${v2}}.`,
         };
@@ -693,6 +700,7 @@ export default [
           code: `a = [${p}, ${q}]\nb = a\nb += [${x}]\n`,
           probeName: "a",
           shape: "aug-probe-original", variant: "plain",
+          misconception: `[${p}, ${q}]`, // "+= rebound b to a new list; a untouched"
           variantCard: `\`b += [${x}]\` changes the ONE shared list in place, so \`a\` shows it too: `
             + `[${p}, ${q}, ${x}]. (\`b = b + [${x}]\` would have left \`a\` alone.)`,
         };
@@ -720,6 +728,7 @@ export default [
           code: `${nm} = [${p}, ${q}]\n${nm}.append(${v})\n${nm}.append(${w})\n`,
           probeName: nm,
           shape: "two-appends-probe", variant: "plain",
+          misconception: `[${p}, ${q}]`, // "append builds a new list; the name keeps the old one"
           variantCard: `Each append adds one item at the end, in order — \`${nm}\` ends [${p}, ${q}, ${v}, ${w}].`,
         };
       },
@@ -749,6 +758,7 @@ export default [
           code: `a = ${show(g)}\nb = a[:]\nb[${row}].append(${v})\n`,
           probeName: "a",
           shape: "copy-mutate-inner-probe", variant: "plain",
+          misconception: show(g), // "the copy is fully independent"
           variantCard: `\`a[:]\` copied only the OUTER list — \`a[${row}]\` and \`b[${row}]\` are one shared `
             + `inner list. Appending ${v} through \`b[${row}]\` changes it, so \`a\` becomes ${show(after)}.`,
         };

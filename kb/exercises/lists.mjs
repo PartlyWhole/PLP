@@ -151,6 +151,7 @@ export default [
         return {
           code: `a = [${items.join(", ")}]\nb = a\n${via}.append(${v})\nprint(${read})\n`,
           shape, variant: "plain",
+          misconception: `[${items.join(", ")}]`, // "b = a copied it, so the read name is untouched"
           variantCard: `\`b = a\` did not copy the list — \`a\` and \`b\` are two `
             + `names for ONE list. Appending ${v} through \`${via}\` changed that `
             + `one list, so \`${read}\` shows it too: [${[...items, v].join(", ")}].`,
@@ -188,6 +189,8 @@ export default [
         return {
           code: `a = [${items.join(", ")}]\nb = a + [${v}]\nprint(${read})\n`,
           shape, variant: "plain",
+          // print-original's designed wrong: "the + changed a too".
+          ...(shape === "print-original" ? { misconception: `[${[...items, v].join(", ")}]` } : {}),
           variantCard: `\`a + [${v}]\` built a brand-new list for \`b\`; \`a\` was `
             + `not touched. So \`${read}\` holds [${result.join(", ")}].`,
         };
@@ -212,6 +215,7 @@ export default [
         return {
           code: `a = [${p}, ${q}]\nb = a\nb += [${x}]\nprint(a)\n`,
           shape: "aug-then-print-original", variant: "aug",
+          misconception: `[${p}, ${q}]`, // "+= built b a new list, a is untouched"
           variantCard: `\`b += [${x}]\` does NOT build a new list — it changes the `
             + `list \`b\` already names. That list is the one \`a\` names too, so `
             + `\`a\` shows the change: [${p}, ${q}, ${x}]. (\`b = b + [${x}]\` `
@@ -265,6 +269,10 @@ export default [
         return {
           code: `${name} = [${base.join(", ")}]\n${name}.${method}([${add.join(", ")}])\nprint(${name})\n`,
           shape, variant: method,
+          // The other method's result — the exact confusion this pair teaches.
+          misconception: shape === "append-list"
+            ? `[${[...base, ...add].join(", ")}]`
+            : `[${base.join(", ")}, [${add.join(", ")}]]`,
           variantCard: shape === "append-list"
             ? `\`append([${add.join(", ")}])\` adds ONE item — the whole list — so it nests: [${base.join(", ")}, [${add.join(", ")}]].`
             : `\`extend([${add.join(", ")}])\` adds each item separately: [${[...base, ...add].join(", ")}].`,
@@ -319,6 +327,7 @@ export default [
         return {
           code: `a = [${items.join(", ")}]\nb = a[:]\nb.append(${v})\nprint(a)\n`,
           shape: "copy-then-mutate", variant: "plain",
+          misconception: `[${[...items, v].join(", ")}]`, // "b is just another name for a"
           variantCard: `\`a[:]\` copied the list, so \`b\` is separate. Appending ${v} to \`b\` `
             + `leaves \`a\` as [${items.join(", ")}].`,
         };
@@ -348,9 +357,81 @@ export default [
         return {
           code: `a = ${show(g)}\nb = a[:]\n${via}[${row}].append(${x})\nprint(${read})\n`,
           shape, variant: "plain",
+          misconception: show(g), // "the copy is fully independent"
           variantCard: `\`a[:]\` copied only the OUTER list — \`a[${row}]\` and \`b[${row}]\` are `
             + `one shared inner list. Appending ${x} through \`${via}\` changed it, so `
             + `\`${read}\` shows ${show(after)}.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Hard sibling (R1.3): a three-name alias chain — availability-gated on
+    // met(000H) by selection, so it deals only after the two-name trap lands.
+    id: "alias-chain-hard",
+    topic: "lists",
+    focus: "000H", // names-share-list
+    assumed: ["0005", "0006", "000A", "000C", "000D", "000G"],
+    role: "review",
+    difficulty: "hard",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["chain-append-read-middle"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const items = [int(rng, 1, 5), int(rng, 6, 9)];
+        const v = int(rng, 10, 99);
+        return {
+          code: `a = [${items.join(", ")}]\nb = a\nc = b\nc.append(${v})\nprint(b)\n`,
+          shape: "chain-append-read-middle", variant: "plain",
+          misconception: `[${items.join(", ")}]`, // "b was copied before c changed anything"
+          variantCard: `\`b = a\` and \`c = b\` never copied — all three names hold ONE list. `
+            + `Appending ${v} through \`c\` changed it, so \`b\` shows [${[...items, v].join(", ")}] too.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Hard sibling (R1.3): a 3×3 grid read far from the origin — the row/
+    // column discipline with no [0]/[1]-only shortcut. No arithmetic here:
+    // arith-on-ints is not an ancestor of nested-lists.
+    id: "grid-far-corner-hard",
+    topic: "lists",
+    focus: "0022", // nested-lists
+    assumed: ["0005", "0006", "000D", "000E"],
+    role: "review",
+    difficulty: "hard",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["far-corner", "whole-last-row"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["far-corner", "whole-last-row"]);
+        // 9 distinct cells so every (row, col) confusion reads a DIFFERENT
+        // number — the transposed read can never accidentally match.
+        const cells = [];
+        while (cells.length < 9) { const v = int(rng, 1, 30); if (!cells.includes(v)) cells.push(v); }
+        const g = [cells.slice(0, 3), cells.slice(3, 6), cells.slice(6, 9)];
+        const lit = `[[${g[0].join(", ")}], [${g[1].join(", ")}], [${g[2].join(", ")}]]`;
+        if (shape === "whole-last-row") {
+          return {
+            code: `g = ${lit}\nprint(g[2])\n`,
+            shape, variant: "plain",
+            misconception: String(g[2][2]), // read one cell instead of the row
+            variantCard: `One subscript picks a WHOLE row: \`g[2]\` is the third row, `
+              + `[${g[2].join(", ")}] — brackets and all, not a single number.`,
+          };
+        }
+        return {
+          code: `g = ${lit}\nprint(g[2][1])\n`,
+          shape, variant: "plain",
+          misconception: String(g[1][2]), // swapped row and column
+          variantCard: `\`g[2][1]\` is row 2 (the THIRD row), then position 1 — that's ${g[2][1]}. `
+            + `Swapping the subscripts would read ${g[1][2]} instead; row always comes first.`,
         };
       },
     },
@@ -500,6 +581,7 @@ export default [
           code,
           probeNames: ["a", "b"],
           shape, variant: "plain",
+          misconception: `[${items.join(", ")}]`, // the un-appended list ("the other name kept the old one")
           variantCard: "`b = a` makes two names for ONE list — so the append step changes both columns at once. That shared row is aliasing.",
         };
       },

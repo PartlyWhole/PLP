@@ -25,7 +25,7 @@
 // visible Trace, and grading compares against what the engine actually
 // printed. The run IS the reveal.
 
-import { generateQuestion, questionGenerators } from "./questions.mjs";
+import { generateQuestion, questionGenerators, normalizeAnswer } from "./questions.mjs";
 import { renderQuestionBody, renderTraceTable, createAnswerInput, appendExpected } from "./question-ui.mjs";
 import { buildKBSession, kbTopics, migrateStats, spliceBlank, lintLessonConcepts, frontierTags, drillTopicFor, topicProgress, conceptTopics } from "./kb-session.mjs";
 import { summarizeRound } from "./progress.mjs";
@@ -174,6 +174,33 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     s.seen += 1;
     if (!ok) s.missed += 1;
     try { localStorage.setItem(KB_STATS_KEY, JSON.stringify(stats)); } catch { /* ephemeral */ }
+  }
+
+  // ---- misconception map (expansion ladder R1.1) -------------------------
+  // tag → {hits, at}: recorded when a WRONG answer matches the exercise's
+  // designed misconception for that instance (same normalization as
+  // grading). The compiler reserves a follow-up slot for the most-hit tag;
+  // a resolved follow-up ask (any outcome) decrements it back down.
+  const KB_MC_KEY = "plp.kb.mc.v1";
+  function loadMcStore() {
+    try { return JSON.parse(localStorage.getItem(KB_MC_KEY)) ?? {}; } catch { return {}; }
+  }
+  function saveMcStore(mc) {
+    try { localStorage.setItem(KB_MC_KEY, JSON.stringify(mc)); } catch { /* ephemeral */ }
+  }
+  function bumpMisconception(tag) {
+    const mc = loadMcStore();
+    const e = mc[tag] ??= { hits: 0, at: 0 };
+    e.hits += 1;
+    e.at = Date.now();
+    saveMcStore(mc);
+  }
+  function settleFollowUp(tag) {
+    const mc = loadMcStore();
+    if (!mc[tag]) return;
+    mc[tag].hits -= 1;
+    if (mc[tag].hits <= 0) delete mc[tag];
+    saveMcStore(mc);
   }
 
   // ---- met map (lesson-kb-binding §4–§5) ---------------------------------
@@ -514,10 +541,19 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
   }
 
   // ---- asks ---------------------------------------------------------------
-  function resolveAsk(card, { prompt, ok, verdict, answerText, lastAnswer, kind, template, concept, review }) {
+  function resolveAsk(card, { prompt, ok, verdict, answerText, lastAnswer, kind, template, concept, review, misconception, misconceptionOf, followUp }) {
     card.freeze();
     card.setNote("");
     card.verdict(ok, verdict);
+    // Misconception match (R1.1): a WRONG answer equal (under the grading
+    // normalization) to the instance's designed wrong answer is evidence of
+    // that specific confusion — record it against the tag it belongs to.
+    // A resolved follow-up ask settles its tag's entry either way.
+    const mcTag = misconceptionOf ?? concept;
+    const matchedMc = lastAnswer === "wrong" && misconception != null && answerText != null
+      && normalizeAnswer(answerText) === normalizeAnswer(misconception);
+    if (matchedMc && mcTag) bumpMisconception(mcTag);
+    if (followUp && mcTag) settleFollowUp(mcTag);
     // `review` is the reviewable snapshot (program, kind, opts, expected):
     // enough to rebuild this question later from the store alone — the dot
     // bar's "go back to it" and the retry flow both feed on it.
@@ -541,7 +577,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       }
       ui.setScore(s);
     }
-    events.emit("quiz-graded", { kind, correct: ok, template, concept });
+    events.emit("quiz-graded", { kind, correct: ok, template, concept, misconception: matchedMc });
     resume();
   }
 
@@ -692,6 +728,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         resolveAsk(card, {
           prompt: ask.prompt, ok: false, verdict: "couldn't grade this run",
           answerText: text, lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: ask.kind,
+        misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
         });
         return;
       }
@@ -731,6 +768,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         answerText: text,
         lastAnswer: result.correct ? "correct" : "wrong",
         template: ask.template, concept: ask.concept, kind: ask.kind,
+        misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
         review: {
           kind: ask.kind, form: ask.form, opts: ask.opts, code: ranCode,
           expectedText: result.expected.text, teach: ask.teach, context: ask.context,
@@ -752,6 +790,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       { label: "Skip this one", onClick: () => resolveAsk(card, {
         prompt: ask.prompt, ok: false, verdict: "skipped",
         lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: ask.kind,
+        misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
         review: { kind: ask.kind, form: ask.form, opts: ask.opts, code: editor.getValue(), teach: ask.teach, context: ask.context },
       }) },
     ]);
@@ -769,6 +808,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       skip: () => resolveAsk(card, {
         prompt: ask.prompt, ok: false, verdict: "skipped",
         lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: ask.kind,
+        misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
         review: { kind: ask.kind, form: ask.form, opts: ask.opts, code: editor.getValue(), teach: ask.teach, context: ask.context },
       }),
     });
@@ -833,6 +873,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         answerText: token,
         lastAnswer: correct ? "correct" : "wrong",
         template: ask.template, concept: ask.concept, kind: "fill-one-blank",
+        misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
         review: {
           kind: "fill-one-blank", form: ask.form, code: ask.code, blank: ask.blank,
           targetOutput: ask.targetOutput,
@@ -854,6 +895,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       { label: "Skip this one", onClick: () => resolveAsk(card, {
         prompt: ask.prompt, ok: false, verdict: "skipped",
         lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: "fill-one-blank",
+        misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
         review: fillReview(),
       }) },
     ]);
@@ -865,6 +907,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       skip: () => resolveAsk(card, {
         prompt: ask.prompt, ok: false, verdict: "skipped",
         lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: "fill-one-blank",
+        misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
         review: fillReview(),
       }),
     });
@@ -949,12 +992,14 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
             : `✗ ${nRight} of ${nTotal} — check the marked steps`,
           lastAnswer: result.correct ? "correct" : "wrong",
           template: ask.template, concept: ask.concept, kind: "trace-table",
+          misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
           review: { ...baseReview(), table: { rows: q.rows, expectedById, perBlank: result.perBlank }, answersById: answers },
         });
       };
       const doSkip = () => resolveAsk(card, {
         prompt: ask.prompt ?? q.prompt, ok: false, verdict: "skipped",
         lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: "trace-table",
+          misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
         review: baseReview(),
       });
       const armActions = () => card.setActions([
@@ -1049,6 +1094,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         stats: loadDrillStats(),
         met: Object.keys(loadMetStore()),
         templateStats: loadTemplateStats(),
+        misconceptions: loadMcStore(), // reserved follow-up slot (R1.1)
         prevKey: lastAsk ? `${lastAsk.form}|${lastAsk.shape}|${lastAsk.concept}` : null,
       });
       if (built && !lintLesson(built).length) {
@@ -1118,6 +1164,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       stats: loadDrillStats(),
       met: Object.keys(loadMetStore()), // feeds the cold-start frontier bias
       templateStats: loadTemplateStats(), // retires already-solved templates
+      misconceptions: loadMcStore(), // reserved follow-up slot (R1.1)
       focus: opts.focus, // targeted practice: one concept's own exercises
     });
     if (!built) throw new Error(`unknown drill topic: ${topic}`);
@@ -1294,6 +1341,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     start,
     startDrill, // (topic?, {seed?, count?}) — deterministic under a seed
     drillStats: loadDrillStats,
+    mcStats: loadMcStore,        // tag → {hits, at} (misconception follow-ups, R1.1)
     met: loadMetStore,           // tag → {at, source} (lesson-kb-binding §5)
     frontier: () => frontierTags(Object.keys(loadMetStore())),
     progress: () => topicProgress(Object.keys(loadMetStore())),
