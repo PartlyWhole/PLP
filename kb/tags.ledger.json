@@ -82,5 +82,9 @@
   { "tag": "002H", "slug": "none-when-no-return", "kind": "edge", "parents": ["002B"], "status": "active" },
   { "tag": "002J", "slug": "mutable-arg-shared", "kind": "edge", "parents": ["0029", "000H"], "status": "active" },
   { "tag": "002K", "slug": "branch-picks-binding", "kind": "core", "parents": ["0018", "000B"], "status": "active" },
-  { "tag": "002M", "slug": "in-checks-membership", "kind": "core", "parents": ["000D", "0016"], "status": "active" }
+  { "tag": "002M", "slug": "in-checks-membership", "kind": "core", "parents": ["000D", "0016"], "status": "active" },
+  { "tag": "002N", "slug": "errors-are-information", "kind": "core", "parents": ["0006"], "status": "active" },
+  { "tag": "002P", "slug": "type-error-str-int", "kind": "edge", "parents": ["002N", "000K"], "status": "active" },
+  { "tag": "002Q", "slug": "index-error-out-of-range", "kind": "edge", "parents": ["002N", "000D", "000E"], "status": "active" },
+  { "tag": "002R", "slug": "key-error-missing", "kind": "edge", "parents": ["002N", "001R"], "status": "active" }
 ]

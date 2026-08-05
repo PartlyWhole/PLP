@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadKB } from "../kb/index.mjs";
+import { RAISE_TAG } from "../kb/analyzer/footprint.mjs";
 import { parse } from "../kb/analyzer/parse.mjs";
 import { docSamples, renderReference } from "../kb/docgen.mjs";
 import { mulberry32, fnv1a32 } from "../kb/rng.mjs";
@@ -17,6 +18,17 @@ import { mulberry32, fnv1a32 } from "../kb/rng.mjs";
 const SITE = "/PLP/";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const kb = loadKB();
+
+// The declared exception TYPE of a predict-the-error exercise ↔ the concept
+// its raise teaches. Both halves are asserted in K-5: the analyzer's raiseKind
+// must map (through RAISE_TAG) to the tag this table names for the declared
+// type, so provenance and analyzer can never drift apart silently.
+const EXPECTED_TYPE_TAG = {
+  NameError: "002N",
+  TypeError: "002P",
+  IndexError: "002Q",
+  KeyError: "002R",
+};
 
 // The invariant-suite seed family for an exercise (design §4.5).
 const seedFor = (id, k) => (fnv1a32(id) ^ k) >>> 0;
@@ -86,6 +98,14 @@ const hasCompound = (source) => parse(source).some((s) => ["if", "for", "while"]
 // predict-state's displayed program does not print the probed name, so its
 // concept becomes observable only through a read of that name, added here (a
 // plain print the analyzer understands).
+// The analyzer call for an exercise's program. Raising exercises
+// (predict-the-error, expansion ladder §R3) are analyzed with
+// { expectRaise: true }: their programs STOP on purpose, so the footprint
+// that matters is the one accumulated up to and including the raise.
+function fp(ex, src) {
+  return kb.footprint(src, ex.form === "predict-the-error" ? { expectRaise: true } : {});
+}
+
 function footprintSources(ex, prog) {
   if (ex.form === "predict-state" && prog.probeName) return [`${prog.code}print(${prog.probeName})\n`];
   if (ex.form === "spot-the-difference") return [prog.code, prog.contrastCode];
@@ -97,16 +117,28 @@ function footprintSources(ex, prog) {
   // list (the shuffle is drawn at compile time), so the canonical join is the
   // program whose footprint must stay inside the closure.
   if (ex.form === "order-the-lines") return [canonicalOrderCode(prog)];
+  // predict-the-error: the program IS the whole story (it raises); there is
+  // no probe to append — a read of a name after the crash never happens.
   return [prog.code];
 }
 
 // The canonical (solved) program of an order-the-lines sample.
 const canonicalOrderCode = (prog) => prog.lines.join("\n") + "\n";
 
+// The parser-fidelity HALF of the oracle probe, for programs that RAISE on
+// purpose (predict-the-error, expansion ladder §R3): the source is parsed with
+// ast but never executed, so the probe still runs clean and inv-8 keeps its
+// teeth. Type fidelity does not apply — a program that stops has no end state
+// (the analyzer returns finalTypes: {}) — and inv 11's real-output floor is
+// replaced by the crash-rendering floor below.
+function buildParseOnlyProbe(source) {
+  return buildOracleProbe(source, [], { execute: false });
+}
+
 // A single Pyodide program per sample that emits, in order: the Python-`ast`
 // normal form (inv 8), the program's real output (inv 11), and the runtime
 // type of each still-bound name in the analyzer's declared order (inv 9).
-function buildOracleProbe(source, names) {
+function buildOracleProbe(source, names, { execute = true } = {}) {
   const typePrints = names.map((n) => `print(type(${n}).__name__)`).join("\n");
   return `import ast
 def _op(o):
@@ -144,7 +176,7 @@ def _n(x):
 _SRC = '''${source}'''
 print('@AST@'+_n(ast.parse(_SRC)))
 print('@OUT@')
-${source}print('@TYP@')
+${execute ? source : ""}print('@TYP@')
 ${typePrints}
 `;
 }
@@ -295,8 +327,18 @@ test.describe("PLP knowledge base (K-series)", () => {
         shapesSeen.add(prog.shape);
         variantsSeen.add(prog.variant);
         for (const src of footprintSources(ex, prog)) {
-          const r = kb.footprint(src);
+          const r = fp(ex, src);
           expect(r.error, `${ex.id} seed ${k}: analyzer error ${JSON.stringify(r.error)} on:\n${src}`).toBeUndefined();
+          if (ex.form === "predict-the-error") {
+            // The raise is the exercise: the analyzer must find one, on the
+            // declared line, of the declared TYPE (via RAISE_TAG). The
+            // authored `expectedError` is provenance — it is checked here and
+            // against real execution in K-10, and used nowhere else.
+            expect(r.raises, `${ex.id} seed ${k}: no raise found in:\n${src}`).toBeTruthy();
+            expect(r.raises.line, `${ex.id} seed ${k}: raise line`).toBe(prog.expectedError.line);
+            expect(RAISE_TAG[r.raises.kind], `${ex.id} seed ${k}: raiseKind ${r.raises.kind} maps to a concept`)
+              .toBe(EXPECTED_TYPE_TAG[prog.expectedError.type]);
+          }
           const excess = r.tags.filter((t) => !closure.has(t));
           const why = excess.map((t) => JSON.stringify(r.evidence.filter((e) => e.tag === t))).join(" ");
           expect(excess, `${ex.id} seed ${k}: tags outside closure (${why}) in:\n${src}`).toEqual([]);
@@ -338,6 +380,35 @@ test.describe("PLP knowledge base (K-series)", () => {
     // silently unmapped.
     expect(kb.footprint("import os\n").error?.code).toBe("unmapped-syntax");
     expect(kb.footprint("print(x)\n").error?.code).toBe("would-raise");
+
+    // R3 detections. WITHOUT expectRaise every one of them stays an ordinary
+    // would-raise error return (the default path is byte-identical to before);
+    // WITH it, the partial footprint plus { line, kind } comes back.
+    const anchors = [
+      ['s = "cat"\nn = 3\nprint(s + n)\n', { line: 3, kind: "type-str-int" }, ["0003", "0006", "002P"]],
+      ['n = 3\ns = "cat"\nprint(n + s)\n', { line: 3, kind: "type-str-int" }, ["0003", "0006", "002P"]],
+      ["xs = [1, 2, 3]\nprint(xs[5])\n", { line: 2, kind: "index-out-of-range" }, ["0003", "0006", "000D", "000E", "002Q"]],
+      ["xs = [1, 2, 3]\nprint(xs[3])\n", { line: 2, kind: "index-out-of-range" }, ["0003", "0006", "000D", "000E", "002Q"]],
+      ['d = {"a": 1}\nprint(d["b"])\n', { line: 2, kind: "key-missing" }, ["0003", "0006", "001R", "002R"]],
+      ["print(x)\n", { line: 1, kind: "name-unbound" }, ["002N"]],
+    ];
+    for (const [src, raises, tags] of anchors) {
+      expect(kb.footprint(src).error?.code, `default path on:\n${src}`).toBe("would-raise");
+      expect(kb.footprint(src).tags, `default path returns no tags on:\n${src}`).toBeUndefined();
+      const r = kb.footprint(src, { expectRaise: true });
+      expect(r.error, `expectRaise analyzer error on:\n${src}`).toBeUndefined();
+      expect(r.raises, `expectRaise raise on:\n${src}`).toEqual(raises);
+      expect(r.tags, `expectRaise footprint on:\n${src}`).toEqual([...tags].sort());
+      expect(r.finalTypes, `a raising program has no end state:\n${src}`).toEqual({});
+    }
+    // A statically-known index that IS in range, and a key that IS present,
+    // stay ordinary completing programs (the detections never over-fire).
+    expect(kb.footprint("xs = [1, 2, 3]\nprint(xs[2])\n").error).toBeUndefined();
+    expect(kb.footprint('d = {"a": 1}\nprint(d["a"])\n').error).toBeUndefined();
+    // str * int is the legal repeat, not a mix.
+    expect(kb.footprint('print("ab" * 3)\n').error).toBeUndefined();
+    // A key stored after the literal is a known key from then on.
+    expect(kb.footprint('d = {"a": 1}\nd["b"] = 2\nprint(d["b"])\n').error).toBeUndefined();
   });
 
   test("K-6: generators and selection are deterministic (inv 16)", () => {
@@ -467,6 +538,13 @@ test.describe("PLP knowledge base (K-series)", () => {
             { code: join(swapped), form: "predict-output", name: null, target: null, mustMissTarget: prog.targetOutput },
           ];
         }
+        // predict-the-error: the program must REALLY raise — with the declared
+        // exception type on the declared line (expansion ladder §R3). The
+        // "one printed line" law becomes "at most one line before the crash":
+        // the crash is the answer, so anything more is noise.
+        if (ex.form === "predict-the-error") {
+          return [{ code: prog.code, form: "predict-the-error", name: null, target: null, raise: prog.expectedError }];
+        }
         // fill-one-blank's `code` is the FULL correct program; grade it as
         // predict-output and verify its real output equals the target.
         return [{
@@ -485,6 +563,28 @@ test.describe("PLP knowledge base (K-series)", () => {
         for (const { code, form, name, names, maxBlanks, target } of progs) {
           window.plp.editor.setValue(code);
           const summary = await window.plp.trace();
+          if (form === "predict-the-error") {
+            // The exception comes off the trace stream's terminal record —
+            // exactly the surface the tutor grades against (actions.lastException).
+            const recs = window.plp.records();
+            const terminal = recs.at(-1);
+            const exc = terminal?.kind === "terminal" ? terminal.exception ?? null : null;
+            // The engine splits the exception across records: type_name on the
+            // terminal, the LOCATION on the last "exception" step. This is the
+            // same derivation main.mjs's actions.lastException performs.
+            const excStep = [...recs].reverse().find((r) => r.kind === "step" && r.event === "exception" && r.location);
+            const printed = recs
+              .filter((r) => r.kind === "step" && r.output?.stdout_delta)
+              .map((r) => r.output.stdout_delta).join("");
+            out.push({
+              reason: summary?.terminal_reason,
+              excType: exc?.type_name ?? null,
+              excLine: exc?.location?.line ?? excStep?.location?.line ?? null,
+              printedLines: printed.replace(/\n$/, "") === "" ? 0 : printed.replace(/\n$/, "").split("\n").length,
+              errors: window.plp.checkErrors(),
+            });
+            continue;
+          }
           const ctx = {
             source: code,
             steps: window.plp.memory.steps(),
@@ -539,6 +639,17 @@ test.describe("PLP knowledge base (K-series)", () => {
           expect(r.errors).toEqual([]);
           return;
         }
+        if (programs[i].raise) {
+          const want = programs[i].raise;
+          expect(r.reason, `${ex.id} program ${i} must really raise`).toBe("uncaught_exception");
+          expect(r.excType, `${ex.id} program ${i}: real exception type`).toBe(want.type);
+          expect(r.excLine, `${ex.id} program ${i}: real exception line`).toBe(want.line);
+          // ≤1 line printed before the crash (the E4 law, restated for a
+          // program whose ending is the answer).
+          expect(r.printedLines, `${ex.id} program ${i}: at most one line before the crash`).toBeLessThanOrEqual(1);
+          expect(r.errors).toEqual([]);
+          return;
+        }
         expect(r.reason, `${ex.id} program ${i} must run clean`).toBe("completed");
         expect(r.gradable, `${ex.id} program ${i} must print something gradable`).toBe(true);
         // One printed line, unless the exercise is the flagged multi-line
@@ -578,8 +689,10 @@ test.describe("PLP knowledge base (K-series)", () => {
         const source = ex.form === "order-the-lines"
           ? canonicalOrderCode(ex.generator.generate(seedFor(ex.id, k)))
           : ex.generator.generate(seedFor(ex.id, k)).code;
-        const fp = kb.footprint(source);
-        expect(fp.error, `${ex.id} seed ${k}: analyzer error ${JSON.stringify(fp.error)}`).toBeUndefined();
+        const raising = ex.form === "predict-the-error";
+        const footprintResult = raising ? kb.footprint(source, { expectRaise: true }) : kb.footprint(source);
+        expect(footprintResult.error, `${ex.id} seed ${k}: analyzer error ${JSON.stringify(footprintResult.error)}`).toBeUndefined();
+        const fp = footprintResult;
         const names = Object.keys(fp.finalTypes);
         const prog = ex.generator.generate(seedFor(ex.id, k));
         // The designed misconception must differ from the graded truth. Here
@@ -596,7 +709,11 @@ test.describe("PLP knowledge base (K-series)", () => {
           types: names.map((n) => fp.finalTypes[n]),
           wrongAnswer: kb.concepts.get(ex.focus).wrongAnswer,
           misconception: misCheckable ? prog.misconception ?? null : null,
-          probe: buildOracleProbe(source, names),
+          raising,
+          // The crash rendering the reference and the reveal both use: a
+          // wrongAnswer equal to THIS would be no wrong answer at all.
+          crashRendering: raising ? `${prog.expectedError.type} (line ${prog.expectedError.line})` : null,
+          probe: raising ? buildParseOnlyProbe(source) : buildOracleProbe(source, names),
         });
       }
     }
@@ -635,7 +752,13 @@ test.describe("PLP knowledge base (K-series)", () => {
 
       // inv 11 — the focus concept's authored wrong answer is not the real
       // output (a discrimination floor: a "wrong" answer equal to the truth
-      // teaches nothing).
+      // teaches nothing). A raising exercise never runs here, so its floor is
+      // the CRASH rendering instead of printed output.
+      if (it.raising) {
+        expect(it.wrongAnswer.trim(), `${it.id} seed ${it.seed}: wrongAnswer must differ from the crash rendering`)
+          .not.toBe(it.crashRendering);
+        continue;
+      }
       expect(it.wrongAnswer.trim(), `${it.id} seed ${it.seed}: wrongAnswer must differ from real output`)
         .not.toBe(realOut.trim());
 
@@ -662,7 +785,7 @@ test.describe("PLP knowledge base (K-series)", () => {
       let salient = false;
       for (let k = 0; k < 40 && !salient; k++) {
         const prog = ex.generator.generate(seedFor(ex.id, k));
-        const tags = footprintSources(ex, prog).flatMap((src) => kb.footprint(src).tags);
+        const tags = footprintSources(ex, prog).flatMap((src) => fp(ex, src).tags ?? []);
         if (tags.includes(ex.focus)) salient = true;
       }
       if (!salient) {
@@ -688,7 +811,7 @@ test.describe("PLP knowledge base (K-series)", () => {
         let everEmitted = false;
         for (let k = 0; k < 40 && !everEmitted; k++) {
           const prog = ex.generator.generate(seedFor(ex.id, k));
-          const tags = footprintSources(ex, prog).flatMap((src) => kb.footprint(src).tags);
+          const tags = footprintSources(ex, prog).flatMap((src) => fp(ex, src).tags ?? []);
           if (tags.includes(w.tag)) everEmitted = true;
         }
         expect(everEmitted, `focus-salience waiver ${w.exerciseId}/${w.tag} is DEAD — the tag is actually emitted`).toBe(false);
@@ -842,8 +965,24 @@ test.describe("PLP knowledge base (K-series)", () => {
     const specs = docSamples(kb);
     const results = await page.evaluate(async (samples) => {
       const out = {};
-      for (const { key, run } of samples) {
+      for (const { key, run, expectError } of samples) {
         window.plp.editor.setValue(run);
+        if (expectError) {
+          // A raising sample (expansion ladder §R3) is recorded as
+          // "Type (line N)" — derived from the TRACED run's records, since an
+          // untraced run produces none. Message text is deliberately never
+          // recorded: its wording drifts between CPython builds, which would
+          // break byte-identity with the system-python3 writer.
+          const summary = await window.plp.trace();
+          const recs = window.plp.records();
+          const terminal = recs.at(-1);
+          const step = [...recs].reverse().find((r) => r.kind === "step" && r.event === "exception" && r.location);
+          out[key] = {
+            output: `${terminal?.exception?.type_name} (line ${step?.location?.line})`,
+            reason: summary?.terminal_reason === "uncaught_exception" ? "completed" : summary?.terminal_reason,
+          };
+          continue;
+        }
         const summary = await window.plp.run(); // untraced: output flushes on completion
         out[key] = { output: window.plp.console.text(), reason: summary?.terminal_reason };
       }
@@ -852,7 +991,7 @@ test.describe("PLP knowledge base (K-series)", () => {
 
     const outputs = {};
     for (const { key, run } of specs) {
-      expect(results[key]?.reason, `sample ${key} must run clean:\n${run}`).toBe("completed");
+      expect(results[key]?.reason, `sample ${key} must run clean (or raise, for the §R3 forms):\n${run}`).toBe("completed");
       outputs[key] = results[key].output;
     }
 

@@ -329,6 +329,19 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met 
         items: shuffled, lines: prog.lines, targetOutput: prog.targetOutput,
         prompt: `Put the lines in order so it prints \`${prog.targetOutput}\`.`,
       };
+    } else if (ex.form === "predict-the-error") {
+      // predict-the-error (expansion ladder §R3): the program STOPS, and the
+      // learner says where and what kind. The exercise's `expectedError` is
+      // provenance for the K-series only — it deliberately never rides on the
+      // ask, so nothing shown or graded can come from anywhere but the real
+      // run's terminal exception.
+      steps.push({ loadCode: prog.code });
+      ask = {
+        kind: "predict-the-error",
+        form: ex.form, shape: prog.shape,
+        concept: ex.focus, template: ex.id,
+        prompt: "This program stops with an error. Tap the line it stops on, and pick what kind.",
+      };
     } else if (ex.form === "trace-table") {
       // Walk the trace: the student fills what each watched name holds at
       // every step where it changes; the real trace is the answer key (the

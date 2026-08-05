@@ -1442,6 +1442,116 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
+  // predict-the-error (expansion ladder §R3). Fixture: a FOCUS round on 002N
+  // (errors-are-information), whose only exercise is err-name-unbound —
+  // re-derive by scanning buildKBSession("state", { seed, count: 1,
+  // focus: "002N" }) for the seed whose loadCode is the wanted shape. Seed 1
+  // deals the misspelled-name shape, which raises NameError on LINE 3.
+  async function startErrorRound(page) {
+    await page.evaluate(() => {
+      localStorage.removeItem("plp.kb.v1");
+      localStorage.removeItem("plp.kb.met.v1");
+      localStorage.removeItem("plp.kb.tmpl.v1");
+      localStorage.removeItem("plp.tutor.v1");
+    });
+    const id = await page.evaluate(() =>
+      window.plp.tutor.startDrill("state", { focus: "002N", seed: 1, count: 1 }));
+    expect(id).toBe("drill-state-002N-1");
+    return page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
+      return { ask: s.drillLesson.steps.find((x) => x.ask)?.ask, code: window.plp.editor.getValue() };
+    });
+  }
+
+  test("predict-the-error: a half-right pick grades wrong, both-right grades right and GRANTS met, against the real exception", async ({ page }) => {
+    await setup(page);
+    expect(await page.evaluate(() => window.plp.tutor.lintLesson({
+      id: "pe-lint", steps: [{ ask: { kind: "predict-the-error" } }],
+    }))).toEqual([]);
+
+    const { ask, code } = await startErrorRound(page);
+    expect(ask.kind).toBe("predict-the-error");
+    expect(ask.template).toBe("err-name-unbound");
+    // The ask carries NO authored answer: expectedError is K-series provenance.
+    expect(ask.expectedError).toBeUndefined();
+    expect(code.split("\n").filter(Boolean).length).toBe(3);
+    // The widget IS the program: numbered rows, no second uneditable copy,
+    // and all FOUR error names on every question (no meta-pattern).
+    await expect(page.locator("#practice .pr-errline")).toHaveCount(3);
+    await expect(page.locator("#practice .pr-question .pr-program")).toHaveCount(0);
+    await expect(page.locator("#practice .pr-errkind")).toHaveText(["NameError", "TypeError", "IndexError", "KeyError"]);
+    await expect(page.locator("#practice .pr-mechanics")).toContainText("tap the line it stops on");
+
+    // Half right (right kind, wrong line) is still wrong — but the verdict
+    // says which half landed, and the truth is marked on the picker.
+    await page.evaluate(() => window.plp.tutor.submit({ line: 1, type: "NameError" }));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("wrong");
+    await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("Right kind, wrong line");
+    await expect(page.locator("#practice .pr-reveal pre")).toContainText("NameError");
+    await expect(page.locator("#practice .pr-reveal pre")).toContainText("line 3");
+    await expect(page.locator("#practice .pr-errline.truth")).toHaveCount(1);
+    expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "002N": { seen: 1, missed: 1 } });
+    expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+
+    // Both right: correct — and this form DOES grant met (binding §4).
+    await startErrorRound(page);
+    await page.evaluate(() => window.plp.tutor.submit({ line: 3, type: "NameError" }));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
+    await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("Right line, right kind");
+    expect(Object.keys(await page.evaluate(() => window.plp.tutor.met()))).toEqual(["002N"]);
+    expect((await page.evaluate(() => window.plp.tutor.met()))["002N"].source).toBe("drill");
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("predict-the-error review + retry: the recorded pick and the truth come back, the retry re-runs and keeps the first attempt", async ({ page }) => {
+    await setup(page);
+    await startErrorRound(page);
+    await page.evaluate(() => window.plp.tutor.submit({ line: 1, type: "KeyError" }));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
+    const liveCode = await page.evaluate(() => window.plp.editor.getValue());
+
+    const rec = await page.evaluate(() =>
+      window.plp.tutor.feed().findLast((c) => c.type === "question-frozen"));
+    expect(rec.review.kind).toBe("predict-the-error");
+    expect(rec.review.picked).toEqual({ line: 1, type: "KeyError" });
+    expect(rec.review.actual.type).toBe("NameError");
+    expect(rec.review.actual.line).toBe(3);
+    expect(rec.answerText).toBe("line 1 · KeyError");
+
+    await page.evaluate(() => window.plp.tutor.review(0));
+    await expect(page.locator("#practice .pr-review .pr-errreview .pr-errline")).toHaveCount(3);
+    await expect(page.locator("#practice .pr-review .pr-errreview .pr-errline.bad")).toHaveCount(1);
+    await expect(page.locator("#practice .pr-review .pr-errreview .pr-errline.truth")).toHaveCount(1);
+    await expect(page.locator("#practice .pr-review .pr-errreview .hint")).toContainText("it raised NameError");
+    await expect(page.locator("#practice .pr-review .pr-retry.pr-retry-error")).toHaveCount(1);
+
+    // Starting the retry swaps the marked answer for a live picker.
+    await page.locator("#practice .pr-retry-error button.primary", { hasText: "Try it again" }).click();
+    await expect(page.locator("#practice .pr-review .pr-errkind")).toHaveCount(4);
+    await page.locator("#practice .pr-retry-cancel").click();
+    await expect(page.locator("#practice .pr-review .pr-errreview")).toBeVisible();
+
+    // A correct retry re-runs for real and decorates the record only.
+    const res = await page.evaluate(() => window.plp.tutor.retry(0, { line: 3, type: "NameError" }));
+    expect(res.ok).toBe(true);
+    expect(res.expectedText).toContain("line 3");
+    const after = await page.evaluate(() => ({
+      rec: (() => { const r = window.plp.tutor.feed().find((c) => c.type === "question-frozen"); return { ok: r.ok, retry: r.retry }; })(),
+      stats: window.plp.tutor.drillStats(),
+      met: window.plp.tutor.met(),
+      editor: window.plp.editor.getValue(),
+    }));
+    expect(after.rec).toEqual({ ok: false, retry: { ok: true, tries: 1 } });
+    expect(after.stats).toEqual({ "002N": { seen: 1, missed: 1 } });
+    expect(after.met).toEqual({}); // a retry never grants
+    expect(after.editor).toBe(liveCode);
+    await page.evaluate(() => window.plp.tutor.closeReview());
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
   test("order-the-lines review + retry: the recorded arrangement comes back, the retry re-runs for real and keeps the first attempt", async ({ page }) => {
     await setup(page);
     const ask = await startOrderRound(page);

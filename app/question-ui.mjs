@@ -212,6 +212,90 @@ export function renderOrderLines(body, q) {
   };
 }
 
+// The FIXED error palette (expansion ladder §R3). All four names are shown on
+// every question, from day one — a palette that shrank to the plausible ones
+// would turn "always the only TypeError-ish option" into a meta-pattern (E6).
+export const ERROR_NAMES = ["NameError", "TypeError", "IndexError", "KeyError"];
+
+// The predict-the-error renderer: one button per program line (numbered, with
+// the line's text) plus the four-name palette. Both are single-choice; the
+// tutor's lock reads collect() → { line, type } (either may be null until the
+// learner has picked). Program text is set with textContent (invariant 8).
+export function renderErrorPicker(body, q) {
+  const lines = String(q.code ?? "").replace(/\n$/, "").split("\n");
+  let pickedLine = null;
+  let pickedType = null;
+
+  const linesEl = document.createElement("div");
+  linesEl.className = "quiz-errlines pr-errlines";
+  const lineBtns = lines.map((text, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pr-errline";
+    btn.dataset.line = String(i + 1);
+    const num = document.createElement("span");
+    num.className = "uid pr-errline-num";
+    num.textContent = String(i + 1);
+    const code = document.createElement("code");
+    code.textContent = text;
+    btn.append(num, code);
+    btn.addEventListener("click", () => {
+      if (linesEl.classList.contains("frozen")) return;
+      pickedLine = i + 1;
+      for (const b of lineBtns) b.classList.toggle("picked", b === btn);
+    });
+    linesEl.appendChild(btn);
+    return btn;
+  });
+  body.appendChild(linesEl);
+
+  const palette = document.createElement("div");
+  palette.className = "quiz-errkinds pr-errkinds";
+  const kindBtns = ERROR_NAMES.map((name) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "pr-errkind";
+    btn.dataset.errorName = name;
+    btn.textContent = name;
+    btn.addEventListener("click", () => {
+      if (palette.classList.contains("frozen")) return;
+      pickedType = name;
+      for (const b of kindBtns) b.classList.toggle("picked", b === btn);
+    });
+    palette.appendChild(btn);
+    return btn;
+  });
+  body.appendChild(palette);
+
+  return {
+    collect: () => ({ line: pickedLine, type: pickedType }),
+    // Marking is per-half so a half-right answer READS as half right: the
+    // picked buttons go ok/bad individually, and the truth is marked too.
+    applyResult(result) {
+      const { lineOk, typeOk, actual } = result;
+      for (const b of lineBtns) {
+        const n = Number(b.dataset.line);
+        b.classList.toggle("ok", lineOk === true && n === pickedLine);
+        b.classList.toggle("bad", lineOk === false && n === pickedLine);
+        b.classList.toggle("truth", lineOk === false && actual != null && n === actual.line);
+      }
+      for (const b of kindBtns) {
+        const name = b.dataset.errorName;
+        b.classList.toggle("ok", typeOk === true && name === pickedType);
+        b.classList.toggle("bad", typeOk === false && name === pickedType);
+        b.classList.toggle("truth", typeOk === false && actual != null && name === actual.type);
+      }
+    },
+    freeze() {
+      linesEl.classList.add("frozen");
+      palette.classList.add("frozen");
+      for (const b of [...lineBtns, ...kindBtns]) b.disabled = true;
+    },
+    line: null,
+    wide: false,
+  };
+}
+
 export function renderQuestionBody(body, q, { omitPrompt = false } = {}) {
   if (!omitPrompt) {
     const prompt = document.createElement("p");

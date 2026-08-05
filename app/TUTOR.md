@@ -246,12 +246,33 @@ exist, the same focus concept, including across endless chunk boundaries
 The compiler takes the learner's met set as `opts.met` (threaded from
 `plp.kb.met.v1` by tutor.mjs) to feed the bias.
 
+**predict-the-error** (expansion ladder §R3) is the sixth kind: the program
+STOPS, and the learner taps the line it stops on and picks the kind from a
+FIXED four-name palette (NameError · TypeError · IndexError · KeyError —
+always all four, so "always X" can never become a meta-pattern). The card
+suppresses the automatic program block (`program: false`): the numbered
+picker rows ARE the program. Grading runs it for real, requires
+`terminal_reason === "uncaught_exception"` (anything else takes the existing
+"couldn't grade this run" skip path) and reads `actions.lastException()` —
+the engine puts `type_name` on the terminal record and the raising LOCATION
+on the last `exception` step, and the accessor merges them. Correct iff BOTH
+the picked line and the picked type match; the verdict names a half-right
+pick ("right line, wrong kind") while the score stays all-or-nothing. The
+reveal is `Type: message — line N` (the message is omitted when the engine
+exposes none). A clean first-attempt both-right answer before the final hint
+GRANTS met (design/lesson-kb-binding.md §4): an unaided, engine-verified
+prediction of the program's observable effect — here, its crash site.
+Review shows the picker with the pick and the truth marked; the retry
+re-picks and re-runs the same (deterministic) program.
+
 **One question at a time**: every generated program produces exactly one
 line of output (single-line input, Enter to submit); the one
 `multiline: true` exception is `loop-for-visits-each`, where several
 lines ARE the concept. Forms beyond predict-exact-output — predict-state,
-fill-one-blank, spot-the-difference, trace-table, order-the-lines — plug
-in per exercise (design §5.2, expansion ladder §R2).
+fill-one-blank, spot-the-difference, trace-table, order-the-lines,
+predict-the-error — plug in per exercise (design §5.2, expansion ladder
+§R2/§R3). A predict-the-error program is the ONE deliberate exception to
+"runs clean": it stops, and at most one line is printed before it does.
 
 A drill round compiles a seeded, stats-weighted sequence into an
 ordinary lesson script, so drills reuse the whole machinery (popup

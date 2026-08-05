@@ -236,6 +236,30 @@ const tutor = createTutor({
   practiceUI,
   actions: {
     run, trace,
+    // The last run's uncaught exception, or null. The traced stream's final
+    // record is the terminal one, and it carries `exception` exactly when the
+    // program raised — the same object renderRunEnd prints from
+    // (type_name / safe_message / location.line). The predict-the-error form
+    // grades against THIS, never against authored provenance.
+    // VERIFIED against the live engine (PyTrace 0.1.0): the terminal record's
+    // `exception` carries ONLY `type_name` — the raising LOCATION lives on the
+    // last step record whose event is "exception", and no message text is
+    // exposed at all. They are merged here into the shape renderRunEnd already
+    // reads (type_name / safe_message? / location?), so an engine that later
+    // puts the location (or a safe_message) on the terminal itself needs no
+    // change on this side.
+    lastException: () => {
+      const recs = runner.records?.() ?? [];
+      const t = recs.at(-1);
+      if (t?.kind !== "terminal" || !t.exception) return null;
+      const ex = t.exception;
+      if (ex.location) return ex;
+      for (let i = recs.length - 1; i >= 0; i--) {
+        const r = recs[i];
+        if (r.kind === "step" && r.event === "exception" && r.location) return { ...ex, location: r.location };
+      }
+      return ex;
+    },
     isExercisesVisible: () => layoutApi.isTutorVisible(),
     enterFocus: () => layoutApi.enterFocus(),
   },

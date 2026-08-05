@@ -8,19 +8,19 @@
 
 ## Overview
 
-- **71 concepts** — 4 structural / 49 core / 18 edge.
-- **146 exercises** across 7 topics.
-- **Forms:** fill-one-blank, order-the-lines, predict-exact-output, predict-state, spot-the-difference, trace-table.
+- **75 concepts** — 4 structural / 50 core / 21 edge.
+- **150 exercises** across 7 topics.
+- **Forms:** fill-one-blank, order-the-lines, predict-exact-output, predict-state, predict-the-error, spot-the-difference, trace-table.
 
 ## Topics
 
-- **State & I/O** (`state`): 0005, 0006, 0007, 0009, 000A, 000B, 000C, 000J, 000M
+- **State & I/O** (`state`): 0005, 0006, 0007, 0009, 000A, 000B, 000C, 000J, 000M, 002N
 - **Numbers & bools** (`numbers`): 0008, 000K, 000N, 000P, 000Q, 000R, 000S, 000T, 000V, 000W, 000X
-- **Strings** (`strings`): 000E, 000Y, 000Z, 0010, 0011, 0012, 0013, 0014
-- **Lists & aliasing** (`lists`): 000D, 000F, 000G, 000H, 001Z, 0020, 0021, 0022, 0023, 0024, 0025, 002M
+- **Strings** (`strings`): 000E, 000Y, 000Z, 0010, 0011, 0012, 0013, 0014, 002P
+- **Lists & aliasing** (`lists`): 000D, 000F, 000G, 000H, 001Z, 0020, 0021, 0022, 0023, 0024, 0025, 002M, 002Q
 - **Conditions & logic** (`logic`): 0015, 0016, 0017, 0018, 0019, 001A, 001B, 001C, 001D, 002K
 - **Loops & ranges** (`loops`): 001E, 001F, 001G, 001H, 001J, 001K, 001M, 001N, 001P, 001Q
-- **Dicts & tuples** (`structures`): 001R, 001S, 001T, 001V, 001W, 001X, 001Y
+- **Dicts & tuples** (`structures`): 001R, 001S, 001T, 001V, 001W, 001X, 001Y, 002R
 - **Structural roots**: 0001, 0002, 0003, 0004
 
 ## Concept graph
@@ -46,6 +46,7 @@ graph TD
   000C["000C name-from-name"]
   000J["000J print-multi-args"]
   000M("000M swap-right-side-first")
+  002N["002N errors-are-information"]
   end
   subgraph numbers [Numbers & bools]
   0008["0008 arith-on-ints"]
@@ -69,6 +70,7 @@ graph TD
   0012["0012 slice-open-ended"]
   0013("0013 str-immutable-rebind")
   0014("0014 str-compare-code-points")
+  002P("002P type-error-str-int")
   end
   subgraph lists [Lists & aliasing]
   000D["000D list-literal"]
@@ -83,6 +85,7 @@ graph TD
   0024("0024 slice-copies")
   0025("0025 copy-is-shallow")
   002M["002M in-checks-membership"]
+  002Q("002Q index-error-out-of-range")
   end
   subgraph logic [Conditions & logic]
   0015["0015 compare-ops"]
@@ -116,6 +119,7 @@ graph TD
   001W["001W tuple-pack-print"]
   001X["001X tuple-unpack"]
   001Y("001Y tuple-by-comma")
+  002R("002R key-error-missing")
   end
   0001 --> 0005
   0004 --> 0005
@@ -220,6 +224,14 @@ graph TD
   0018 --> 002K
   000D --> 002M
   0016 --> 002M
+  0006 --> 002N
+  000K --> 002P
+  002N --> 002P
+  000D --> 002Q
+  000E --> 002Q
+  002N --> 002Q
+  001R --> 002R
+  002N --> 002R
 ```
 
 ## Concepts
@@ -271,7 +283,7 @@ print("…") writes the quoted characters, without the quotes, as one line.
 x = v makes the name x hold the value v; print(x) shows that value.
 
 - Parents: 0005, 0003
-- Children: 0007, 0009, 000A, 000D, 000J, 001W
+- Children: 0007, 0009, 000A, 000D, 000J, 001W, 002N
 - Lineage: 0001 ← 0003 ← 0004 ← 0005
 - Characteristic wrong answer: the letter x itself
 - Exercises: fill-value, name-then-print
@@ -341,7 +353,7 @@ b = a gives b the value a holds now; rebinding a later does not change b.
 [a, b, c] builds a list; it prints with brackets, commas, and spaces.
 
 - Parents: 0002, 0006
-- Children: 000F, 000G, 001B, 001E, 001Z, 0021, 0022, 002M
+- Children: 000F, 000G, 001B, 001E, 001Z, 0021, 0022, 002M, 002Q
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006
 - Characteristic wrong answer: the items without brackets, or without the spaces after the commas
 - Exercises: list-shows-brackets
@@ -351,7 +363,7 @@ b = a gives b the value a holds now; rebinding a later does not change b.
 s[i] fetches one item by position, counting from 0.
 
 - Parents: 0007
-- Children: 000F, 0010, 0011, 001R, 0022
+- Children: 000F, 0010, 0011, 001R, 0022, 002Q
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007
 - Characteristic wrong answer: the item at that position counting from 1
 - Exercises: index-char
@@ -401,7 +413,7 @@ print(a, b) writes both values on one line with a single space between them.
 "3" is text and 3 is a number; they can print alike but are different kinds of value.
 
 - Parents: 0007, 0002, 000Y
-- Children: 000T, 000V
+- Children: 000T, 000V, 002P
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000Y
 - Characteristic wrong answer: treats the digit text as a number to add
 - Exercises: digit-text
@@ -771,7 +783,7 @@ A loop's else runs only when the loop finished without a break.
 d = {"a": 1} maps keys to values; d["a"] fetches the value stored under that key.
 
 - Parents: 0007, 000E
-- Children: 001S, 001T, 001V
+- Children: 001S, 001T, 001V, 002R
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E
 - Characteristic wrong answer: the key itself, or a value looked up by position
 - Exercises: dict-lookup, fill-dict-key
@@ -925,6 +937,46 @@ A branch can rebind a name — what the name ends up holding depends on which br
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D ← 0016
 - Characteristic wrong answer: the item's position, or an error
 - Exercises: in-list, in-list-spot
+
+### 002N · errors-are-information — core
+
+When a line cannot run, Python stops there and tells you the kind of error and the line it happened on.
+
+- Parents: 0006
+- Children: 002P, 002Q, 002R
+- Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006
+- Characteristic wrong answer: the program prints the earlier lines and keeps going
+- Exercises: err-name-unbound
+
+### 002P · type-error-str-int — edge
+
+Adding a string and a number is a TypeError — Python will not guess which one you meant.
+
+- Parents: 002N, 000K
+- Children: —
+- Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000K ← 000Y ← 002N
+- Characteristic wrong answer: the number is turned into text and glued on
+- Exercises: err-str-plus-int
+
+### 002Q · index-error-out-of-range — edge
+
+Asking a list for a position it does not have is an IndexError.
+
+- Parents: 002N, 000D, 000E
+- Children: —
+- Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000D ← 000E ← 002N
+- Characteristic wrong answer: the last item, or an empty value
+- Exercises: err-index-range
+
+### 002R · key-error-missing — edge
+
+Looking up a key a dict does not have is a KeyError.
+
+- Parents: 002N, 001R
+- Children: —
+- Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E ← 001R ← 002N
+- Characteristic wrong answer: an empty value, or zero
+- Exercises: err-key-missing
 
 ## Exercises
 
@@ -1946,6 +1998,60 @@ prints:
 ```
 blue
 ```
+
+### err-index-range — focus 002Q (index-error-out-of-range)
+
+- Form: `predict-the-error` · Role: intro · Topic: lists
+- Assumed: 0005, 0006, 000D, 000E, 002N
+- Shapes: index-past-end, after-a-good-read · Variants: at-length, past-length
+- Sample (provenance: seed k=0):
+
+```py
+xs = [40, 50, 60]
+print(xs[4])
+```
+stops with: `IndexError (line 2)`
+
+### err-key-missing — focus 002R (key-error-missing)
+
+- Form: `predict-the-error` · Role: intro · Topic: structures
+- Assumed: 0005, 0006, 001R, 002N
+- Shapes: missing-key, after-a-good-read · Variants: typo-key, other-key
+- Sample (provenance: seed k=0):
+
+```py
+counts = {"fish": 7, "frog": 6}
+print(counts["fihs"])
+```
+stops with: `KeyError (line 2)`
+
+### err-name-unbound — focus 002N (errors-are-information)
+
+- Form: `predict-the-error` · Role: intro · Topic: state
+- Assumed: 0005, 0006
+- Shapes: print-before-assign, forgot-to-start, misspelled-name · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+count = 19
+print("cat")
+print(coutn)
+```
+stops with: `NameError (line 3)`
+
+### err-str-plus-int — focus 002P (type-error-str-int)
+
+- Form: `predict-the-error` · Role: intro · Topic: strings
+- Assumed: 0005, 0006, 000K, 002N
+- Shapes: join-in-print, build-message · Variants: str-first, num-first
+- Sample (provenance: seed k=0):
+
+```py
+count = 6
+label = "planet"
+print(label + count)
+```
+stops with: `TypeError (line 3)`
 
 ### extend-vs-append-spot — focus 0020 (extend-vs-append)
 

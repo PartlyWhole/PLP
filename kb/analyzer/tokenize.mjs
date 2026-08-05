@@ -12,11 +12,16 @@
 // as { indent, toks }, where indent is the count of leading spaces. Tabs
 // are rejected (mixed indentation is a hazard the subset simply forbids).
 
+// `raiseKind` (would-raise only) names WHICH Python exception the operation
+// would raise — the machine-readable half of the error-literacy family
+// (expansion ladder §R3). It is set on every would-raise throw; other codes
+// leave it undefined.
 export class AnalyzerError extends Error {
-  constructor(code, message, line) {
+  constructor(code, message, line, raiseKind) {
     super(message);
     this.code = code;
     this.line = line;
+    if (raiseKind !== undefined) this.raiseKind = raiseKind;
   }
 }
 

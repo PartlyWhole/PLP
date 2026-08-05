@@ -195,6 +195,50 @@ test.describe("PLP questions (Q-series)", () => {
     expect(r.disabled).toBe(true);
   });
 
+  // The predict-the-error picker (expansion ladder §R3) has no generator
+  // either — the KB deals the program — so it is unit-checked directly:
+  // picking is single-choice per half, the palette is always all four names,
+  // collect() reads the pair, and freeze() ends the interaction.
+  test("renderErrorPicker: single-choice halves, the four names always, collect + freeze", async ({ page }) => {
+    await page.goto(SITE);
+    await page.waitForFunction(() => Boolean(window.plp?.questionUI));
+    const r = await page.evaluate(() => {
+      const host = document.createElement("div");
+      document.body.appendChild(host);
+      const view = window.plp.questionUI.renderErrorPicker(host, { code: "x = 1\nprint(y)\n" });
+      const lines = [...host.querySelectorAll(".pr-errline")];
+      const kinds = [...host.querySelectorAll(".pr-errkind")];
+      const empty = view.collect();
+      lines[0].click();
+      lines[1].click();          // single choice: the second pick replaces the first
+      kinds[0].click();
+      const picked = view.collect();
+      const pickedLines = lines.filter((b) => b.classList.contains("picked")).length;
+      view.applyResult({ lineOk: true, typeOk: false, actual: { line: 2, type: "TypeError" } });
+      const marks = {
+        lineOk: lines[1].classList.contains("ok"),
+        typeBad: kinds[0].classList.contains("bad"),
+        typeTruth: kinds[1].classList.contains("truth"),
+      };
+      view.freeze();
+      lines[0].click();          // frozen: the pick does not move
+      const afterFreeze = view.collect();
+      const disabled = [...lines, ...kinds].every((b) => b.disabled);
+      const texts = lines.map((b) => b.querySelector("code").textContent);
+      const names = kinds.map((b) => b.textContent);
+      host.remove();
+      return { empty, picked, pickedLines, marks, afterFreeze, disabled, texts, names };
+    });
+    expect(r.empty).toEqual({ line: null, type: null });
+    expect(r.picked).toEqual({ line: 2, type: "NameError" });
+    expect(r.pickedLines).toBe(1);
+    expect(r.marks).toEqual({ lineOk: true, typeBad: true, typeTruth: true });
+    expect(r.afterFreeze).toEqual({ line: 2, type: "NameError" });
+    expect(r.disabled).toBe(true);
+    expect(r.texts).toEqual(["x = 1", "print(y)"]);
+    expect(r.names).toEqual(["NameError", "TypeError", "IndexError", "KeyError"]);
+  });
+
   test("code-structure: both modes blank complementary lines", async ({ page }) => {
     await setupRun(page);
     const r = await page.evaluate((ctxSrc) => {

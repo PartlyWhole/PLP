@@ -682,6 +682,25 @@ button.pr-quiet:hover { color: var(--t-ink); text-decoration: underline; }
   background: var(--t-code-bg); border-radius: var(--r-s);
 }
 
+/* predict-the-error: the line picker + the fixed four-name error palette
+   (expansion ladder §R3). Touch-first — every target is a full-width or
+   40px-tall button, same as the Parsons rows. */
+.pr-errlines { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; }
+.pr-errline {
+  display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  min-height: 40px; padding: 4px 6px; font-size: 14px; text-align: left;
+  background: var(--t-code-bg); border: 1px solid var(--t-line); border-radius: var(--r-s);
+}
+.pr-errline code { flex: 1; overflow-x: auto; white-space: pre; }
+.pr-errline-num { min-width: 1.5em; text-align: right; }
+.pr-errkinds { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-2); }
+.pr-errkind { min-height: 40px; padding: 0 var(--sp-2); font-size: 14px; }
+.pr-errline.picked, .pr-errkind.picked { border-color: var(--t-accent); background: var(--t-surface-3); }
+.pr-errline.ok, .pr-errkind.ok { border-color: var(--t-success); }
+.pr-errline.bad, .pr-errkind.bad { border-color: var(--t-miss); }
+.pr-errline.truth, .pr-errkind.truth { border-style: dashed; border-color: var(--t-success); }
+.pr-errlines.frozen .pr-errline, .pr-errkinds.frozen .pr-errkind { opacity: 0.9; }
+
 /* scratch notes drawer */
 .pr-top [data-role=pr-notes].on { background: var(--t-surface-3); }
 .pr-notes-drawer {

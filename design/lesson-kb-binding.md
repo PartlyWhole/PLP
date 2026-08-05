@@ -96,8 +96,8 @@ no lesson-specific relaxation.**
 
 A lesson marks concept C met iff **all** hold:
 
-1. The step is an `ask` of kind `predict-output` or `predict-state`
-   whose `focus` is C.
+1. The step is an `ask` of kind `predict-output`, `predict-state`,
+   `trace-table` or `predict-the-error` whose `focus` is C.
 2. It is graded **exact-output** (the primary predict-exact-output form)
    — or it is **predict-state** answered exactly (predicting what a name
    really holds after the run is the same §2.8 evidence class as
@@ -106,7 +106,11 @@ A lesson marks concept C met iff **all** hold:
    with every cell correct: a student who predicts every intermediate
    value unaided has demonstrated strictly more than one who predicts
    only the end state, so the all-correct table is an accepted (stronger)
-   witness.
+   witness — or it is a **predict-the-error** answered with BOTH the line
+   and the error kind right (expansion ladder §R3): naming where a program
+   crashes and with what is an unaided, engine-verified prediction of the
+   program's observable effect, the same §2.8 evidence class as predicting
+   what it prints.
 3. The student's answer is **correct on the first attempt** and arrives
    **before the final hint is shown**. §2.8 forbids crediting a shown
    answer or a lucky skip; a hint that states the output *is* a shown

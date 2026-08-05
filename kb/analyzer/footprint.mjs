@@ -84,6 +84,25 @@ export const TAG = {
   plusEqMutatesList: "0023",
   sliceCopies: "0024",
   copyIsShallow: "0025",
+  errorsAreInformation: "002N",
+  typeErrorStrInt: "002P",
+  indexErrorOutOfRange: "002Q",
+  keyErrorMissing: "002R",
+};
+
+// raiseKind → the concept a program that ACTUALLY raises this way teaches
+// (expansion ladder §R3). Only the four error-literacy kinds map; the other
+// would-raise kinds (a method on the wrong type, a bad unpack) are tagged for
+// diagnosis but have no concept node yet, so they emit nothing.
+// name-unbound maps to errors-are-information itself: NameError is folded in
+// as that concept's canonical witness rather than getting its own child (a
+// separate child would make the parent's own intro program footprint-illegal
+// — the intro would emit the child's tag, which is not in its closure).
+export const RAISE_TAG = {
+  "name-unbound": TAG.errorsAreInformation,
+  "type-str-int": TAG.typeErrorStrInt,
+  "index-out-of-range": TAG.indexErrorOutOfRange,
+  "key-missing": TAG.keyErrorMissing,
 };
 
 const ADD_OPS = new Set(["+", "-"]);
@@ -98,9 +117,14 @@ function operandSign(node) {
 const isNumeric = (t) => t === "int" || t === "float" || t === "bool";
 const numResult = (l, r) => (l === "float" || r === "float" ? "float" : "int");
 
-export function footprint(source) {
+// footprint(source) → the footprint of a program that RUNS to completion; a
+// would-raise is an error return, exactly as before.
+// footprint(source, { expectRaise: true }) → the footprint UP TO AND INCLUDING
+// the raising operation, plus `raises: { line, kind }` (expansion ladder §R3).
+// Without the option the behavior is byte-identical to before.
+export function footprint(source, opts = {}) {
   try {
-    return analyze(parse(source));
+    return analyze(parse(source), opts);
   } catch (e) {
     if (e instanceof AnalyzerError) {
       return { error: { code: e.code, message: e.message, line: e.line } };
@@ -109,7 +133,7 @@ export function footprint(source) {
   }
 }
 
-function analyze(statements) {
+function analyze(statements, opts = {}) {
   const tags = new Set();
   const evidence = [];
   const warnings = [];
@@ -167,7 +191,7 @@ function analyze(statements) {
   }
 
   function requireBound(id, line) {
-    if (!env.has(id)) throw new AnalyzerError("would-raise", `name ${id} read before assignment`, line);
+    if (!env.has(id)) throw new AnalyzerError("would-raise", `name ${id} read before assignment`, line, "name-unbound");
     return env.get(id);
   }
 
@@ -250,12 +274,19 @@ function analyze(statements) {
       }
       case "dict": {
         let keyType = null, valType = null;
+        // The literal key set, when EVERY key is a literal — undefined the
+        // moment one is not, so a missing-key read is only ever reported when
+        // the whole key set is statically known (expansion ladder §R3).
+        let keys = new Set();
         for (const { key, value } of node.entries) {
           keyType = evalExpr(key).type;
           valType = evalExpr(value).type;
+          const k = literalKey(key);
+          if (k === null) keys = undefined;
+          else keys?.add(k);
         }
         emit(TAG.dictLookup, "row49", node.line);
-        return { type: "dict", keyType: keyType ?? "str", valType: valType ?? "int" };
+        return { type: "dict", keyType: keyType ?? "str", valType: valType ?? "int", keys };
       }
       case "tuple": {
         node.items.forEach((it) => evalExpr(it));
@@ -315,6 +346,17 @@ function analyze(statements) {
         const l = evalExpr(node.left);
         const r = evalExpr(node.right);
         if (mixesPrecedence(node)) emit(TAG.opPrecedence, "row13", node.line);
+        // A statically-known str/number mix raises TypeError — EXCEPT str * int,
+        // which is the legal repeat (design §4.4). bool operands are left to the
+        // branches below: True * "a" really is a repeat, not an error.
+        {
+          const mix = (a, b) => a.type === "str" && (b.type === "int" || b.type === "float");
+          const strNum = mix(l, r) || mix(r, l);
+          const repeat = node.op === "*" && ((l.type === "str" && r.type === "int") || (l.type === "int" && r.type === "str"));
+          if (strNum && !repeat) {
+            throw new AnalyzerError("would-raise", `${node.op} on ${l.type} and ${r.type}`, node.line, "type-str-int");
+          }
+        }
         if (node.op === "/") {
           if (!isNumeric(l.type) || !isNumeric(r.type)) throw new AnalyzerError("unmapped-syntax", "/ on non-numbers is outside the subset", node.line);
           if (l.type === "bool" || r.type === "bool") emit(TAG.boolIsInt, "row19", node.line);
@@ -360,6 +402,10 @@ function analyze(statements) {
         const idx = evalExpr(node.index);
         if (container.type === "dict") {
           emit(TAG.dictLookup, "row49", node.line);
+          const k = literalKey(node.index);
+          if (container.keys && k !== null && !container.keys.has(k)) {
+            throw new AnalyzerError("would-raise", `key ${k} is not in the dict`, node.line, "key-missing");
+          }
           return { type: container.valType ?? "int" };
         }
         if (idx.type !== "int") throw new AnalyzerError("unmapped-syntax", "non-integer index", node.line);
@@ -373,6 +419,11 @@ function analyze(statements) {
           // mutation through b[0] be charged to the shared element.
           if (node.index.kind === "int" && container.elems && node.index.value < container.elems.length) {
             return container.elems[node.index.value];
+          }
+          // A literal non-negative index at or past the end of a
+          // statically-known list is an IndexError (expansion ladder §R3).
+          if (node.index.kind === "int" && container.elems && node.index.value >= container.elems.length) {
+            throw new AnalyzerError("would-raise", `index ${node.index.value} past the end of a ${container.elems.length}-element list`, node.line, "index-out-of-range");
           }
           return { type: container.elem ?? "int" };
         }
@@ -474,7 +525,7 @@ function analyze(statements) {
       }
     };
     if (node.name === "append") {
-      if (val.type !== "list") throw new AnalyzerError("would-raise", `.append on ${val.type}`, node.line);
+      if (val.type !== "list") throw new AnalyzerError("would-raise", `.append on ${val.type}`, node.line, "attr-missing");
       const arg = evalExpr(node.args[0]);
       if (arg.type === "list") emit(TAG.extendVsAppend, "row31", node.line);
       emit(TAG.appendMutates, "row31", node.line);
@@ -484,16 +535,16 @@ function analyze(statements) {
       return { type: "none" };
     }
     if (node.name === "extend") {
-      if (val.type !== "list") throw new AnalyzerError("would-raise", `.extend on ${val.type}`, node.line);
+      if (val.type !== "list") throw new AnalyzerError("would-raise", `.extend on ${val.type}`, node.line, "attr-missing");
       const arg = evalExpr(node.args[0]);
-      if (arg.type !== "list") throw new AnalyzerError("would-raise", ".extend needs a list", node.line);
+      if (arg.type !== "list") throw new AnalyzerError("would-raise", ".extend needs a list", node.line, "type-extend-arg");
       emit(TAG.extendVsAppend, "row31", node.line);
       recordMutation(val.objId, objName, node.line);
       recordElemMutation();
       return { type: "none" };
     }
     if (node.name === "get") {
-      if (val.type !== "dict") throw new AnalyzerError("would-raise", `.get on ${val.type}`, node.line);
+      if (val.type !== "dict") throw new AnalyzerError("would-raise", `.get on ${val.type}`, node.line, "attr-missing");
       node.args.forEach((a) => evalExpr(a));
       emit(TAG.dictGetDefault, "row51", node.line);
       return { type: val.valType ?? "int" };
@@ -530,7 +581,7 @@ function analyze(statements) {
           rebound.add(stmt.target);
           env.set(stmt.target, { type: numResult(cur.type, rhs.type) });
         } else if (cur.type === "list") {
-          if (rhs.type !== "list") throw new AnalyzerError("would-raise", "list += non-list", stmt.line);
+          if (rhs.type !== "list") throw new AnalyzerError("would-raise", "list += non-list", stmt.line, "type-list-iadd");
           const obj = objects.get(cur.objId);
           if (!obj || obj.names.size < 2) throw new AnalyzerError("unmapped-syntax", "+= on an unshared list has no concept node in the subset", stmt.line);
           emit(TAG.plusEqMutatesList, "rule8", stmt.line);
@@ -567,10 +618,18 @@ function analyze(statements) {
       if (container.type === "dict") {
         evalExpr(stmt.target.index);
         evalExpr(stmt.value);
+        // Keep the tracked key set truthful: a literal store ADDS a key, a
+        // computed store makes the set unknown. Both directions can only
+        // SUPPRESS a missing-key report, never invent one.
+        if (container.keys) {
+          const k = literalKey(stmt.target.index);
+          if (k === null) container.keys = undefined;
+          else container.keys.add(k);
+        }
         emit(TAG.dictKeyAssign, "row50", stmt.line);
         return;
       }
-      if (container.type !== "list") throw new AnalyzerError("would-raise", `subscript store on ${container.type}`, stmt.line);
+      if (container.type !== "list") throw new AnalyzerError("would-raise", `subscript store on ${container.type}`, stmt.line, "type-subscript-store");
       const idx = evalExpr(stmt.target.index);
       if (idx.type !== "int") throw new AnalyzerError("unmapped-syntax", "non-integer index", stmt.line);
       evalExpr(stmt.value);
@@ -583,7 +642,7 @@ function analyze(statements) {
       if (stmt.value.kind !== "tuple") throw new AnalyzerError("unmapped-syntax", "tuple-target assignment needs a tuple right side in the subset", stmt.line);
       const readsTarget = names.some((n) => exprReadsName(stmt.value, n));
       const values = stmt.value.items.map((it) => evalExpr(it));
-      if (values.length !== names.length) throw new AnalyzerError("would-raise", "tuple-unpack length mismatch", stmt.line);
+      if (values.length !== names.length) throw new AnalyzerError("would-raise", "tuple-unpack length mismatch", stmt.line, "value-unpack");
       if (readsTarget) emit(TAG.swapRightSideFirst, "rule12", stmt.line);
       else emit(TAG.tupleUnpack, "row54", stmt.line);
       names.forEach((n, i) => bind(n, values[i]));
@@ -679,7 +738,18 @@ function analyze(statements) {
     return merged;
   }
 
-  execSuite(statements);
+  // The top-level walk. With { expectRaise: true } a would-raise is not an
+  // error but the POINT of the program: keep the footprint accumulated up to
+  // and including the raising operation, tag the raise, and report where.
+  let raises = null;
+  try {
+    execSuite(statements);
+  } catch (e) {
+    if (!opts.expectRaise || !(e instanceof AnalyzerError) || e.code !== "would-raise") throw e;
+    raises = { line: e.line, kind: e.raiseKind ?? null };
+    const raiseTag = RAISE_TAG[e.raiseKind];
+    if (raiseTag) emit(raiseTag, "rule-raise", e.line);
+  }
 
   for (const obj of objects.values()) {
     if (obj.sharedEver && !tags.has(TAG.namesShareList)) { warnings.push({ code: "latent-alias" }); break; }
@@ -689,7 +759,17 @@ function analyze(statements) {
   const finalTypes = {};
   for (const [id, val] of env) if (CONCRETE.has(val.type)) finalTypes[id] = val.type;
 
+  if (raises) return { tags: [...tags].sort(), evidence, warnings, raises, finalTypes: {} };
   return { tags: [...tags].sort(), evidence, warnings, finalTypes };
+}
+
+// The comparable form of a literal dict key ("s:cat" / "i:3"), or null when
+// the key expression is not a literal.
+function literalKey(node) {
+  if (!node) return null;
+  if (node.kind === "str") return `s:${node.value}`;
+  if (node.kind === "int") return `i:${node.value}`;
+  return null;
 }
 
 function mixesPrecedence(node) {

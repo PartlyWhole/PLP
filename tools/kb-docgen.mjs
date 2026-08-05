@@ -20,19 +20,42 @@ import { docSamples, renderReference } from "../kb/docgen.mjs";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const REF_PATH = new URL("../curriculum/KB-REFERENCE.md", import.meta.url);
 
-function runPython(code) {
+function runPython(code, { expectError = false } = {}) {
   try {
-    return execFileSync("python3", ["-c", code], { encoding: "utf8", cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] });
+    const out = execFileSync("python3", ["-c", code], { encoding: "utf8", cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] });
+    if (expectError) throw new Error(`sample was expected to raise but completed:\n${code}`);
+    return out;
   } catch (e) {
-    throw new Error(`python3 failed on sample:\n${code}\n${e.stderr ?? e.message}`);
+    if (!expectError || typeof e.stderr !== "string") {
+      throw new Error(`python3 failed on sample:\n${code}\n${e.stderr ?? e.message}`);
+    }
+    return parseRaise(e.stderr, code);
   }
+}
+
+// "Type (line N)" from a traceback — the LAST frame's line number (the
+// program's own, since these samples import nothing) and the exception type
+// from the final message line. Message TEXT is deliberately discarded: its
+// wording differs across CPython builds, and the reference must stay
+// byte-identical between this writer and the Pyodide one (K-doc).
+function parseRaise(stderr, code) {
+  const lines = stderr.trimEnd().split("\n");
+  let line = null;
+  for (const l of lines) {
+    const m = /^\s*File "[^"]*", line (\d+)/.exec(l);
+    if (m) line = Number(m[1]);
+  }
+  const last = lines[lines.length - 1] ?? "";
+  const type = /^([A-Za-z_][A-Za-z0-9_]*)(:|$)/.exec(last)?.[1];
+  if (!type || line == null) throw new Error(`could not parse a raise out of:\n${code}\n${stderr}`);
+  return `${type} (line ${line})`;
 }
 
 function generate() {
   const kb = loadKB();
   const waivers = JSON.parse(readFileSync(new URL("../kb/waivers.json", import.meta.url), "utf8"));
   const outputs = {};
-  for (const { key, run } of docSamples(kb)) outputs[key] = runPython(run);
+  for (const { key, run, expectError } of docSamples(kb)) outputs[key] = runPython(run, { expectError });
   return renderReference(kb, outputs, waivers);
 }
 

@@ -26,7 +26,7 @@
 // printed. The run IS the reveal.
 
 import { generateQuestion, questionGenerators, normalizeAnswer } from "./questions.mjs";
-import { renderQuestionBody, renderTraceTable, renderOrderLines, createAnswerInput, appendExpected } from "./question-ui.mjs";
+import { renderQuestionBody, renderTraceTable, renderOrderLines, renderErrorPicker, createAnswerInput, appendExpected } from "./question-ui.mjs";
 import { buildKBSession, kbTopics, migrateStats, spliceBlank, lintLessonConcepts, frontierTags, drillTopicFor, topicProgress, conceptTopics } from "./kb-session.mjs";
 import { summarizeRound } from "./progress.mjs";
 import { mapModel, renderConceptMap } from "./concept-map.mjs";
@@ -499,6 +499,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       if (step.ask.kind === "fill-one-blank") return execFillBlank(step.ask);
       if (step.ask.kind === "trace-table") return execTraceTable(step.ask);
       if (step.ask.kind === "order-the-lines") return execOrderLines(step.ask);
+      if (step.ask.kind === "predict-the-error") return execPredictError(step.ask);
       return execGeneratedAsk(step.ask);
     }
 
@@ -1000,6 +1001,133 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     return true;
   }
 
+  // The learner-facing reveal for a real crash: type, message when the engine
+  // gives one (PyTrace 0.1.0 exposes none), and the line — never a bare colon
+  // with nothing after it.
+  const revealTextFor = (actual) =>
+    `${actual.type}${actual.message ? `: ${actual.message}` : ""} — line ${actual.line}`;
+
+  // predict-the-error (expansion ladder §R3): the program stops, and the
+  // learner taps the line it stops on and picks the kind from a FIXED
+  // four-name palette (all four, always — a palette pruned to the plausible
+  // options would become a meta-pattern, quality bar E6).
+  //
+  // Graded against the REAL terminal exception, never against authored
+  // provenance: run it, require terminal_reason "uncaught_exception", then
+  // read actions.lastException() for type_name and location.line. Correct iff
+  // BOTH halves match; the verdict may acknowledge a half-right pick, but the
+  // score stays all-or-nothing (a crash site is one prediction, not two).
+  //
+  // MET GRANT (lesson-kb-binding §4): a first-attempt both-right answer before
+  // the final hint evidences the focused concept — an unaided, engine-verified
+  // prediction of the program's observable effect, which here is where and how
+  // it crashes.
+  function execPredictError(ask) {
+    events.emit("quiz-question", { kind: "predict-the-error" });
+    const hints = [...(ask.hints ?? [])];
+    const totalHints = hints.length;
+    const askCode = () => editor.getValue();
+    const baseReview = (extra = {}) => ({
+      kind: "predict-the-error", form: ask.form,
+      code: askCode(), teach: ask.teach, context: ask.context,
+      ...extra,
+    });
+    let view = null;
+    const card = ui.addInteractiveCard({
+      teach: ask.teach, context: ask.context, form: ask.form ?? "predict-the-error",
+      prompt: ask.prompt ?? "This program stops with an error. Tap the line it stops on, and pick what kind.",
+      // The picker rows ARE the program, numbered — a second copy above them
+      // would be the same lines twice (same call as order-the-lines).
+      program: false,
+      render: (body) => { view = renderErrorPicker(body, { code: askCode() }); return view; },
+      actions: [],
+      prog: store.currentProg,
+    });
+    ui.popBatch(batch, card);
+    batch = [];
+
+    const doCheck = async (provided) => {
+      const picked = provided ?? view.collect();
+      if (!picked?.line) { card.setNote("Tap the line you think it stops on first"); return; }
+      if (!picked?.type) { card.setNote("Now pick which kind of error it is"); return; }
+      const ranCode = askCode(); // grade-what-runs: snapshot for review/retry
+      view.freeze();
+      card.setActions([]);
+      card.setNote("Running it for real…");
+      ui.beginReveal?.();
+      const summary = await actions.trace();
+      const ex = summary?.terminal_reason === "uncaught_exception" ? actions.lastException?.() : null;
+      if (!ex || !ex.location) {
+        // The run never reached an uncaught exception (or came back without a
+        // location): there is no ground truth, so this is the existing
+        // ungradable path — never a guess, never a wrong mark.
+        resolveAsk(card, {
+          prompt: ask.prompt, ok: false, verdict: "couldn't grade this run",
+          lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: "predict-the-error",
+          misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
+          review: baseReview({ code: ranCode, picked }),
+        });
+        return;
+      }
+      const actual = { type: ex.type_name, line: ex.location.line, message: ex.safe_message ?? "" };
+      const lineOk = picked.line === actual.line;
+      const typeOk = picked.type === actual.type;
+      const correct = lineOk && typeOk;
+      const revealText = revealTextFor(actual);
+      view.applyResult({ lineOk, typeOk, actual });
+      card.reveal?.({ text: revealText, correct, kind: "predict-the-error" });
+      if (!correct && !card.reveal) {
+        appendExpected(card.body, { label: "Where it really stopped:", text: revealText });
+      }
+      const metTag = ask.focus ?? ask.concept;
+      const beforeFinalHint = totalHints === 0 || hints.length > 0;
+      if (correct && metTag && beforeFinalHint) {
+        if (grantMet(metTag, ask.focus ? "lesson" : "drill")) {
+          (store.roundMet ??= []).push(metTag);
+          persist();
+        }
+      }
+      resolveAsk(card, {
+        prompt: ask.prompt, ok: correct,
+        verdict: correct ? "✓ Right line, right kind!"
+          : lineOk ? "✗ Right line, wrong kind — see what it really raised"
+            : typeOk ? "✗ Right kind, wrong line — see where it really stopped"
+              : "✗ Not quite — see where it really stopped, and with what",
+        answerText: `line ${picked.line} · ${picked.type}`,
+        lastAnswer: correct ? "correct" : "wrong",
+        template: ask.template, concept: ask.concept, kind: "predict-the-error",
+        misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
+        review: baseReview({ code: ranCode, picked, actual, expectedText: revealText }),
+      });
+    };
+    const doSkip = () => resolveAsk(card, {
+      prompt: ask.prompt, ok: false, verdict: "skipped",
+      lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: "predict-the-error",
+      misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
+      review: baseReview(),
+    });
+    const armActions = () => card.setActions([
+      { label: "Check my answer \u25b6", primary: true, onClick: () => doCheck() },
+      ...(hints.length ? [{
+        label: "Give me a hint",
+        onClick: () => {
+          const h = { type: "hint", md: hints.shift() };
+          record(h); ui.addCard(h); ui.appendToPopup(h);
+          if (!hints.length) armActions();
+        },
+      }] : []),
+      { label: "Skip this one", onClick: doSkip },
+    ]);
+    armActions();
+    setWaiting({
+      type: "ask",
+      kind: "predict-the-error",
+      submit: (pickedIn) => doCheck(pickedIn),
+      skip: doSkip,
+    });
+    return true;
+  }
+
   // trace-table: walk the program's execution step by step, filling in what
   // each watched name holds after each line. The trace runs SILENTLY first —
   // ground truth must exist before the table can even be built — then every
@@ -1316,7 +1444,9 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       ? spliceBlank(r.code, r.blank, "___")
       // order-the-lines shows the ARRANGEMENT widget instead of a program
       // block — the arrangement is the answer, and the code is the same lines.
-      : r.kind === "order-the-lines" ? null : r.code;
+      // predict-the-error shows the numbered line picker instead of a plain
+      // program block — same reason: the widget IS the program.
+      : ["order-the-lines", "predict-the-error"].includes(r.kind) ? null : r.code;
     practiceUI.showReview?.({
       index: i,
       prompt: rec.prompt, ok: rec.ok, verdict: rec.verdict,
@@ -1324,6 +1454,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       kind: r.kind, code: displayCode, expectedText: r.expectedText,
       table: r.table, answersById: r.answersById,
       items: r.items, answerOrder: r.answerOrder, canonical: r.canonical,
+      picked: r.picked, actual: r.actual, pickerCode: r.kind === "predict-the-error" ? r.code : undefined,
       teach: r.teach, context: r.context,
       // Single-answer kinds get the single-input widget; trace-table gets
       // a fresh blank table (the UI branches on kind — retryAnswer takes a
@@ -1358,6 +1489,30 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
           perBlank: res.perBlank,
           expectedById: Object.fromEntries(q.blanks.map((b) => [b.id, b.expected])),
         };
+      } finally {
+        editor.setValue(before);
+      }
+    }
+    if (r.kind === "predict-the-error") {
+      // `text` is a { line, type } pick here (the retry widget's collect()).
+      // The same program is re-run — deterministic, so the crash site is the
+      // same — and re-graded against the real terminal exception.
+      if (!text || typeof text !== "object" || !text.line || !text.type) return null;
+      const before = editor.getValue();
+      try {
+        editor.setValue(r.code);
+        const summary = await actions.trace();
+        if (!summary) return null; // a run is live — the retry never happened
+        const ex = summary.terminal_reason === "uncaught_exception" ? actions.lastException?.() : null;
+        if (!ex || !ex.location) return null;
+        const actual = { type: ex.type_name, line: ex.location.line, message: ex.safe_message ?? "" };
+        const lineOk = text.line === actual.line;
+        const typeOk = text.type === actual.type;
+        const ok = lineOk && typeOk;
+        rec.retry = { ok, tries: (rec.retry?.tries ?? 0) + 1 };
+        persist();
+        pushProgress();
+        return { ok, lineOk, typeOk, actual, expectedText: revealTextFor(actual) };
       } finally {
         editor.setValue(before);
       }

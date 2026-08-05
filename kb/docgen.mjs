@@ -41,6 +41,13 @@ export function docSamples(kb) {
       // The blanks derive from the live trace at runtime; the reference can
       // only show the watched names' END values (docgen is stdout-only).
       specs.push({ key: `${ex.id}|names`, run: `${prog.code}${prog.probeNames.map((n) => `print(${n})`).join("\n")}\n` });
+    } else if (ex.form === "predict-the-error") {
+      // The program RAISES on purpose (expansion ladder §R3). `expectError`
+      // tells the executor to record the crash as "Type (line N)" rather than
+      // to fail: CPython's message WORDING drifts between the system python3
+      // and Pyodide, so the reference never records message text — only the
+      // type and the line, which both writers agree on.
+      specs.push({ key: `${ex.id}|raise`, run: prog.code, expectError: true });
     } else if (ex.form === "order-the-lines") {
       // The deal is shuffled at compile time; the reference records the
       // CANONICAL order (the exercise's ground truth) and what it prints.
@@ -196,6 +203,9 @@ export function renderReference(kb, outputs, waivers = []) {
       L.push(fence(prog.code));
       L.push(`Step-table walkthrough over \`${prog.probeNames.join("`, `")}\` (blanks derive from the live trace); the watched names end holding:`);
       L.push(outBlock(get(`${ex.id}|names`)));
+    } else if (ex.form === "predict-the-error") {
+      L.push(fence(prog.code));
+      L.push(`stops with: \`${get(`${ex.id}|raise`).trim()}\``);
     } else if (ex.form === "order-the-lines") {
       L.push("Lines (canonical order):");
       L.push(fence(prog.lines.join("\n")));

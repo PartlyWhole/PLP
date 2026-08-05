@@ -640,6 +640,15 @@ export const questionGenerators = {
     needsTrace: false,
     generate: () => null,
   },
+  "predict-the-error": {
+    // Error literacy (expansion ladder §R3). Graded by the tutor's async
+    // predict-then-verify path against the REAL terminal exception (line +
+    // type_name), so — like fill-one-blank and order-the-lines — this entry
+    // exists only so lessons can declare the kind and lint accepts it.
+    label: "Predict the error",
+    needsTrace: false,
+    generate: () => null,
+  },
   "expression-sequence": {
     label: "Build expression evaluation",
     needsTrace: false,

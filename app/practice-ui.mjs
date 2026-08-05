@@ -11,7 +11,7 @@
 // serves the menu, the concept map, drills, and round summaries.
 
 import { buildStaticCard, buildControlButton, renderInline, verdictSpan } from "./tutor-widgets.mjs";
-import { renderOrderLines } from "./question-ui.mjs";
+import { renderOrderLines, renderErrorPicker } from "./question-ui.mjs";
 
 export function createPracticeUI({ layout, getCode }) {
   let onExit = null;
@@ -177,7 +177,8 @@ export function createPracticeUI({ layout, getCode }) {
     const label = document.createElement("span");
     label.className = "pr-reveal-label";
     label.textContent = kind === "predict-state" ? "it really holds"
-      : kind === "trace-table" ? "your table, graded" : "it printed";
+      : kind === "trace-table" ? "your table, graded"
+        : kind === "predict-the-error" ? "it really stopped with" : "it printed";
     const pre = document.createElement("pre");
     pre.textContent = text ?? "";
     block.append(label, pre);
@@ -194,6 +195,7 @@ export function createPracticeUI({ layout, getCode }) {
     "spot-the-difference": "type what the changed program prints",
     "trace-table": "fill every box, then check — the trace grades each step",
     "order-the-lines": "move the lines with ↑ and ↓, then check — it really runs",
+    "predict-the-error": "tap the line it stops on, then the kind — it really runs",
   };
   function mechanicsLineFor(form) {
     let seen;
@@ -582,6 +584,41 @@ export function createPracticeUI({ layout, getCode }) {
     return wrap;
   }
 
+  // A predict-the-error answer, read-only: the numbered program with the
+  // picked line marked (and the real one, when they differ), plus the picked
+  // error kind beside the real one. Text only (invariant 8).
+  function buildPickedError(desc) {
+    const wrap = document.createElement("div");
+    wrap.className = "pr-errreview";
+    const lines = String(desc.pickerCode).replace(/\n$/, "").split("\n");
+    const list = document.createElement("div");
+    list.className = "pr-errlines frozen";
+    lines.forEach((text, i) => {
+      const n = i + 1;
+      const row = document.createElement("div");
+      row.className = "pr-errline";
+      if (desc.picked?.line === n) row.classList.add(desc.actual && desc.actual.line === n ? "ok" : "bad");
+      if (desc.actual && desc.actual.line === n && desc.picked?.line !== n) row.classList.add("truth");
+      const num = document.createElement("span");
+      num.className = "uid pr-errline-num";
+      num.textContent = String(n);
+      const code = document.createElement("code");
+      code.textContent = text;
+      row.append(num, code);
+      list.appendChild(row);
+    });
+    wrap.appendChild(list);
+    if (desc.picked?.type) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = desc.actual
+        ? `you picked ${desc.picked.type} · it raised ${desc.actual.type}`
+        : `you picked ${desc.picked.type}`;
+      wrap.appendChild(p);
+    }
+    return wrap;
+  }
+
   function buildReviewCard(desc) {
     const el = document.createElement("div");
     el.className = "pr-question pr-review";
@@ -614,6 +651,15 @@ export function createPracticeUI({ layout, getCode }) {
         label: desc.answerOrder ? "you arranged it like this" : "the lines, as they were dealt",
       }));
       el.appendChild(orderSlot);
+    }
+    // predict-the-error: the numbered lines with the learner's pick marked,
+    // in a slot a retry can swap for a fresh picker (and back).
+    let pickerSlot = null;
+    if (desc.kind === "predict-the-error" && desc.pickerCode) {
+      pickerSlot = document.createElement("div");
+      pickerSlot.className = "pr-picker-slot";
+      pickerSlot.appendChild(buildPickedError(desc));
+      el.appendChild(pickerSlot);
     }
     if (desc.prompt) {
       const p = document.createElement("p");
@@ -702,6 +748,74 @@ export function createPracticeUI({ layout, getCode }) {
         view.freeze();
         view.applyResult({ correct: res.ok });
         verdictOut.appendChild(verdictSpan(res.ok, res.ok ? "✓ that prints it!" : "✗ not yet — that's what it printed above"));
+        checkBtn.hidden = true;
+        cancelBtn.hidden = false;
+        startBtn.hidden = false;
+        if (res.expectedText !== undefined) {
+          revealSlot.textContent = "";
+          revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: res.expectedText, correct: res.ok }));
+        }
+      });
+      cancelBtn.addEventListener("click", showRecorded);
+      wrap.append(startBtn, checkBtn, cancelBtn, verdictOut, note);
+      el.appendChild(wrap);
+    } else if (desc.onRetry && desc.kind === "predict-the-error" && pickerSlot) {
+      // A predict-the-error retry is a genuine second prediction: the marked
+      // answer leaves the screen, a fresh picker takes its place, and the same
+      // (deterministic) program is run and graded again for real.
+      const wrap = document.createElement("div");
+      wrap.className = "pr-retry pr-retry-error";
+      const startBtn = document.createElement("button");
+      startBtn.type = "button";
+      startBtn.className = "primary";
+      startBtn.textContent = "Try it again ▶";
+      const checkBtn = document.createElement("button");
+      checkBtn.type = "button";
+      checkBtn.className = "primary";
+      checkBtn.textContent = "Check my answer ▶";
+      checkBtn.hidden = true;
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "pr-quiet pr-retry-cancel";
+      cancelBtn.textContent = "never mind, show what I answered";
+      cancelBtn.hidden = true;
+      const verdictOut = document.createElement("p");
+      verdictOut.className = "pr-retry-verdict";
+      const note = document.createElement("p");
+      note.className = "hint pr-retry-note";
+      note.textContent = "retries are for you — your score keeps the first try";
+      const recordedEl = pickerSlot.firstChild;
+      let view = null;
+      const showRecorded = () => {
+        pickerSlot.replaceChildren(recordedEl);
+        view = null;
+        verdictOut.textContent = "";
+        startBtn.hidden = false;
+        checkBtn.hidden = true;
+        cancelBtn.hidden = true;
+      };
+      startBtn.addEventListener("click", () => {
+        const host = document.createElement("div");
+        view = renderErrorPicker(host, { code: desc.pickerCode });
+        pickerSlot.replaceChildren(host);
+        verdictOut.textContent = "";
+        startBtn.hidden = true;
+        checkBtn.hidden = false;
+        cancelBtn.hidden = false;
+      });
+      checkBtn.addEventListener("click", async () => {
+        if (!view || checkBtn.disabled) return;
+        const pick = view.collect();
+        if (!pick.line || !pick.type) { verdictOut.textContent = "pick a line and a kind first"; return; }
+        checkBtn.disabled = true;
+        verdictOut.textContent = "running it for real…";
+        const res = await desc.onRetry(pick);
+        checkBtn.disabled = false;
+        verdictOut.textContent = "";
+        if (!res) { verdictOut.textContent = "couldn't run just now — try again in a moment"; return; }
+        view.freeze();
+        view.applyResult({ lineOk: res.lineOk, typeOk: res.typeOk, actual: res.actual });
+        verdictOut.appendChild(verdictSpan(res.ok, res.ok ? "✓ right line, right kind!" : "✗ not yet — the truth is marked above"));
         checkBtn.hidden = true;
         cancelBtn.hidden = false;
         startBtn.hidden = false;
