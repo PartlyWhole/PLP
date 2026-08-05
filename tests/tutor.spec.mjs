@@ -252,6 +252,145 @@ test.describe("PLP tutor (T-series)", () => {
     expect(r.errors).toEqual([]);
   });
 
+  // fix-the-bug (expansion ladder §R5's composition). The seed is DERIVED,
+  // never a fixture: scan focus rounds for the first seed that deals the
+  // wanted template (the pool may grow; the derivation stays valid).
+  async function findFixRound(page, { topic, focus, template }) {
+    const warm = { "0005": { seen: 24, missed: 0 } };
+    const found = await page.evaluate(async ({ topic, focus, template, warm }) => {
+      const { buildKBSession } = await import("./app/kb-session.mjs");
+      for (let seed = 1; seed < 300; seed++) {
+        const l = buildKBSession(topic, { seed, count: 1, stats: warm, focus });
+        const ask = l?.steps.find((s) => s.ask)?.ask;
+        if (ask?.template === template) {
+          return {
+            seed, form: ask.form, kind: ask.kind, prompt: ask.prompt,
+            code: ask.code, target: ask.targetOutput, wrong: ask.wrongOutput,
+            fixLine: ask.blank.line, fix: ask.blank.target,
+          };
+        }
+      }
+      return null;
+    }, { topic, focus, template, warm });
+    expect(found, `a ${topic} focus round must deal ${template}`).toBeTruthy();
+    found.start = async () => {
+      await page.evaluate((w) => {
+        localStorage.setItem("plp.kb.v1", JSON.stringify(w));
+        localStorage.removeItem("plp.tutor.v1");
+        localStorage.removeItem("plp.kb.met.v1");
+        localStorage.removeItem("plp.kb.tmpl.v1");
+      }, warm);
+      await page.evaluate(({ topic, focus, seed }) =>
+        window.plp.tutor.startDrill(topic, { seed, count: 1, focus }), { topic, focus, seed: found.seed });
+    };
+    found.answer = async (line, text) => {
+      await page.evaluate((a) => window.plp.tutor.submit(a), { line, text });
+      await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 20_000 });
+      return page.evaluate(() => ({
+        lastAnswer: window.plp.tutor.state().lastAnswer,
+        editor: window.plp.editor.getValue(),
+        console: window.plp.console.text().replace(/\n+$/, ""),
+        errors: window.plp.checkErrors(),
+      }));
+    };
+    return found;
+  }
+
+  test("fix-the-bug (§R5 composition): the buggy program runs clean, the intended repair grades right, the gaming line grades wrong", async ({ page }) => {
+    await setup(page);
+    const round = await findFixRound(page, { topic: "loops", focus: "001J", template: "fix-accumulator" });
+    // It RIDES the fill-one-blank ask kind — no third grading path (§R5).
+    expect(round.kind).toBe("fill-one-blank");
+    expect(round.form).toBe("fix-the-bug");
+    // The card states BOTH outputs: the goal and the evidence.
+    expect(round.prompt).toContain("This should print");
+    expect(round.prompt).toContain("but it prints");
+    expect(round.wrong).not.toBe(round.target);
+
+    await round.start();
+    // The editor holds the BUGGY program — whole, never holed (it runs clean).
+    expect(await page.evaluate(() => window.plp.editor.getValue())).toBe(round.code);
+    expect(await page.evaluate(() => window.plp.editor.getValue())).not.toContain("___");
+    // The picker rows ARE the program: numbered lines, no second copy above.
+    await expect(page.locator("#practice .pr-errline")).toHaveCount(round.code.replace(/\n$/, "").split("\n").length);
+    await expect(page.locator("#practice .pr-question .pr-program")).toHaveCount(0);
+    await expect(page.locator("#practice .pr-mechanics")).toContainText("tap the wrong line");
+
+    // 1. FIND the line + FIX it: graded by REAL execution against the target.
+    let r = await round.answer(round.fixLine, round.fix);
+    expect(r.lastAnswer).toBe("correct");
+    expect(r.console).toBe(round.target);
+    expect(r.errors).toEqual([]);
+    await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("That prints the target");
+    await expect(page.locator("#practice .pr-errline.ok")).toHaveCount(1);
+
+    // 2. THE ANTI-GAMING RULE (E10c), made visible: writing the answer into
+    // the buggy line cannot work — it runs once per pass while the truth grows.
+    const constantLine = `${round.code.split(" ")[0]} = ${round.target.split("\n").pop()}`;
+    await round.start();
+    r = await round.answer(round.fixLine, constantLine);
+    expect(r.lastAnswer).toBe("wrong");
+    expect(r.console).not.toBe(round.target);
+    expect(r.errors).toEqual([]);
+  });
+
+  test("fix-the-bug: a DIFFERENT line that still prints the intended output is correct; review + retry re-pick and re-run", async ({ page }) => {
+    await setup(page);
+    const round = await findFixRound(page, { topic: "lists", focus: "0024", template: "fix-alias" });
+    // Line 3 is the mutation through the alias (`b.append(v)`) in every shape;
+    // rebuilding b there instead of copying on line 2 ALSO prints the intended
+    // output — and the interpreter, not the pick, is the answer key.
+    const added = round.code.split("\n")[2].match(/append\((\d+)\)/)[1];
+    const otherFix = `b = a + [${added}]`;
+    expect(round.fixLine).toBe(2);
+
+    await round.start();
+    let r = await round.answer(3, otherFix);
+    expect(r.lastAnswer).toBe("correct");
+    expect(r.console).toBe(round.target);
+    expect(r.errors).toEqual([]);
+    await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict"))
+      .toContainText("Not the line I'd have changed, but it works");
+
+    // Review: the buggy program in its picker with the picked line marked,
+    // the answer as line → replacement, and what it really printed.
+    const rec = await page.evaluate(() =>
+      window.plp.tutor.feed().findLast((c) => c.type === "question-frozen"));
+    expect(rec.review.form).toBe("fix-the-bug");
+    expect(rec.review.picked).toEqual({ line: 3, text: otherFix });
+    expect(rec.answerText).toBe(`line 3 → ${otherFix}`);
+
+    await page.evaluate(() => window.plp.tutor.review(0));
+    await expect(page.locator("#practice .pr-review .pr-errreview .pr-errline"))
+      .toHaveCount(round.code.replace(/\n$/, "").split("\n").length);
+    await expect(page.locator("#practice .pr-review .pr-errreview .pr-errline.ok")).toHaveCount(1);
+    await expect(page.locator("#practice .pr-review .pr-reveal pre")).toContainText(round.target.split("\n")[0]);
+    await expect(page.locator("#practice .pr-review .pr-retry.pr-retry-fix")).toHaveCount(1);
+
+    // Starting the retry swaps the marked answer for a live picker + box.
+    await page.locator("#practice .pr-retry-fix button.primary", { hasText: "Try it again" }).click();
+    await expect(page.locator("#practice .pr-review .pr-errline")).toHaveCount(round.code.replace(/\n$/, "").split("\n").length);
+    await page.locator("#practice .pr-retry-cancel").click();
+    await expect(page.locator("#practice .pr-review .pr-errreview")).toBeVisible();
+
+    // The retry re-picks and re-runs for real; a wrong repair stays wrong.
+    const liveCode = await page.evaluate(() => window.plp.editor.getValue());
+    const bad = await page.evaluate(() => window.plp.tutor.retry(0, { line: 2, text: "b = a" }));
+    expect(bad.ok).toBe(false);
+    const good = await page.evaluate((fix) => window.plp.tutor.retry(0, { line: 2, text: fix }), round.fix);
+    expect(good.ok).toBe(true);
+    expect(good.expectedText.trim()).toBe(round.target);
+    const after = await page.evaluate(() => ({
+      rec: (() => { const x = window.plp.tutor.feed().find((c) => c.type === "question-frozen"); return { ok: x.ok, retry: x.retry }; })(),
+      editor: window.plp.editor.getValue(),
+    }));
+    // The score of record keeps the FIRST attempt; the retry only decorates.
+    expect(after.rec).toEqual({ ok: true, retry: { ok: true, tries: 2 } });
+    expect(after.editor).toBe(liveCode); // the live round's program survived
+    await page.evaluate(() => window.plp.tutor.closeReview());
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
   test("spot-the-difference: program A shown with its real output; predict program B", async ({ page }) => {
     await setup(page);
     // Warm stats neutralize the cold-start frontier bias (this test is about

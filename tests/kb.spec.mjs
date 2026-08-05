@@ -125,6 +125,12 @@ function footprintSources(ex, prog) {
   // list (the shuffle is drawn at compile time), so the canonical join is the
   // program whose footprint must stay inside the closure.
   if (ex.form === "order-the-lines") return [canonicalOrderCode(prog)];
+  // fix-the-bug: BOTH sides must satisfy the closure — the buggy program the
+  // learner reads AND the fixed one the intended repair produces (the repair
+  // is where the focus concept usually fires: `b = a[:]` is 0024 itself).
+  if (ex.form === "fix-the-bug") {
+    return [prog.code, spliceBlankAt(prog.code, prog.blank, prog.blank.target)];
+  }
   // predict-io: the program IS the whole story — the typed lines are data
   // arriving from outside, never source the analyzer could see.
   if (ex.form === "predict-io") return [prog.code];
@@ -744,6 +750,26 @@ test.describe("PLP knowledge base (K-series)", () => {
             },
           ];
         }
+        // fix-the-bug (expansion ladder §R5's composition): three programs.
+        // The BUGGY one must run clean and really print the recorded wrong
+        // output (the card quotes it as "but it prints"); the intended fix
+        // must print the intended output; and the plausible conceptless line
+        // must NOT — the same anti-gaming floor write-the-line carries.
+        if (ex.form === "fix-the-bug") {
+          expect(prog.wrongOutput, `${ex.id}: the bug must be observable (E6)`).not.toBe(prog.targetOutput);
+          return [
+            { code: prog.code, form: "predict-output", name: null, target: prog.wrongOutput },
+            {
+              code: spliceBlankAt(prog.code, prog.blank, prog.blank.target),
+              form: "predict-output", name: null, target: prog.targetOutput,
+            },
+            {
+              code: spliceBlankAt(prog.code, prog.blank, prog.constantLine),
+              form: "predict-output", name: null, target: null,
+              mustMissTarget: prog.targetOutput,
+            },
+          ];
+        }
         // fill-one-blank's `code` is the FULL correct program; grade it as
         // predict-output and verify its real output equals the target.
         return [{
@@ -924,7 +950,7 @@ test.describe("PLP knowledge base (K-series)", () => {
         // output is unavailable — K-10 carries its discrimination floor
         // instead, where the real transcript is in hand.
         const scripted = ex.form === "predict-io";
-        const misCheckable = !["spot-the-difference", "predict-state", "trace-table", "fill-one-blank", "write-the-line", "predict-io"].includes(ex.form);
+        const misCheckable = !["spot-the-difference", "predict-state", "trace-table", "fill-one-blank", "write-the-line", "fix-the-bug", "predict-io"].includes(ex.form);
         items.push({
           id: ex.id, seed: k, source,
           jsAst: jsAst(source),

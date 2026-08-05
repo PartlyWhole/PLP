@@ -26,8 +26,8 @@
 // printed. The run IS the reveal.
 
 import { generateQuestion, questionGenerators, normalizeAnswer, normalizeOutput } from "./questions.mjs";
-import { renderQuestionBody, renderTraceTable, renderOrderLines, renderErrorPicker, createAnswerInput, createLinesInput, createGoneChip, appendExpected } from "./question-ui.mjs";
-import { buildKBSession, kbTopics, migrateStats, spliceBlank, lintLessonConcepts, frontierTags, drillTopicFor, topicProgress, conceptTopics } from "./kb-session.mjs";
+import { renderQuestionBody, renderTraceTable, renderOrderLines, renderErrorPicker, renderLinePicker, createAnswerInput, createLinesInput, createGoneChip, appendExpected } from "./question-ui.mjs";
+import { buildKBSession, kbTopics, migrateStats, spliceBlank, lineBlank, lintLessonConcepts, frontierTags, drillTopicFor, topicProgress, conceptTopics } from "./kb-session.mjs";
 import { summarizeRound } from "./progress.mjs";
 import { mapModel, renderConceptMap } from "./concept-map.mjs";
 import { events } from "./events.mjs";
@@ -1024,23 +1024,46 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
 
   function execFillBlank(ask) {
     events.emit("quiz-question", { kind: "fill-one-blank" });
-    const fillReview = () => ({
+    // fix-the-bug (expansion ladder §R5's composition) is the one member of
+    // this kind whose splice target is chosen at ANSWER time: the learner
+    // taps the line they think is wrong (predict-the-error's picker) and then
+    // writes its replacement (write-the-line's box). Rather than fork a third
+    // exec path, this path accepts a runtime-chosen blank — everything after
+    // the splice (run, compare with the target, reveal, review, retry) is
+    // byte-for-byte the same code the other two forms already use.
+    const isFix = ask.form === "fix-the-bug";
+    const fillReview = (extra = {}) => ({
       kind: "fill-one-blank", form: ask.form, code: ask.code, blank: ask.blank,
       targetOutput: ask.targetOutput, teach: ask.teach, context: ask.context,
+      ...(isFix ? { pickerCode: ask.code } : {}),
+      ...extra,
     });
     const hints = [...(ask.hints ?? [])];
     let input = null;
+    let picker = null;
     const card = ui.addInteractiveCard({
       teach: ask.teach, context: ask.context, form: ask.form ?? "fill-one-blank",
       prompt: ask.prompt ?? "Fill in the blank so the program prints the target.",
+      // fix-the-bug's picker rows ARE the program, numbered — a second copy
+      // above them would be the same lines twice (as in predict-the-error).
+      ...(isFix ? { program: false } : {}),
       render: (body) => {
+        if (isFix) picker = renderLinePicker(body, { code: ask.code });
         input = createAnswerInput({
           singleLine: true,
           // write-the-line asks for a WHOLE line (ladder §R5), so the
           // placeholder names the job; the fill placeholder names a token.
-          placeholder: ask.form === "write-the-line" ? "the missing line…" : "the missing piece…",
+          // fix-the-bug's box starts EMPTY and never pre-filled with the
+          // buggy line — seeing it would anchor the repair (quality bar E5).
+          placeholder: isFix ? "what that line should be…"
+            : ask.form === "write-the-line" ? "the missing line…" : "the missing piece…",
         });
         input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !input.readOnly) doFill(); });
+        if (isFix) {
+          // The box appears once a line is picked: FIND, then FIX.
+          input.hidden = true;
+          picker.onPick(() => { input.hidden = false; input.focus(); });
+        }
         body.appendChild(input);
         return null;
       },
@@ -1050,16 +1073,31 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     ui.popBatch(batch, card);
     batch = [];
 
-    const doFill = async () => {
+    const doFill = async (provided) => {
+      if (provided && typeof provided === "object") {
+        // Driver API (plp.tutor.submit): fix-the-bug answers as
+        // { line, text } — the pick and the replacement, in one gesture.
+        if (provided.line != null) picker?.buttons[provided.line - 1]?.click();
+        if (provided.text != null) input.value = provided.text;
+      }
+      const pickedLine = isFix ? picker?.picked() : null;
+      if (isFix && !pickedLine) {
+        card.setNote("Tap the line you think is wrong first");
+        return;
+      }
       const token = normalizeTypedCode(input.value);
       if (!token.trim()) {
-        card.setNote(ask.form === "write-the-line" ? "Type the missing line first" : "Type the missing piece first");
+        card.setNote(isFix ? "Now write what that line should be"
+          : ask.form === "write-the-line" ? "Type the missing line first" : "Type the missing piece first");
         return;
       }
       input.readOnly = true;
+      picker?.freeze();
       card.setActions([]);
       card.setNote("Filling it in and running it for real…");
-      const filled = spliceBlank(ask.code, ask.blank, token);
+      // THE runtime-chosen blank: the picked line's content, indentation kept.
+      const blank = isFix ? lineBlank(ask.code, pickedLine) : ask.blank;
+      const filled = spliceBlank(ask.code, blank, token);
       editor.setValue(filled);
       store.lastLoadedCode = filled; // the reveal run is now the lesson's code
       registerProgram(filled);
@@ -1074,22 +1112,30 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       // "fill that works" block below is the answer token, not a duplicate —
       // it renders on every surface.
       if (q) card.reveal?.({ text: q.grade({ text: "" }).expected.text, correct, kind: "fill-one-blank" });
+      picker?.mark({ ok: correct });
       if (!correct) {
-        appendExpected(card.body, { label: "A fill that works:", text: ask.blank.target });
+        appendExpected(card.body, {
+          label: isFix ? `A fix that works — line ${ask.blank.line}:` : "A fill that works:",
+          text: ask.blank.target,
+        });
       }
+      // THE HONEST INTERPRETER-FIRST CASE: a learner who repaired a DIFFERENT
+      // line, and whose program nonetheless prints the intended output, is
+      // right — the interpreter is the only answer key, so the verdict says
+      // so warmly instead of quietly grading the pick.
+      const otherLine = isFix && correct && pickedLine !== ask.blank.line;
       resolveAsk(card, {
         prompt: ask.prompt, ok: correct,
-        verdict: correct ? "✓ That prints the target!" : "✗ Not quite — that doesn't produce the target",
-        answerText: token,
+        verdict: otherLine ? "✓ Not the line I'd have changed, but it works!"
+          : correct ? "✓ That prints the target!" : "✗ Not quite — that doesn't produce the target",
+        answerText: isFix ? `line ${pickedLine} → ${token}` : token,
         lastAnswer: correct ? "correct" : "wrong",
         template: ask.template, concept: ask.concept, kind: "fill-one-blank",
         misconception: ask.misconception, misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
-        review: {
-          kind: "fill-one-blank", form: ask.form, code: ask.code, blank: ask.blank,
-          targetOutput: ask.targetOutput,
+        review: fillReview({
           expectedText: q ? q.grade({ text: "" }).expected.text : undefined,
-          teach: ask.teach, context: ask.context,
-        },
+          ...(isFix ? { picked: { line: pickedLine, text: token } } : {}),
+        }),
       });
     };
     const armActions = () => card.setActions([
@@ -1114,6 +1160,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       type: "ask",
       kind: "fill-one-blank",
       lock: (text) => { if (text != null) input.value = text; return doFill(); },
+      // fix-the-bug's answer is a PAIR — { line, text } — so it arrives
+      // through submit (the same door order-the-lines and the error picker
+      // use for their non-text answers).
+      submit: (answer) => doFill(answer),
       skip: () => resolveAsk(card, {
         prompt: ask.prompt, ok: false, verdict: "skipped",
         lastAnswer: "skipped", template: ask.template, concept: ask.concept, kind: "fill-one-blank",
@@ -1650,8 +1700,12 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     const rec = frozenRecords()[i];
     if (!rec) return null;
     const r = rec.review ?? {};
-    const displayCode = r.kind === "fill-one-blank" && r.blank
-      ? spliceBlank(r.code, r.blank, "___")
+    // fix-the-bug shows the BUGGY program in its line picker (with the picked
+    // line marked), so it wants no separate program block and no "___" — the
+    // program was never holed.
+    const displayCode = r.form === "fix-the-bug" ? null
+      : r.kind === "fill-one-blank" && r.blank
+        ? spliceBlank(r.code, r.blank, "___")
       // order-the-lines shows the ARRANGEMENT widget instead of a program
       // block — the arrangement is the answer, and the code is the same lines.
       // predict-the-error shows the numbered line picker instead of a plain
@@ -1661,10 +1715,11 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       index: i,
       prompt: rec.prompt, ok: rec.ok, verdict: rec.verdict,
       answerText: rec.answerText, retry: rec.retry,
-      kind: r.kind, code: displayCode, expectedText: r.expectedText,
+      kind: r.kind, form: r.form, code: displayCode, expectedText: r.expectedText,
       table: r.table, answersById: r.answersById,
       items: r.items, answerOrder: r.answerOrder, canonical: r.canonical,
-      picked: r.picked, actual: r.actual, pickerCode: r.kind === "predict-the-error" ? r.code : undefined,
+      picked: r.picked, actual: r.actual,
+      pickerCode: r.kind === "predict-the-error" || r.form === "fix-the-bug" ? r.code : undefined,
       teach: r.teach, context: r.context, stdinScript: r.stdinScript,
       multiline: r.multiline === true, // retry widget matches the live one
       // Single-answer kinds get the single-input widget; trace-table gets
@@ -1775,12 +1830,17 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         editor.setValue(before);
       }
     }
-    if (!text?.trim()) return null;
+    // fix-the-bug retries as a PAIR — { line, text } — re-picking the line and
+    // re-writing the fix, then re-running exactly like the first attempt.
+    const fixRetry = r.form === "fix-the-bug" && text && typeof text === "object";
+    if (fixRetry && (!text.line || !String(text.text ?? "").trim())) return null;
+    if (!fixRetry && !text?.trim()) return null;
     const before = editor.getValue(); // the live round's program — must survive
     try {
       let ok, expectedText;
       if (r.kind === "fill-one-blank") {
-        editor.setValue(spliceBlank(r.code, r.blank, text));
+        const blank = fixRetry ? lineBlank(r.code, text.line) : r.blank;
+        editor.setValue(spliceBlank(r.code, blank, fixRetry ? text.text : text));
         const summary = await actions.trace();
         if (!summary) return null; // a run is live — the retry never happened
         const q = summary.terminal_reason === "completed" ? generateQuestion("predict-output", ctx(), {}) : null;

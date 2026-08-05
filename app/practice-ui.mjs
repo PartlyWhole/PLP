@@ -11,7 +11,7 @@
 // serves the menu, the concept map, drills, and round summaries.
 
 import { buildStaticCard, buildControlButton, renderInline, verdictSpan } from "./tutor-widgets.mjs";
-import { renderOrderLines, renderErrorPicker, createLinesInput } from "./question-ui.mjs";
+import { renderOrderLines, renderErrorPicker, renderLinePicker, createAnswerInput, createLinesInput } from "./question-ui.mjs";
 
 export function createPracticeUI({ layout, getCode }) {
   let onExit = null;
@@ -232,6 +232,7 @@ export function createPracticeUI({ layout, getCode }) {
     "predict-state": "type the value it holds, like 7 or [1, 2]",
     "fill-one-blank": "type just the missing piece — it runs with your fill",
     "write-the-line": "type the whole missing line — it runs with your line",
+    "fix-the-bug": "tap the wrong line, then write what it should be — it really runs",
     "spot-the-difference": "type what the changed program prints",
     "trace-table": "fill every box, then check — the trace grades each step",
     "order-the-lines": "move the lines with ↑ and ↓, then check — it really runs",
@@ -640,9 +641,12 @@ export function createPracticeUI({ layout, getCode }) {
     return wrap;
   }
 
-  // A predict-the-error answer, read-only: the numbered program with the
-  // picked line marked (and the real one, when they differ), plus the picked
-  // error kind beside the real one. Text only (invariant 8).
+  // A picked-line answer, read-only: the numbered program with the picked
+  // line marked (and, for predict-the-error, the real one when they differ),
+  // plus the picked error kind beside the real one. fix-the-bug (ladder §R5's
+  // composition) reuses it for its FIND half — there the mark is simply
+  // whether the REPAIR worked, because the pick itself is never graded.
+  // Text only (invariant 8).
   function buildPickedError(desc) {
     const wrap = document.createElement("div");
     wrap.className = "pr-errreview";
@@ -653,8 +657,11 @@ export function createPracticeUI({ layout, getCode }) {
       const n = i + 1;
       const row = document.createElement("div");
       row.className = "pr-errline";
-      if (desc.picked?.line === n) row.classList.add(desc.actual && desc.actual.line === n ? "ok" : "bad");
-      if (desc.actual && desc.actual.line === n && desc.picked?.line !== n) row.classList.add("truth");
+      const fix = desc.form === "fix-the-bug";
+      if (desc.picked?.line === n) {
+        row.classList.add(fix ? (desc.ok ? "ok" : "bad") : desc.actual && desc.actual.line === n ? "ok" : "bad");
+      }
+      if (!fix && desc.actual && desc.actual.line === n && desc.picked?.line !== n) row.classList.add("truth");
       const num = document.createElement("span");
       num.className = "uid pr-errline-num";
       num.textContent = String(n);
@@ -713,8 +720,10 @@ export function createPracticeUI({ layout, getCode }) {
     }
     // predict-the-error: the numbered lines with the learner's pick marked,
     // in a slot a retry can swap for a fresh picker (and back).
+    // (fix-the-bug rides the same slot: its recorded answer is a picked line
+    // plus the line the learner wrote, and its retry swaps in a live picker.)
     let pickerSlot = null;
-    if (desc.kind === "predict-the-error" && desc.pickerCode) {
+    if ((desc.kind === "predict-the-error" || desc.form === "fix-the-bug") && desc.pickerCode) {
       pickerSlot = document.createElement("div");
       pickerSlot.className = "pr-picker-slot";
       pickerSlot.appendChild(buildPickedError(desc));
@@ -807,6 +816,85 @@ export function createPracticeUI({ layout, getCode }) {
         view.freeze();
         view.applyResult({ correct: res.ok });
         verdictOut.appendChild(verdictSpan(res.ok, res.ok ? "✓ that prints it!" : "✗ not yet — that's what it printed above"));
+        checkBtn.hidden = true;
+        cancelBtn.hidden = false;
+        startBtn.hidden = false;
+        if (res.expectedText !== undefined) {
+          revealSlot.textContent = "";
+          revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: res.expectedText, correct: res.ok }));
+        }
+      });
+      cancelBtn.addEventListener("click", showRecorded);
+      wrap.append(startBtn, checkBtn, cancelBtn, verdictOut, note);
+      el.appendChild(wrap);
+    } else if (desc.onRetry && desc.form === "fix-the-bug" && pickerSlot) {
+      // A fix-the-bug retry is a genuine second repair: the marked answer
+      // leaves the screen, a fresh picker + empty box take its place (never
+      // pre-filled — E5 again), and the chosen line is spliced and run for
+      // real, exactly as on the first attempt.
+      const wrap = document.createElement("div");
+      wrap.className = "pr-retry pr-retry-fix";
+      const startBtn = document.createElement("button");
+      startBtn.type = "button";
+      startBtn.className = "primary";
+      startBtn.textContent = "Try it again ▶";
+      const checkBtn = document.createElement("button");
+      checkBtn.type = "button";
+      checkBtn.className = "primary";
+      checkBtn.textContent = "Check my fix ▶";
+      checkBtn.hidden = true;
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.className = "pr-quiet pr-retry-cancel";
+      cancelBtn.textContent = "never mind, show what I answered";
+      cancelBtn.hidden = true;
+      const verdictOut = document.createElement("p");
+      verdictOut.className = "pr-retry-verdict";
+      const note = document.createElement("p");
+      note.className = "hint pr-retry-note";
+      note.textContent = "retries are for you — your score keeps the first try";
+      const recordedEl = pickerSlot.firstChild;
+      let view = null;
+      let box = null;
+      const showRecorded = () => {
+        pickerSlot.replaceChildren(recordedEl);
+        view = null;
+        box = null;
+        verdictOut.textContent = "";
+        startBtn.hidden = false;
+        checkBtn.hidden = true;
+        cancelBtn.hidden = true;
+      };
+      startBtn.addEventListener("click", () => {
+        const host = document.createElement("div");
+        view = renderLinePicker(host, { code: desc.pickerCode });
+        box = createAnswerInput({ singleLine: true, placeholder: "what that line should be…" });
+        box.hidden = true;
+        view.onPick(() => { box.hidden = false; box.focus(); });
+        host.appendChild(box);
+        pickerSlot.replaceChildren(host);
+        verdictOut.textContent = "";
+        startBtn.hidden = true;
+        checkBtn.hidden = false;
+        cancelBtn.hidden = false;
+      });
+      checkBtn.addEventListener("click", async () => {
+        if (!view || checkBtn.disabled) return;
+        const line = view.picked();
+        if (!line) { verdictOut.textContent = "tap the line you'd change first"; return; }
+        if (!box.value.trim()) { verdictOut.textContent = "now write what that line should be"; return; }
+        checkBtn.disabled = true;
+        verdictOut.textContent = "running it for real…";
+        const res = await desc.onRetry({ line, text: box.value });
+        checkBtn.disabled = false;
+        verdictOut.textContent = "";
+        if (!res) { verdictOut.textContent = "couldn't run just now — try again in a moment"; return; }
+        view.freeze();
+        view.mark({ ok: res.ok });
+        box.readOnly = true;
+        box.classList.toggle("ok", res.ok);
+        box.classList.toggle("bad", !res.ok);
+        verdictOut.appendChild(verdictSpan(res.ok, res.ok ? "✓ that prints it!" : "✗ not yet — that's what it printed"));
         checkBtn.hidden = true;
         cancelBtn.hidden = false;
         startBtn.hidden = false;

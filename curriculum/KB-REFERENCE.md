@@ -9,8 +9,8 @@
 ## Overview
 
 - **87 concepts** — 4 structural / 60 core / 23 edge.
-- **173 exercises** across 8 topics.
-- **Forms:** fill-one-blank, order-the-lines, predict-exact-output, predict-io, predict-state, predict-the-error, spot-the-difference, trace-table, write-the-line.
+- **176 exercises** across 8 topics.
+- **Forms:** fill-one-blank, fix-the-bug, order-the-lines, predict-exact-output, predict-io, predict-state, predict-the-error, spot-the-difference, trace-table, write-the-line.
 
 ## Topics
 
@@ -738,7 +738,7 @@ range(a, b) counts from a up to but not including b.
 - Children: 001H
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D ← 001E ← 001F
 - Characteristic wrong answer: includes b, or counts b−a+1 numbers
-- Exercises: range-start, range-start-contrast
+- Exercises: fix-off-by-one, range-start, range-start-contrast
 
 ### 001H · range-step — core
 
@@ -758,7 +758,7 @@ A running total updates once per loop pass; its final value is there after the l
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000B ← 000D ← 001E
 - Characteristic wrong answer: an off-by-one total, or only the last value
-- Exercises: accumulate-then-read, loop-total, loop-total-latent, order-loop-total, trace-sum, write-loop-step
+- Exercises: accumulate-then-read, fix-accumulator, loop-total, loop-total-latent, order-loop-total, trace-sum, write-loop-step
 
 ### 001K · loop-build-list — core
 
@@ -928,7 +928,7 @@ a[:] builds a real copy — mutating the copy leaves the original alone.
 - Children: 0025
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000A ← 000C ← 000D ← 000E ← 000G ← 000H ← 0011
 - Characteristic wrong answer: the original shows the change too
-- Exercises: copy-latent-state, copy-timing, slice-makes-copy
+- Exercises: copy-latent-state, copy-timing, fix-alias, slice-makes-copy
 
 ### 0025 · copy-is-shallow — edge
 
@@ -2586,6 +2586,114 @@ else:
 prints:
 ```
 high
+```
+
+### fix-accumulator — focus 001J (loop-accumulate)
+
+- Form: `fix-the-bug` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 000A, 000B, 000D, 001E
+- Shapes: adds-one, adds-a-constant · Variants: from-zero, from-start
+- Sample (provenance: seed k=0):
+
+The buggy program (runs clean, prints the wrong thing):
+```py
+total = 0
+for x in [3, 7, 7, 2]:
+    total = total + 3
+    print(total)
+```
+really prints:
+```
+3
+6
+9
+12
+```
+
+The intended fix — line 3 becomes `total = total + x`:
+```py
+total = 0
+for x in [3, 7, 7, 2]:
+    total = total + x
+    print(total)
+```
+prints the intended output:
+```
+3
+10
+17
+19
+```
+
+### fix-alias — focus 0024 (slice-copies)
+
+- Form: `fix-the-bug` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D, 000G, 000H
+- Shapes: alias-then-append, both-grow · Variants: two-items, three-items
+- Sample (provenance: seed k=0):
+
+The buggy program (runs clean, prints the wrong thing):
+```py
+a = [7, 3, 1]
+b = a
+b.append(17)
+a.append(22)
+print(a)
+print(b)
+```
+really prints:
+```
+[7, 3, 1, 17, 22]
+[7, 3, 1, 17, 22]
+```
+
+The intended fix — line 2 becomes `b = a[:]`:
+```py
+a = [7, 3, 1]
+b = a[:]
+b.append(17)
+a.append(22)
+print(a)
+print(b)
+```
+prints the intended output:
+```
+[7, 3, 1, 22]
+[7, 3, 1, 17]
+```
+
+### fix-off-by-one — focus 001G (range-start-stop)
+
+- Form: `fix-the-bug` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 001E, 001F
+- Shapes: stop-wrong, start-wrong · Variants: one-too-many, one-too-few
+- Sample (provenance: seed k=0):
+
+The buggy program (runs clean, prints the wrong thing):
+```py
+for i in range(4, 9):
+    print(i)
+```
+really prints:
+```
+4
+5
+6
+7
+8
+```
+
+The intended fix — line 1 becomes `for i in range(5, 9):`:
+```py
+for i in range(5, 9):
+    print(i)
+```
+prints the intended output:
+```
+5
+6
+7
+8
 ```
 
 ### float-tail — focus 000W (float-inexact)

@@ -20,7 +20,7 @@ R3 predict-the-error ─────────┴─ (R2 first: forms │
 R4a input() rung (A0 + predict-io)  — DONE       ├─ any order after R1–R3
 R4b functions waves (A1..A4, waves 1–5) ──────────┘
 R5 write-the-line  — DONE (rides the fill-one-blank ask kind)
-   fix-the-bug     = composition of R3+R5, build later, never a third path
+   fix-the-bug     — DONE (composition of R3+R5; never a third path)
 ```
 
 ## R1 — Selection depth (no ledger change, zero fixture risk by design)
@@ -199,6 +199,62 @@ misses it. Both exercises print the accumulator on every pass, so they
 are `multiline: true` and the prompt reads "`4`, then `11`, then `13`".
 Curly-quote normalization + autocapitalize/autocorrect/autocomplete off
 apply to every answer box, not just this form.
+
+### fix-the-bug — DONE (the composition)
+
+THE FORM. A program that RUNS CLEAN but prints the wrong thing. The card
+states both outputs ("This should print `X`, but it prints `Y`. Fix the
+line that's wrong.") and the learner (1) FINDS the line, then (2) FIXES
+it. Two steps, one card, two shipped forms — no third grading path.
+
+**As built.** DECIDED: it RIDES the `fill-one-blank` ask kind (`form:
+"fix-the-bug"`), like write-the-line, with ONE minimal extension —
+`execFillBlank` now accepts a **runtime-chosen blank**. The splice target
+cannot be authored (the learner picks it), so the ask carries the buggy
+`code` plus the INTENDED fix as `blank` (provenance for the after-grading
+reveal, for review and for the K-series), while the blank actually
+spliced is derived at answer time by `lineBlank(code, pickedLine)` —
+indentation kept, the rest replaced. Everything after the splice (run,
+compare with `targetOutput`, reveal, stats, review, retry) is the code
+write-the-line already used, unchanged.
+
+- FIND reuses predict-the-error's picker, EXTRACTED as
+  `renderLinePicker(body, {code})` — `renderErrorPicker` is now that
+  picker plus its error palette, so there is one line-picking widget,
+  not two. The card sets `program: false`: the numbered rows ARE the
+  program.
+- FIX is write-the-line's box, revealed on the first pick and always
+  EMPTY — pre-filling the buggy line would anchor the repair (E5).
+- GRADING is interpreter-only and the PICK IS NEVER GRADED. A learner
+  who repairs a different line and still prints the intended output is
+  CORRECT; the verdict says so warmly ("Not the line I'd have changed,
+  but it works!"). The T-series drives exactly that case.
+- The answer is a PAIR, so it arrives through `submit({line, text})`
+  (the door order-the-lines and the error picker already use); review
+  shows the picker with the picked line marked plus `line N → <text>`
+  and what it really printed; retry re-picks and re-runs.
+- The buggy program's REAL output is computed in JS as `wrongOutput`
+  (the card's "but it prints" half) and verified against real execution
+  by K-10, alongside: buggy runs clean, intended fix → target,
+  `constantLine` → NOT the target, and `wrongOutput ≠ targetOutput`.
+- CLOSURE applies to BOTH programs (buggy and fixed). That is why
+  `fix-alias` focuses **0024 slice-copies**, not 000H: `b = a[:]` emits
+  0024, which is a CHILD of 000H, so a 000H-focused exercise could not
+  legally show its own repair. Likewise `total = x` (the other classic
+  accumulator bug) is out of closure for 001J — a value-copy rebind
+  emits 000C — so `fix-accumulator`'s second shape hard-codes an item
+  instead.
+- KNOWN LIMIT (documented, not machine-refutable): in a loop-HEADER slot
+  no constant can carry the loop at all, so `fix-off-by-one` records the
+  other conceptless shortcut as its `constantLine` — "count the lines
+  you need, write `range(n)`" — which fails because every intended range
+  starts at ≥2. A learner who instead enumerates the intended values
+  (`for i in [5, 6, 7, 8]:`) IS graded correct: producing that list
+  requires the same diagnosis the fix does, so it is a repair, not a
+  game.
+
+Three exercises, all role `review`: `fix-accumulator` (001J),
+`fix-off-by-one` (001G), `fix-alias` (0024).
 
 ## Standing constraints (all rungs)
 

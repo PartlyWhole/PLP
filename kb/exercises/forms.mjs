@@ -22,6 +22,16 @@ function blankFrom(template, token) {
   return { code: template.replace("\x00", token), blank: { line, col, len: token.length, target: token } };
 }
 
+// fix-the-bug's blank is the CONTENT of an existing line (indentation kept):
+// the same {line, col, len, target} shape spliceBlank consumes, authored from
+// the program plus the line number rather than from a NUL marker — the buggy
+// program is shown whole, never holed.
+function blankAtLine(code, line, target) {
+  const text = code.split("\n")[line - 1] ?? "";
+  const col = text.length - text.trimStart().length;
+  return { line, col, len: text.length - col, target };
+}
+
 export default [
   {
     id: "fill-arith-op",
@@ -946,6 +956,182 @@ export default [
           shape, variant: "plain",
           variantCard: `\`xs.append(x)\` adds ONE item per pass, so the list grows: `
             + `${grown.join(", ")}. Assigning the finished list instead would print it whole on the first pass.`,
+        };
+      },
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // fix-the-bug (expansion ladder §R5): the COMPOSITION of two shipped forms,
+  // never a third grading path. The program RUNS CLEAN but prints the wrong
+  // thing; the card states what it should print beside what it really prints,
+  // and the learner (1) FINDS the line — predict-the-error's line picker —
+  // then (2) FIXES it — write-the-line's box. Grading is write-the-line's
+  // exactly: splice the typed line in place of the PICKED line, run it,
+  // compare the real output with the intended one. A learner who repairs a
+  // DIFFERENT line and still lands the intended output is CORRECT — the
+  // interpreter is the only answer key.
+  //
+  // Emitted shape: {code (the BUGGY program), buggyLine, blank (the INTENDED
+  // fix, provenance for the reveal), targetOutput (what it SHOULD print),
+  // wrongOutput (what the buggy program really prints — computed here in JS
+  // and verified against real execution by K-10), constantLine}.
+  //
+  // THE ANTI-GAMING RULE (quality bar E10c, inherited): the buggy line must
+  // execute more than once OR feed ≥2 later observations, so the intended
+  // output cannot be reproduced by writing the answer into that one line.
+  // `constantLine` records the most plausible conceptless answer and K-10
+  // asserts it MISSES the target.
+  {
+    id: "fix-accumulator",
+    topic: "loops",
+    focus: "001J", // loop-accumulate — the running total is what's broken
+    assumed: ["0005", "0006", "0008", "000A", "000B", "000D", "001E"],
+    role: "review",
+    form: "fix-the-bug",
+    multiline: true, // the running value on every pass IS the concept (E4)
+    generator: {
+      // Two classic accumulator bugs, both of which keep the ACCUMULATION and
+      // get the ITEM wrong: counting instead of summing, and hard-coding the
+      // first item where the loop variable belongs. (`total = x`, the other
+      // classic, is out of closure — a value-copy rebind emits 000C, which is
+      // not an ancestor of 001J.)
+      shapes: ["adds-one", "adds-a-constant"],
+      variants: ["from-zero", "from-start"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["adds-one", "adds-a-constant"]);
+        const variant = pick(rng, ["from-zero", "from-start"]);
+        const name = pick(rng, ["total", "score"]);
+        const items = Array.from({ length: int(rng, 3, 4) }, () => int(rng, 2, 9));
+        // The hard-coded item can only be spotted if some later item differs,
+        // so the second item is redrawn until it does (E6 discrimination).
+        while (items[1] === items[0]) items[1] = int(rng, 2, 9);
+        const start = variant === "from-start" ? int(rng, 5, 15) : 0;
+        const stuck = items[0];
+        const buggyStep = shape === "adds-one" ? `${name} = ${name} + 1` : `${name} = ${name} + ${stuck}`;
+        const fixStep = `${name} = ${name} + x`;
+        // Intended: the running sum on every pass. Wrong: what the buggy
+        // line really produces (computed here; K-10 checks it for real).
+        let t = start;
+        const intended = items.map((v) => (t += v));
+        let w = start;
+        const wrong = items.map(() => (w += shape === "adds-one" ? 1 : stuck));
+        const code = `${name} = ${start}\nfor x in [${items.join(", ")}]:\n    ${buggyStep}\n    print(${name})\n`;
+        const final = intended[intended.length - 1];
+        return {
+          code, buggyLine: 3,
+          blank: blankAtLine(code, 3, fixStep),
+          targetOutput: intended.join("\n"),
+          wrongOutput: wrong.join("\n"),
+          // The scope rule made concrete: the buggy line runs once per pass,
+          // so a constant prints the finished value every time while the
+          // truth grows — it can never reproduce the target.
+          constantLine: `${name} = ${final}`,
+          shape, variant,
+          variantCard: `The line inside the loop runs once per item, so it has to fold `
+            + `THIS item — the loop variable \`x\` — into what \`${name}\` already holds: `
+            + `\`${fixStep}\`. \`${buggyStep}\` adds the same `
+            + `${shape === "adds-one" ? "1" : String(stuck)} every pass no matter which item it is on, `
+            + `which is why it prints ${wrong.join(", ")} instead of ${intended.join(", ")}.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "fix-off-by-one",
+    topic: "loops",
+    focus: "001G", // range-start-stop — both ends of the range are the concept
+    assumed: ["0005", "0006", "001E", "001F"],
+    role: "review",
+    form: "fix-the-bug",
+    multiline: true, // the SET of printed numbers is exactly the concept (E4)
+    generator: {
+      shapes: ["stop-wrong", "start-wrong"],
+      variants: ["one-too-many", "one-too-few"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["stop-wrong", "start-wrong"]);
+        const variant = pick(rng, ["one-too-many", "one-too-few"]);
+        const start = int(rng, 2, 6);          // never 0: see constantLine
+        const count = int(rng, 3, 4);
+        const stop = start + count;
+        const off = variant === "one-too-many" ? 1 : -1;
+        const buggy = shape === "stop-wrong"
+          ? `for i in range(${start}, ${stop + off}):`
+          : `for i in range(${start - off}, ${stop}):`;
+        const fix = `for i in range(${start}, ${stop}):`;
+        const seq = (a, b) => Array.from({ length: Math.max(0, b - a) }, (_, k) => a + k);
+        const intended = seq(start, stop);
+        const wrong = shape === "stop-wrong" ? seq(start, stop + off) : seq(start - off, stop);
+        const code = `${buggy}\n    print(i)\n`;
+        return {
+          code, buggyLine: 1,
+          blank: blankAtLine(code, 1, fix),
+          targetOutput: intended.join("\n"),
+          wrongOutput: wrong.join("\n"),
+          // A loop HEADER cannot hold a constant (the indented body would not
+          // parse), so the plausible conceptless answer here is the other
+          // shortcut: count the lines you need and use `range(n)`. It starts
+          // at 0, so it never reproduces a target that starts at ${start} —
+          // the same discrimination the scope rule buys elsewhere.
+          constantLine: `for i in range(${intended.length}):`,
+          shape, variant,
+          variantCard: `\`range(${start}, ${stop})\` starts AT ${start} and stops BEFORE ${stop}, `
+            + `so it walks ${intended.join(", ")}. The program's `
+            + `\`${buggy.replace(/^for i in |:$/g, "")}\` walks ${wrong.join(", ")} — `
+            + `${variant === "one-too-many" ? "one number too many" : "one number too few"}, `
+            + `because the ${shape === "stop-wrong" ? "stop" : "start"} is off by one.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "fix-alias",
+    topic: "lists",
+    // 0024 slice-copies, NOT 000H: the FIXED program contains `b = a[:]`, and
+    // both sides of a fix-the-bug must satisfy the closure — 0024 is a CHILD
+    // of 000H, so a 000H-focused exercise could not legally show the repair.
+    focus: "0024",
+    assumed: ["0005", "0006", "000D", "000G", "000H"],
+    role: "review",
+    form: "fix-the-bug",
+    multiline: true, // the two lists side by side ARE the observation (E4)
+    generator: {
+      shapes: ["alias-then-append", "both-grow"],
+      variants: ["two-items", "three-items"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["alias-then-append", "both-grow"]);
+        const variant = pick(rng, ["two-items", "three-items"]);
+        const items = Array.from({ length: variant === "two-items" ? 2 : 3 }, () => int(rng, 1, 9));
+        const v = int(rng, 10, 19);
+        const w = int(rng, 20, 29);
+        const show = (xs) => `[${xs.join(", ")}]`;
+        const mutations = shape === "both-grow"
+          ? `b.append(${v})\na.append(${w})\n`
+          : `b.append(${v})\n`;
+        const code = `a = ${show(items)}\nb = a\n${mutations}print(a)\nprint(b)\n`;
+        // Intended (b is a real copy): a keeps its own history, b keeps its.
+        const intendedA = shape === "both-grow" ? [...items, w] : [...items];
+        const intendedB = [...items, v];
+        // Really (b is the same list): every mutation lands in one list.
+        const shared = shape === "both-grow" ? [...items, v, w] : [...items, v];
+        return {
+          code, buggyLine: 2,
+          blank: blankAtLine(code, 2, "b = a[:]"),
+          targetOutput: `${show(intendedA)}\n${show(intendedB)}`,
+          wrongOutput: `${show(shared)}\n${show(shared)}`,
+          // The copy line feeds TWO later observations (both prints) and is
+          // followed by more mutation, so writing the answer into it fails:
+          // the append lands on the constant too.
+          constantLine: `b = ${show(intendedB)}`,
+          shape, variant,
+          variantCard: `\`b = a\` gives the SAME list a second name, so \`${`b.append(${v})`}\` `
+            + `shows through \`a\` too — that is why both lines print ${show(shared)}. `
+            + `\`b = a[:]\` copies it, so \`a\` stays ${show(intendedA)} while \`b\` becomes ${show(intendedB)}.`,
         };
       },
     },

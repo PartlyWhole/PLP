@@ -29,6 +29,16 @@ const byTag = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 // stable key `${exerciseId}|${label}`; the caller executes `run` (the code to
 // run) and records its printed output under that key. `run` may differ from
 // the displayed `code` (predict-state appends a read of the probed name).
+// Splice a {line, col, len} blank — the pure restatement of app/kb-session's
+// spliceBlank (kb/ imports nothing from app/, by contract).
+function spliceLine(code, blank, replacement) {
+  const lines = code.split("\n");
+  const li = blank.line - 1;
+  const line = lines[li] ?? "";
+  lines[li] = line.slice(0, blank.col) + replacement + line.slice(blank.col + blank.len);
+  return lines.join("\n");
+}
+
 export function docSamples(kb) {
   const specs = [];
   for (const ex of [...kb.exercises].sort((a, b) => byTag(a.id, b.id))) {
@@ -62,6 +72,12 @@ export function docSamples(kb) {
       // echo-excluding accessor) plus a labeled "someone types:" line. Both
       // writers then agree byte for byte.
       specs.push({ key: `${ex.id}|io`, run: prog.code, stdin: [...prog.stdinScript] });
+    } else if (ex.form === "fix-the-bug") {
+      // Two runs: the BUGGY program (what the learner is shown, and what the
+      // card quotes as "but it prints") and the FIXED one (the intended
+      // repair spliced in, which must print the intended output).
+      specs.push({ key: `${ex.id}|buggy`, run: prog.code });
+      specs.push({ key: `${ex.id}|fixed`, run: spliceLine(prog.code, prog.blank, prog.blank.target) });
     } else if (ex.form === "order-the-lines") {
       // The deal is shuffled at compile time; the reference records the
       // CANONICAL order (the exercise's ground truth) and what it prints.
@@ -236,6 +252,16 @@ export function renderReference(kb, outputs, waivers = []) {
       L.push(`someone types: ${prog.stdinScript.map((l) => `\`${l}\``).join(", then ")}`);
       L.push("the program emits (prompts + output, without the typed lines):");
       L.push(outBlock(get(`${ex.id}|io`)));
+    } else if (ex.form === "fix-the-bug") {
+      L.push("The buggy program (runs clean, prints the wrong thing):");
+      L.push(fence(prog.code));
+      L.push("really prints:");
+      L.push(outBlock(get(`${ex.id}|buggy`)));
+      L.push("");
+      L.push(`The intended fix — line ${prog.buggyLine} becomes \`${prog.blank.target}\`:`);
+      L.push(fence(spliceLine(prog.code, prog.blank, prog.blank.target)));
+      L.push("prints the intended output:");
+      L.push(outBlock(get(`${ex.id}|fixed`)));
     } else if (ex.form === "fill-one-blank" || ex.form === "write-the-line") {
       // write-the-line (ladder §R5) is fill-one-blank with a line-wide blank:
       // same {code, blank, targetOutput} shape, same reference rendering.

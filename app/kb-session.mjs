@@ -60,6 +60,16 @@ export function spliceBlank(code, blank, replacement) {
   return lines.join("\n");
 }
 
+// The blank that spans line `line`'s CONTENT (indentation kept, the rest
+// replaceable) — the same {line, col, len} shape spliceBlank consumes.
+// fix-the-bug picks its line at ANSWER time (the learner taps it), so its
+// blank cannot be authored: it is derived here, from the line they chose.
+export function lineBlank(code, line) {
+  const text = code.split("\n")[line - 1] ?? "";
+  const col = text.length - text.trimStart().length;
+  return { line, col, len: text.length - col };
+}
+
 // A target output rendered for a prompt sentence. Multi-line targets (the
 // write-the-line loop forms, where the point IS one printed line per pass)
 // read as "`4`, then `11`, then `13`" rather than a backticked blob.
@@ -332,6 +342,27 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met 
         concept: ex.focus, template: ex.id, singleLine: true,
         code: prog.code, blank: prog.blank, targetOutput: prog.targetOutput,
         prompt: `Write the missing line so it prints ${targetPhrase(prog.targetOutput)}.`,
+      };
+    } else if (ex.form === "fix-the-bug") {
+      // fix-the-bug (expansion ladder §R5's composition): the program RUNS
+      // CLEAN but prints the wrong thing. FIND is predict-the-error's line
+      // picker; FIX is write-the-line's splice-and-run — never a third
+      // grading path. The editor holds the BUGGY program (the learner's
+      // starting point, and what "open in editor" honestly shows).
+      steps.push({ loadCode: prog.code });
+      ask = {
+        kind: "fill-one-blank",
+        form: ex.form, shape: prog.shape,
+        concept: ex.focus, template: ex.id, singleLine: true,
+        // `blank` is the INTENDED fix (provenance for the after-grading
+        // reveal and for review/retry); the blank actually spliced is derived
+        // from the line the learner picks (app/tutor.mjs execFillBlank).
+        code: prog.code, blank: prog.blank, targetOutput: prog.targetOutput,
+        wrongOutput: prog.wrongOutput,
+        // The card states BOTH outputs: the intended one is the goal, the
+        // real one is the evidence something is wrong.
+        prompt: `This should print ${targetPhrase(prog.targetOutput)}, but it prints `
+          + `${targetPhrase(prog.wrongOutput)}. Fix the line that's wrong.`,
       };
     } else if (ex.form === "order-the-lines") {
       // Parsons (expansion ladder §R2): the KB emits the CANONICAL lines and

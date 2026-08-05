@@ -449,18 +449,21 @@ export function renderOrderLines(body, q) {
 // would turn "always the only TypeError-ish option" into a meta-pattern (E6).
 export const ERROR_NAMES = ["NameError", "TypeError", "IndexError", "KeyError"];
 
-// The predict-the-error renderer: one button per program line (numbered, with
-// the line's text) plus the four-name palette. Both are single-choice; the
-// tutor's lock reads collect() → { line, type } (either may be null until the
-// learner has picked). Program text is set with textContent (invariant 8).
-export function renderErrorPicker(body, q) {
-  const lines = String(q.code ?? "").replace(/\n$/, "").split("\n");
+// THE LINE PICKER: the numbered, tappable program. One button per line, one
+// pick at a time. It is the shared half of two forms — predict-the-error
+// (which adds the error palette below) and fix-the-bug (ladder §R5's
+// composition, which adds a single-line answer box) — so it lives here once
+// rather than in two near-copies. Program text is set with textContent
+// (invariant 8). The returned handle is deliberately low-level: the owning
+// renderer decides what "result" means.
+export function renderLinePicker(body, { code, lines } = {}) {
+  const texts = lines ?? String(code ?? "").replace(/\n$/, "").split("\n");
   let pickedLine = null;
-  let pickedType = null;
+  let onPick = null;
 
   const linesEl = document.createElement("div");
   linesEl.className = "quiz-errlines pr-errlines";
-  const lineBtns = lines.map((text, i) => {
+  const lineBtns = texts.map((text, i) => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "pr-errline";
@@ -468,18 +471,50 @@ export function renderErrorPicker(body, q) {
     const num = document.createElement("span");
     num.className = "uid pr-errline-num";
     num.textContent = String(i + 1);
-    const code = document.createElement("code");
-    code.textContent = text;
-    btn.append(num, code);
+    const codeEl = document.createElement("code");
+    codeEl.textContent = text;
+    btn.append(num, codeEl);
     btn.addEventListener("click", () => {
       if (linesEl.classList.contains("frozen")) return;
       pickedLine = i + 1;
       for (const b of lineBtns) b.classList.toggle("picked", b === btn);
+      onPick?.(pickedLine);
     });
     linesEl.appendChild(btn);
     return btn;
   });
   body.appendChild(linesEl);
+
+  return {
+    el: linesEl,
+    buttons: lineBtns,
+    picked: () => pickedLine,
+    // Called whenever the learner taps a line (fix-the-bug reveals its answer
+    // box on the first pick).
+    onPick(fn) { onPick = fn; },
+    // ok === true/false marks the learner's pick; `truthLine` marks the line
+    // the truth points at when it differs (predict-the-error's crash site).
+    mark({ ok, truthLine = null } = {}) {
+      for (const b of lineBtns) {
+        const n = Number(b.dataset.line);
+        b.classList.toggle("ok", ok === true && n === pickedLine);
+        b.classList.toggle("bad", ok === false && n === pickedLine);
+        b.classList.toggle("truth", truthLine != null && n === truthLine && n !== pickedLine);
+      }
+    },
+    freeze() {
+      linesEl.classList.add("frozen");
+      for (const b of lineBtns) b.disabled = true;
+    },
+  };
+}
+
+// The predict-the-error renderer: the shared line picker plus the four-name
+// palette. Both are single-choice; the tutor's lock reads collect() →
+// { line, type } (either may be null until the learner has picked).
+export function renderErrorPicker(body, q) {
+  const picker = renderLinePicker(body, { code: q.code });
+  let pickedType = null;
 
   const palette = document.createElement("div");
   palette.className = "quiz-errkinds pr-errkinds";
@@ -500,17 +535,12 @@ export function renderErrorPicker(body, q) {
   body.appendChild(palette);
 
   return {
-    collect: () => ({ line: pickedLine, type: pickedType }),
+    collect: () => ({ line: picker.picked(), type: pickedType }),
     // Marking is per-half so a half-right answer READS as half right: the
     // picked buttons go ok/bad individually, and the truth is marked too.
     applyResult(result) {
       const { lineOk, typeOk, actual } = result;
-      for (const b of lineBtns) {
-        const n = Number(b.dataset.line);
-        b.classList.toggle("ok", lineOk === true && n === pickedLine);
-        b.classList.toggle("bad", lineOk === false && n === pickedLine);
-        b.classList.toggle("truth", lineOk === false && actual != null && n === actual.line);
-      }
+      picker.mark({ ok: lineOk, truthLine: lineOk === false && actual != null ? actual.line : null });
       for (const b of kindBtns) {
         const name = b.dataset.errorName;
         b.classList.toggle("ok", typeOk === true && name === pickedType);
@@ -519,9 +549,9 @@ export function renderErrorPicker(body, q) {
       }
     },
     freeze() {
-      linesEl.classList.add("frozen");
+      picker.freeze();
       palette.classList.add("frozen");
-      for (const b of [...lineBtns, ...kindBtns]) b.disabled = true;
+      for (const b of kindBtns) b.disabled = true;
     },
     line: null,
     wide: false,

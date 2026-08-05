@@ -337,7 +337,7 @@ line of output (single-line input, Enter to submit); the one
 `multiline: true` exception is `loop-for-visits-each`, where several
 lines ARE the concept. Forms beyond predict-exact-output — predict-state,
 fill-one-blank, spot-the-difference, trace-table, order-the-lines,
-predict-the-error, predict-io, write-the-line — plug in per exercise
+predict-the-error, predict-io, write-the-line, fix-the-bug — plug in per exercise
 (design §5.2, expansion ladder §R2/§R3/§R4a/§R5). ASK KINDS are fewer
 than forms: `write-the-line` (ladder §R5) RIDES the `fill-one-blank` ask
 kind — same {code, blank, targetOutput} contract, blank widened to a
@@ -349,7 +349,20 @@ whose effect prints on every pass (the §R5 SCOPE RULE), which is what
 makes a constant line unable to fake the target. Every answer box is
 hardened for mobile (autocapitalize/autocorrect/autocomplete off,
 spellcheck off) and typed code is curly-quote-normalized before it is
-spliced and run. A predict-the-error program is the ONE
+spliced and run. `fix-the-bug` (ladder §R5's composition) rides that same
+ask kind: the program RUNS CLEAN but prints the wrong thing, the card
+states both outputs, and the learner FINDS the line (predict-the-error's
+`renderLinePicker`, now shared by both forms) then FIXES it (the
+write-the-line box, always EMPTY — pre-filling the buggy line would
+anchor the repair, E5). The one extension it needed is a **runtime-chosen
+blank**: the splice target is the line the learner picked, derived by
+`lineBlank(code, line)`, so `execFillBlank` still owns the single
+splice-run-compare path (no third grading path, per §R5). Only the
+program's real output is graded, never the pick — repairing a DIFFERENT
+line and still printing the intended output is CORRECT, and the verdict
+says so ("Not the line I'd have changed, but it works!"). Its answer
+arrives through `submit({line, text})` (a pair, like the error picker's),
+and review/retry re-pick and re-run. A predict-the-error program is the ONE
 deliberate exception to "runs clean": it stops, and at most one line is
 printed before it does. predict-io is structurally `multiline: true`: its
 answer is a transcript.
