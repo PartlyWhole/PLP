@@ -42,6 +42,49 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#layout")).toBeVisible();
   });
 
+  test("round count picker persists 5/10/15/Custom and feeds regular, endless, and capped focus rounds", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => {
+      localStorage.removeItem("plp.practice-count.v1");
+      localStorage.removeItem("plp.tutor.v1");
+    });
+    await page.locator("#btn-tutor").click();
+    const picker = page.locator("#practice [data-role=pr-round-count-select]");
+    const custom = page.locator("#practice [data-role=pr-round-count-input]");
+    await expect(picker).toHaveValue("10");
+    await picker.selectOption("5");
+    expect(await page.evaluate(() => localStorage.getItem("plp.practice-count.v1"))).toBe("5");
+    await picker.selectOption("15");
+    expect(await page.evaluate(() => localStorage.getItem("plp.practice-count.v1"))).toBe("15");
+    await picker.selectOption("custom");
+    await expect(custom).toHaveValue("15"); // Custom never opens blank.
+    await custom.fill("7");
+    expect(await page.evaluate(() => localStorage.getItem("plp.practice-count.v1"))).toBe("7");
+
+    await page.locator("#practice [data-role=pr-controls] button", { hasText: "Everything" }).click();
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    const regularCount = await page.evaluate(() => JSON.parse(localStorage.getItem("plp.tutor.v1"))
+      .drillLesson.steps.filter((s) => s.ask).length);
+    expect(regularCount).toBe(7);
+
+    await page.evaluate(() => window.plp.tutor.startDrill("all", { seed: 22, endless: true }));
+    const endless = await page.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
+      return { count: s.drillLesson.steps.filter((step) => step.ask).length, chunk: s.endlessCount };
+    });
+    expect(endless).toEqual({ count: 7, chunk: 7 });
+
+    await page.evaluate(() => window.plp.tutor.startDrill("state", { focus: "0005", seed: 2 }));
+    await expect(page.locator("#practice [data-role=pr-round-notice]")).toContainText("2 varied practice problems");
+    await expect(page.locator("#practice [data-role=pr-round-notice]")).toContainText("7-problem preference");
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("plp.tutor.v1"))
+      .drillLesson.steps.filter((s) => s.ask).length)).toBe(2);
+
+    await page.setViewportSize({ width: 360, height: 700 });
+    expect(await page.evaluate(() => document.querySelector("#practice .pr-top").scrollWidth <= window.innerWidth)).toBe(true);
+    await expect(page.locator("#practice [data-role=pr-question-position]")).toHaveText("Question 1 of 2");
+  });
+
   test("predict-output: trace-grounded, position-aware; forgives trailing whitespace + container display spacing, never content", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => window.plp.editor.setValue(
@@ -530,8 +573,16 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#practice .pr-question .pr-explain .tutor-card")).toHaveCount(1);
 
     // Continue → the next question is a fresh card with no reveal.
-    await page.evaluate(() => window.plp.tutor.continue());
+    // Header Next is the canonical advancement control after grading; the
+    // old bottom Continue control is gone. Before grading, Next is hidden
+    // and the explicit Skip action remains.
+    await expect(page.locator("#practice [data-role=pr-next]")).toBeVisible();
+    await expect(page.locator("#practice [data-role=pr-controls] button", { hasText: "Continue" })).toHaveCount(0);
+    await page.locator("#practice [data-role=pr-next]").click();
     await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 15_000 });
+    await expect(page.locator("#practice [data-role=pr-question-position]")).toHaveText("Question 2 of 2");
+    await expect(page.locator("#practice [data-role=pr-next]")).toBeHidden();
+    await expect(page.locator("#practice .pr-question .pr-actions button", { hasText: "Skip" })).toBeVisible();
     await expect(page.locator("#practice .pr-reveal")).toHaveCount(0);
     await expect(page.locator("#practice .pr-question")).toBeVisible();
 
@@ -1448,7 +1499,7 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
-  test("a correct answer holds the card: verdict + reveal stay up until Continue (Enter works)", async ({ page }) => {
+  test("a correct answer holds the card: verdict + reveal stay up until header Next (Enter works)", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
     // Fixture: numbers seed 2 count 1 is `print(14 ___ 8)` target 6 → "-".
@@ -1459,7 +1510,8 @@ test.describe("PLP tutor (T-series)", () => {
     await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 30_000 });
     await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("✓");
     await expect(page.locator("#practice .pr-reveal.good")).toBeVisible();
-    await expect(page.locator("#practice [data-role=pr-controls] button.primary")).toContainText("Continue");
+    await expect(page.locator("#practice [data-role=pr-next]")).toBeVisible();
+    await expect(page.locator("#practice [data-role=pr-controls] button", { hasText: "Continue" })).toHaveCount(0);
     // The answered dot reads green.
     await expect(page.locator("#practice .pr-dot.hit")).toHaveCount(1);
     // Enter presses Continue (the frozen card's input is readOnly, so the
@@ -1511,8 +1563,10 @@ test.describe("PLP tutor (T-series)", () => {
     // The dot now shows missed-then-solved (red with the green ring).
     await expect(page.locator("#practice .pr-dot.miss.retried")).toHaveCount(1);
 
-    // Back to the round: the live Q2 card returns intact.
-    await page.locator("#practice .pr-review .pr-actions button").click();
+    // Latest review's Next returns to the live Q2 card; there is no duplicate
+    // bottom "Back to the round" action.
+    await expect(page.locator("#practice .pr-review .pr-actions button", { hasText: "Back to the round" })).toHaveCount(0);
+    await page.locator("#practice [data-role=pr-next]").click();
     await expect(page.locator("#practice .pr-question:not(.pr-review) .tutor-output-input")).toBeVisible();
     expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
 
@@ -1520,9 +1574,22 @@ test.describe("PLP tutor (T-series)", () => {
     await page.locator("[data-role=pr-notes]").click();
     await page.locator("[data-role=pr-notes-text]").fill("aliases share one list");
     expect(await page.evaluate(() => localStorage.getItem("plp.notes.v1"))).toBe("aliases share one list");
+    await page.locator("[data-role=pr-notes-collapse]").click();
+    await expect(page.locator("[data-role=pr-notes-drawer]")).toBeHidden();
+    await page.locator("[data-role=pr-notes]").click();
     await page.keyboard.press("Escape");
     await expect(page.locator("[data-role=pr-notes-drawer]")).toBeHidden();
     await expect(page.locator("body")).toHaveClass(/practice/);
+
+    // The labeled leave action means what it says even in review. It does
+    // not behave like Esc's progressive review dismissal.
+    await page.locator("#practice [data-role=pr-previous]").click();
+    await expect(page.locator("#practice .pr-review")).toBeVisible();
+    await expect(page.locator("#practice [data-role=pr-leave]")).toHaveText("Topics");
+    await page.locator("#practice [data-role=pr-leave]").click();
+    await expect(page.locator("#practice [data-role=pr-controls] button", { hasText: "Continue your round" })).toBeVisible();
+    await page.locator("#practice [data-role=pr-controls] button", { hasText: "Continue your round" }).click();
+    await expect(page.locator("#practice .pr-question:not(.pr-review) .tutor-output-input")).toBeVisible();
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
@@ -2064,13 +2131,14 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#btn-lesson")).toBeHidden();
   });
 
-  test("unified ←: round → menu keeps the round live; map → menu; a map-launched round ends back at the map", async ({ page }) => {
+  test("labeled leave: round → menu keeps the round live; map → menu; finishing a map round confirms and returns to the map", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => { localStorage.clear(); location.reload(); });
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
     await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 8, count: 2 }));
     await expect(page.locator("body")).toHaveClass(/practice/);
-    // ← from the round: the menu, round resumable (still the ask of record).
+    await expect(page.locator("#practice [data-role=pr-leave]")).toHaveText("Topics");
+    // Labeled leave from the round: the menu, round resumable (still the ask of record).
     await page.locator("#practice [data-role=pr-leave]").click();
     await expect(page.locator("body")).toHaveClass(/practice/);
     await expect(page.locator("#practice [data-role=pr-controls] button", { hasText: "Continue your round" })).toBeVisible();
@@ -2081,6 +2149,7 @@ test.describe("PLP tutor (T-series)", () => {
     // ← from the map: the menu; ← from the menu: the IDE.
     await page.evaluate(() => window.plp.tutor.showMap());
     await expect(page.locator("#practice .cm-lane")).toHaveCount(8);
+    await expect(page.locator("#practice [data-role=pr-leave]")).toHaveText("Back to topics");
     await page.locator("#practice [data-role=pr-leave]").click();
     await expect(page.locator("#practice .cm-lane")).toHaveCount(0);
     await expect(page.locator("#practice [data-role=pr-controls] button", { hasText: "Everything" })).toBeVisible();
@@ -2091,11 +2160,18 @@ test.describe("PLP tutor (T-series)", () => {
     await page.locator("#practice .cm-node.frontier").click();
     await page.locator("#practice .cm-detail button.primary").click();
     await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    page.once("dialog", async (dialog) => {
+      expect(dialog.message()).toContain("Finish this round");
+      await dialog.dismiss();
+    });
+    await page.locator("#practice [data-role=pr-exit-lesson]").click();
+    expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
+    page.once("dialog", (dialog) => dialog.accept());
     await page.locator("#practice [data-role=pr-exit-lesson]").click();
     await expect(page.locator("#practice .cm-lane")).toHaveCount(8);
   });
 
-  test("summary: the look-back button opens the first miss's review; Back returns to the summary; miss dots read ✗", async ({ page }) => {
+  test("summary: Previous/Next traverse answered reviews and return to the summary; miss dots read ✗", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
     await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 8, count: 2 }));
@@ -2109,11 +2185,16 @@ test.describe("PLP tutor (T-series)", () => {
     await page.evaluate(() => window.plp.tutor.continue());
     await page.waitForFunction(() => window.plp.tutor.state().waiting === null, null, { timeout: 15_000 });
     await expect(page.locator("#practice .tutor-summary")).toBeVisible();
-    await expect(page.locator("#practice .t-summary-review")).toContainText("Look back");
-    await page.locator("#practice .t-summary-review").click();
+    await expect(page.locator("#practice [data-role=pr-previous]")).toBeVisible();
+    await page.locator("#practice [data-role=pr-previous]").click();
     await expect(page.locator("#practice .pr-review")).toBeVisible();
+    await expect(page.locator("#practice [data-role=pr-question-position]")).toHaveText("Question 2 of 2");
+    await page.locator("#practice [data-role=pr-previous]").click();
+    await expect(page.locator("#practice [data-role=pr-question-position]")).toHaveText("Question 1 of 2");
     await expect(page.locator("#practice .pr-review .pr-review-answer")).toContainText("definitely wrong");
-    await page.locator("#practice .pr-review .pr-actions button").click(); // ↩ Back to the round
+    await page.locator("#practice [data-role=pr-next]").click();
+    await expect(page.locator("#practice [data-role=pr-question-position]")).toHaveText("Question 2 of 2");
+    await page.locator("#practice [data-role=pr-next]").click();
     await expect(page.locator("#practice .tutor-summary")).toBeVisible();
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });

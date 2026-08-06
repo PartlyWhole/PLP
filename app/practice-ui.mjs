@@ -24,26 +24,88 @@ export function createPracticeUI({ layout, getCode }) {
   root.hidden = true;
   root.innerHTML = `
     <div class="pr-top">
-      <button type="button" data-role="pr-leave" title="Back — one level up (your round is saved)">←</button>
+      <button type="button" data-role="pr-leave">Back to code</button>
       <span class="pr-title" data-role="pr-title">Exercises</span>
+      <span class="pr-question-position" data-role="pr-question-position" hidden></span>
       <span class="pr-dots" data-role="pr-dots"></span>
       <span class="pr-score" data-role="pr-score" hidden></span>
       <span class="spacer"></span>
+      <button type="button" data-role="pr-previous" hidden>← Previous</button>
+      <button type="button" data-role="pr-next" hidden>Next →</button>
       <button type="button" data-role="pr-notes" title="Scratch notes">📝</button>
-      <button type="button" data-role="pr-exit-lesson" hidden>✕ End round</button>
+      <span class="pr-finish-separator" aria-hidden="true" hidden></span>
+      <button type="button" class="pr-finish" data-role="pr-exit-lesson" hidden>Finish round</button>
     </div>
+    <div class="pr-round-notice" data-role="pr-round-notice" hidden></div>
     <div class="pr-body" data-role="pr-body"></div>
+    <div class="pr-round-count" data-role="pr-round-count" hidden>
+      <label>
+        Problems this round
+        <select data-role="pr-round-count-select">
+          <option value="5">5</option>
+          <option value="10">10</option>
+          <option value="15">15</option>
+          <option value="custom">Custom</option>
+        </select>
+      </label>
+      <label data-role="pr-round-count-custom" hidden>
+        Custom count
+        <input type="number" min="1" max="50" inputmode="numeric" data-role="pr-round-count-input">
+      </label>
+    </div>
     <div class="pr-controls" data-role="pr-controls"></div>
     <div class="pr-notes-drawer" data-role="pr-notes-drawer" hidden>
-      <div class="pr-notes-head">Scratch notes <span class="hint">— saved automatically</span></div>
+      <div class="pr-notes-head">
+        <span>Scratch notes <span class="hint">- saved automatically</span></span>
+        <button type="button" data-role="pr-notes-collapse">Collapse notes</button>
+      </div>
       <textarea data-role="pr-notes-text" placeholder="work things out here…"></textarea>
     </div>`;
   document.body.appendChild(root);
   const body = root.querySelector("[data-role=pr-body]");
   const controlsHost = root.querySelector("[data-role=pr-controls]");
   const titleEl = root.querySelector("[data-role=pr-title]");
+  const questionPosition = root.querySelector("[data-role=pr-question-position]");
   const dotsEl = root.querySelector("[data-role=pr-dots]");
   const exitBtn = root.querySelector("[data-role=pr-exit-lesson]");
+  const finishSeparator = root.querySelector(".pr-finish-separator");
+  const leaveBtn = root.querySelector("[data-role=pr-leave]");
+  const previousBtn = root.querySelector("[data-role=pr-previous]");
+  const nextBtn = root.querySelector("[data-role=pr-next]");
+  const roundNotice = root.querySelector("[data-role=pr-round-notice]");
+  const countPicker = root.querySelector("[data-role=pr-round-count]");
+  const countSelect = root.querySelector("[data-role=pr-round-count-select]");
+  const customCountLabel = root.querySelector("[data-role=pr-round-count-custom]");
+  const customCountInput = root.querySelector("[data-role=pr-round-count-input]");
+  let onRoundCountChange = null;
+  let reviewIndices = [];
+  let liveNextAction = null;
+  let progressState = null;
+  let roundCountValue = 10;
+
+  function selectedRoundCount() {
+    const raw = countSelect.value === "custom" ? customCountInput.value : countSelect.value;
+    const n = Number.parseInt(raw, 10);
+    return Number.isInteger(n) && n >= 1 && n <= 50 ? n : null;
+  }
+  function emitRoundCount() {
+    const n = selectedRoundCount();
+    if (n != null) {
+      roundCountValue = n;
+      onRoundCountChange?.(n);
+    }
+  }
+  countSelect.addEventListener("change", () => {
+    const custom = countSelect.value === "custom";
+    customCountLabel.hidden = !custom;
+    if (custom) {
+      if (!customCountInput.value) customCountInput.value = String(roundCountValue);
+      customCountInput.focus();
+    }
+    else emitRoundCount();
+  });
+  customCountInput.addEventListener("input", emitRoundCount);
+  customCountInput.addEventListener("change", emitRoundCount);
 
   // Scratch notes: pure presentation state, one pad for all rounds. The
   // learner's thinking space — nothing in the app ever reads it.
@@ -61,17 +123,26 @@ export function createPracticeUI({ layout, getCode }) {
     if (open) notesText.focus();
   }
   notesBtn.addEventListener("click", () => toggleNotes());
+  root.querySelector("[data-role=pr-notes-collapse]").addEventListener("click", () => {
+    toggleNotes(false);
+    notesBtn.focus();
+  });
 
-  // ← and Esc are the same gesture: progressive dismissal (notes drawer,
-  // then a review), then "one level up" — the tutor's onBack routes
-  // round/summary → menu, map → menu, menu → IDE. Rounds stay resumable.
+  // Esc progressively dismisses the notes drawer, then a review, before
+  // moving one level up. The labeled leave button is deliberately direct:
+  // "Topics" always goes to topics, including while a review is open.
   function levelUp() {
     if (!notesDrawer.hidden) { toggleNotes(false); return; }
     if (reviewState) { closeReview(); return; }
     (onBack ?? hide)();
   }
-  root.querySelector("[data-role=pr-leave]").addEventListener("click", () => levelUp());
-  exitBtn.addEventListener("click", () => onExit?.());
+  leaveBtn.addEventListener("click", () => {
+    if (!notesDrawer.hidden) toggleNotes(false);
+    (onBack ?? hide)();
+  });
+  exitBtn.addEventListener("click", () => {
+    if (window.confirm("Finish this round? Your answers so far will still count.")) onExit?.();
+  });
   document.addEventListener("keydown", (e) => {
     if (!document.body.classList.contains("practice")) return;
     if (e.key === "Escape") {
@@ -79,18 +150,77 @@ export function createPracticeUI({ layout, getCode }) {
       return;
     }
     // Drill cadence: after grading the card freezes and its input goes
-    // readOnly, so Enter bubbles here — let it press the primary control
-    // ("Continue →") without reaching for the mouse. Never while typing
-    // notes or inside a review (the retry input has its own Enter).
+    // readOnly, so Enter bubbles here and presses the canonical header
+    // Next control without reaching for the mouse. Never while typing notes
+    // or inside a review (the retry input has its own Enter).
     if (e.key === "Enter" && !reviewState && !notesDrawer.contains(e.target)
         && current?.type === "question" && current.handle.el.classList.contains("frozen")) {
-      controlsHost.querySelector("button.primary")?.click();
+      nextBtn.click();
     }
   });
 
   // current = { type: "question", handle } | { type: "static" } | null
   let current = null;
   const handleMeta = new WeakMap(); // card el → { capturedCode }
+
+  function updateQuestionPosition() {
+    if (!progressState?.qTotal) {
+      questionPosition.hidden = true;
+      questionPosition.textContent = "";
+      return;
+    }
+    const answeredHere = progressState.results?.length ?? 0;
+    const unresolvedLive = current?.type === "question"
+      && !current.handle.el.classList.contains("frozen");
+    const reviewNumber = reviewState ? reviewState.index + 1 : null;
+    const total = reviewState
+      ? Math.max(progressState.qTotal, (reviewIndices.at(-1) ?? -1) + 1)
+      : progressState.qTotal;
+    const n = reviewNumber
+      ?? Math.min(total, Math.max(1, answeredHere + (unresolvedLive ? 1 : 0)));
+    questionPosition.hidden = false;
+    questionPosition.textContent = `Question ${n} of ${total}`;
+  }
+
+  function updateNavigation() {
+    updateQuestionPosition();
+    if (reviewState) {
+      const pos = reviewIndices.indexOf(reviewState.index);
+      previousBtn.hidden = pos <= 0;
+      nextBtn.hidden = false;
+      nextBtn.disabled = false;
+      nextBtn.title = pos >= reviewIndices.length - 1
+        ? "Return to the current problem"
+        : `Review question ${reviewIndices[pos + 1] + 1}`;
+      return;
+    }
+    previousBtn.hidden = reviewIndices.length === 0;
+    previousBtn.disabled = false;
+    previousBtn.title = reviewIndices.length
+      ? `Review question ${reviewIndices.at(-1) + 1}`
+      : "";
+    nextBtn.hidden = typeof liveNextAction !== "function";
+    nextBtn.disabled = typeof liveNextAction !== "function";
+    nextBtn.title = nextBtn.hidden ? "" : "Continue to the next problem";
+  }
+  previousBtn.addEventListener("click", () => {
+    if (!reviewIndices.length) return;
+    if (!reviewState) {
+      onReview?.(reviewIndices.at(-1));
+      return;
+    }
+    const pos = reviewIndices.indexOf(reviewState.index);
+    if (pos > 0) onReview?.(reviewIndices[pos - 1]);
+  });
+  nextBtn.addEventListener("click", () => {
+    if (reviewState) {
+      const pos = reviewIndices.indexOf(reviewState.index);
+      if (pos >= 0 && pos < reviewIndices.length - 1) onReview?.(reviewIndices[pos + 1]);
+      else closeReview();
+      return;
+    }
+    liveNextAction?.();
+  });
 
   function show() {
     document.body.classList.add("practice");
@@ -439,8 +569,8 @@ export function createPracticeUI({ layout, getCode }) {
     return handle;
   }
 
-  // ---- round stash: "one level up" from a live round -----------------------
-  // ← from a round steps aside to the menu WITHOUT ending anything: the
+  // ---- round stash: leave a live round without ending it -------------------
+  // Topics from a round steps aside to the menu WITHOUT ending anything: the
   // round's DOM (live card, controls, `current`) is stashed verbatim and
   // restored by unstashRound — the runtime's waiting closures never notice.
   // View-level only: all round STATE stays in the tutor's persisted store.
@@ -449,18 +579,27 @@ export function createPracticeUI({ layout, getCode }) {
   function stashRound() {
     if (roundStash) return;
     if (reviewState) closeReview(); // resume lands on the live view, not a review
-    roundStash = { saved: [...body.children], savedControls: [...controlsHost.children], current };
+    roundStash = {
+      saved: [...body.children], savedControls: [...controlsHost.children], current,
+      liveNextAction, reviewIndices: [...reviewIndices],
+    };
   }
   function unstashRound() {
     if (!roundStash) return false;
     discardReview();
-    const { saved, savedControls, current: cur } = roundStash;
+    const {
+      saved, savedControls, current: cur, liveNextAction: nextAction,
+      reviewIndices: savedReviewIndices,
+    } = roundStash;
     roundStash = null;
     body.textContent = "";
     for (const el of saved) body.appendChild(el);
     controlsHost.textContent = "";
     for (const el of savedControls) controlsHost.appendChild(el);
     current = cur;
+    liveNextAction = nextAction ?? null;
+    reviewIndices = savedReviewIndices ?? [];
+    updateNavigation();
     requestAnimationFrame(() => {
       body.querySelectorAll(".CodeMirror").forEach((el) => el.CodeMirror?.refresh());
     });
@@ -471,21 +610,29 @@ export function createPracticeUI({ layout, getCode }) {
   // Reviewing swaps the surface to a rebuilt snapshot card; the live view
   // (an in-flight ask, the summary, the menu) is stashed as DOM and comes
   // back untouched on close. New runtime content supersedes a review.
-  let reviewState = null; // { saved: Node[], savedControls: Node[] }
+  let reviewState = null; // { saved: Node[], savedControls: Node[], index }
   let onReview = null;
 
   function discardReview() {
     if (!reviewState) return;
     reviewState = null;
     root.classList.remove("reviewing");
+    updateNavigation();
   }
   function showReview(desc) {
-    if (!reviewState) reviewState = { saved: [...body.children], savedControls: [...controlsHost.children] };
+    if (!reviewState) {
+      reviewState = {
+        saved: [...body.children], savedControls: [...controlsHost.children], index: desc.index,
+      };
+    } else {
+      reviewState.index = desc.index;
+    }
     body.textContent = "";
     controlsHost.textContent = "";
     root.classList.add("reviewing");
     body.appendChild(buildReviewCard(desc));
     body.scrollTop = 0;
+    updateNavigation();
   }
   function closeReview() {
     if (!reviewState) return;
@@ -497,6 +644,7 @@ export function createPracticeUI({ layout, getCode }) {
     controlsHost.textContent = "";
     for (const el of savedControls) controlsHost.appendChild(el);
     body.querySelectorAll(".CodeMirror").forEach((el) => el.CodeMirror?.refresh());
+    updateNavigation();
   }
 
   // A trace-table review: the completed table read-only — the learner's
@@ -1127,14 +1275,6 @@ export function createPracticeUI({ layout, getCode }) {
       el.appendChild(wrap);
     }
 
-    const actionRow = document.createElement("div");
-    actionRow.className = "pr-actions";
-    const back = document.createElement("button");
-    back.type = "button";
-    back.textContent = "↩ Back to the round";
-    back.addEventListener("click", () => desc.onBack?.());
-    actionRow.appendChild(back);
-    el.appendChild(actionRow);
     return el;
   }
 
@@ -1152,6 +1292,8 @@ export function createPracticeUI({ layout, getCode }) {
     }
     body.appendChild(wrap);
     current = { type: "static" };
+    liveNextAction = null;
+    updateNavigation();
   }
 
   function popBatch(descs = [], liveHandle = null) {
@@ -1165,6 +1307,8 @@ export function createPracticeUI({ layout, getCode }) {
       }
       body.appendChild(liveHandle.el);
       current = { type: "question", handle: liveHandle };
+      liveNextAction = null;
+      updateNavigation();
       return;
     }
     if (!descs.length) return; // empty beat: keep whatever is up (menu/summary)
@@ -1193,6 +1337,13 @@ export function createPracticeUI({ layout, getCode }) {
       discardReview();
       body.textContent = "";
       current = null;
+      liveNextAction = null;
+      reviewIndices = [];
+      progressState = null;
+      countPicker.hidden = true;
+      roundNotice.hidden = true;
+      roundNotice.textContent = "";
+      updateNavigation();
     },
     addCard(desc) {
       // Recording lives in the runtime; the surface renders nothing from
@@ -1216,16 +1367,35 @@ export function createPracticeUI({ layout, getCode }) {
     },
     setControls(list) {
       controlsHost.textContent = "";
-      for (const a of list) controlsHost.appendChild(buildControlButton(a));
+      liveNextAction = null;
+      for (const a of list) {
+        // Once a live practice answer freezes, header Next is the one clear
+        // advancement control. Guided lessons use the separate stage UI.
+        if (current?.type === "question"
+            && current.handle.el.classList.contains("frozen")
+            && /^Continue\b/.test(a.label ?? "")) {
+          liveNextAction = a.onClick;
+          continue;
+        }
+        controlsHost.appendChild(buildControlButton(a));
+      }
+      updateNavigation();
     },
     setProgress(text, q) {
       titleEl.textContent = text ? String(text).split(" · ")[0] : "Exercises";
       dotsEl.textContent = "";
-      if (!q?.qTotal) return;
+      if (!q?.qTotal) {
+        progressState = null;
+        reviewIndices = [];
+        updateNavigation();
+        return;
+      }
       // Answered dots read their outcome (green hit / red miss, a green
       // ring for missed-then-solved-on-retry) and click back into a review
       // of that question. Unanswered dots are inert; the next one is live.
       const results = q.results ?? [];
+      progressState = q;
+      reviewIndices = q.reviewIndices ?? results.map((r, i) => r?.index ?? i).filter(Number.isInteger);
       for (let i = 0; i < q.qTotal; i++) {
         const r = results[i];
         if (r) {
@@ -1243,8 +1413,34 @@ export function createPracticeUI({ layout, getCode }) {
           dotsEl.appendChild(dot);
         }
       }
+      updateNavigation();
     },
-    setExitVisible(v) { exitBtn.hidden = !v; },
+    setExitVisible(v) {
+      exitBtn.hidden = !v;
+      finishSeparator.hidden = !v;
+    },
+    setLeaveLabel(label, title = label) {
+      leaveBtn.textContent = label;
+      leaveBtn.title = title;
+    },
+    setRoundCountPicker({ value, onChange }) {
+      const n = Number.isInteger(value) && value >= 1 && value <= 50 ? value : 10;
+      roundCountValue = n;
+      onRoundCountChange = onChange ?? null;
+      countPicker.hidden = false;
+      if ([5, 10, 15].includes(n)) {
+        countSelect.value = String(n);
+        customCountLabel.hidden = true;
+      } else {
+        countSelect.value = "custom";
+        customCountInput.value = String(n);
+        customCountLabel.hidden = false;
+      }
+    },
+    setRoundNotice(text = "") {
+      roundNotice.textContent = text;
+      roundNotice.hidden = !text;
+    },
     setScore(s) {
       // Session score chip: right-count plus the streak once it's alive.
       const el = root.querySelector("[data-role=pr-score]");

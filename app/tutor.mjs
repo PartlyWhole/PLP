@@ -33,6 +33,7 @@ import { mapModel, renderConceptMap } from "./concept-map.mjs";
 import { events } from "./events.mjs";
 
 const STORE_KEY = "plp.tutor.v1";
+const PRACTICE_COUNT_KEY = "plp.practice-count.v1";
 // Drill/practice mastery is keyed by concept TAG (design §6). One-time
 // migration carries forward the legacy drill-template store.
 const KB_STATS_KEY = "plp.kb.v1";
@@ -101,6 +102,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     "clear", "setProgress", "setExitVisible", "addCard", "addInteractiveCard",
     "popBatch", "appendToPopup", "showCustom", "setControls", "scrollToEnd",
     "show", "hide", "beginReveal", "setStageMemory", "setScore",
+    "setLeaveLabel", "setRoundCountPicker", "setRoundNotice",
   ];
   const ui = Object.fromEntries(UI_METHODS.map((m) => [m, (...a) => cur()[m]?.(...a)]));
   function setSurface(next) {
@@ -128,6 +130,17 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
   function persist() {
     try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); }
     catch { /* private mode / quota: the session still works, just won't survive reload */ }
+  }
+  function loadPracticeCount() {
+    try {
+      const n = Number.parseInt(localStorage.getItem(PRACTICE_COUNT_KEY) ?? "10", 10);
+      return Number.isInteger(n) && n >= 1 && n <= 50 ? n : 10;
+    } catch { return 10; }
+  }
+  function savePracticeCount(count) {
+    const n = Number.parseInt(count, 10);
+    if (!Number.isInteger(n) || n < 1 || n > 50) return;
+    try { localStorage.setItem(PRACTICE_COUNT_KEY, String(n)); } catch { /* ephemeral */ }
   }
   function record(desc) {
     // Stamp each card with the program it was about (index into the
@@ -231,6 +244,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     setSurface("practice");
     practiceView = "menu";
     ui.clear();
+    ui.setLeaveLabel("Back to code", "Leave exercises and return to your code");
     ui.setProgress("");
     ui.setExitVisible(false);
     ui.setScore(null);
@@ -259,6 +273,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     // The menu is a beat too: in focus mode it renders on the stage (the
     // roomy center surface), with the topic buttons mirrored in its foot.
     ui.popBatch([welcome]);
+    ui.setRoundCountPicker({
+      value: loadPracticeCount(),
+      onChange: savePracticeCount,
+    });
     // Exercises only: guided units stay available to tests/debug via
     // plp.tutor.start(unitId), but the learner-facing menu is drills.
     // When mastery exists, the frontier (unmet concepts whose parents are
@@ -307,6 +325,8 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     setSurface("practice");
     practiceUI.unstashRound();
     practiceView = "round";
+    ui.setLeaveLabel("Topics", "Save this round and return to practice topics");
+    ui.setRoundNotice(store.roundNotice ?? "");
     ui.setExitVisible(true);
     pushProgress();
     nav.go("learn/round");
@@ -372,6 +392,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     practiceView = "map";
     ui.show(); // callable from anywhere (debug API included) — the map implies visibility
     ui.clear();
+    ui.setLeaveLabel("Back to topics", "Return to practice topics");
     ui.setProgress("My map");
     ui.setExitVisible(false);
     const host = document.createElement("div");
@@ -413,7 +434,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     const all = frozenRecords().map((c, i) => ({ ok: c.ok, retryOk: c.retry?.ok, index: i }));
     ui.setProgress(
       `${lesson.title} · ${Math.min(stepIndex + 1, lesson.steps.length)}/${lesson.steps.length}`,
-      { qDone, qTotal, results: all.slice(store.chunkBase ?? 0) },
+      {
+        qDone, qTotal, results: all.slice(store.chunkBase ?? 0),
+        reviewIndices: all.map((r) => r.index),
+      },
     );
     ui.setScore(store.drillLesson ? (store.score ?? null) : null);
   }
@@ -1540,6 +1564,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       setSurface("practice");
       practiceView = "round"; // the run summary still belongs to the round
       ui.clear();
+      ui.setLeaveLabel("Topics", "Return to practice topics");
       ui.setProgress("Endless run");
       ui.setExitVisible(false);
       ui.setScore(endlessSummary.score ?? null);
@@ -1632,9 +1657,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
   function startDrill(topic = "all", opts = {}) {
     if (isCollabActive?.()) return null;
     setSurface("practice");
+    const requestedCount = opts.count ?? loadPracticeCount();
     const built = buildKBSession(topic, {
       seed: opts.seed ?? (Date.now() >>> 0),
-      count: opts.count, // unset lets the compiler pick (8, or 4 for a focus round)
+      count: requestedCount,
       stats: loadDrillStats(),
       met: Object.keys(loadMetStore()), // feeds the cold-start frontier bias
       templateStats: loadTemplateStats(), // retires already-solved templates
@@ -1650,14 +1676,21 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     stepIndex = -1;
     batch = [];
     practiceView = "round";
+    const actualCount = built.steps.filter((s) => s.ask).length;
+    const roundNotice = opts.focus && actualCount < requestedCount
+      ? `This concept currently has ${actualCount} varied practice ${actualCount === 1 ? "problem" : "problems"}, so this round is shorter than your ${requestedCount}-problem preference.`
+      : "";
     store = {
       lessonId: built.id, drillLesson: built, resumeIndex: 0, cards: [],
       score: { answered: 0, right: 0, streak: 0, best: 0 },
-      ...(opts.endless ? { endless: true, drillTopic: topic, endlessCount: opts.count, chunkBase: 0 } : {}),
+      ...(roundNotice ? { roundNotice } : {}),
+      ...(opts.endless ? { endless: true, drillTopic: topic, endlessCount: requestedCount, chunkBase: 0 } : {}),
       ...(opts.origin ? { origin: opts.origin } : {}),
     };
     persist();
     ui.clear();
+    ui.setLeaveLabel("Topics", "Save this round and return to practice topics");
+    ui.setRoundNotice(roundNotice);
     ui.setControls([]);
     ui.setExitVisible(true);
     ui.show();
@@ -1683,6 +1716,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     lesson = restored;
     batch = [];
     ui.clear();
+    if (store.drillLesson) {
+      ui.setLeaveLabel("Topics", "Save this round and return to practice topics");
+      ui.setRoundNotice(store.roundNotice ?? "");
+    }
     ui.setExitVisible(true);
     for (const desc of store.cards ?? []) ui.addCard(desc);
     stepIndex = (store.resumeIndex ?? 0) - 1;

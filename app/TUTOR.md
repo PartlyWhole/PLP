@@ -59,7 +59,9 @@ Practice rounds render on a dedicated **full-viewport card surface**
 ([practice-ui.mjs](practice-ui.mjs), `#practice`, `body.practice` hides
 the header and the whole IDE grid): one card at a time — the program
 (read-only CodeMirror), a one-line ask, the input, and quiet hint/skip
-links, under a slim bar with topic + progress dots. The engine still runs
+links, under a slim bar with a labeled destination, `Question N of M`,
+progress dots, Previous/Next review navigation, scratch notes, and a
+separated Finish round action. The engine still runs
 every program for real underneath; the card's **reveal** ("▶ it printed…")
 is the graded run's actual output (the `card.reveal` contract in
 tutor.mjs), and the explain face renders into the same card with the
@@ -72,6 +74,13 @@ new core concept (`ask.teach`, worked example behind "show me an
 example"), spot-the-difference's program A + output ride on
 `ask.context`, prompts are one line, and first-time-per-form mechanics
 are a single quiet line gated by `plp.practice.v1`.
+
+The menu lets the learner choose **5, 10, 15, or a custom 1-50 problems
+per round**. The choice persists in `plp.practice-count.v1` and feeds
+ordinary, focused, and endless rounds unless the debug API supplies an
+explicit `count`. A focused concept backed by one template keeps the
+compiler's two-problem variety cap and says why the round is shorter
+instead of silently ignoring the preference.
 
 **Ask kinds on this surface**: predict-output (incl. spot-the-difference
 context), predict-state, fill-one-blank, and **trace-table** — the card
@@ -120,18 +129,24 @@ newly-met chips, misses — with "∞ Go again".
 outcomes (kb-session emits a bare `{ pause: true }` step on the correct
 branch; the wrong branch already paused on its explain card): the card
 freezes with the verdict big in `.pr-verdict-slot`, the reveal under it,
-and **Continue →** (Enter works — the frozen card's input is readOnly,
-so the keystroke falls through to the surface). Without this beat the
+and the header's canonical **Next →** action (Enter works because the
+frozen card's input is readOnly, so the keystroke falls through to the
+surface). The old bottom Continue action is absorbed by the practice
+surface; guided lessons keep their stage controls. Without this beat the
 one-card surface would wipe the "✓ Exactly right!" before it was read.
 
-**Dots are the round's scoreboard and its back button.** Answered dots
+**Dots are the round's scoreboard.** Answered dots
 color green (hit) / red (miss; a green ring = missed, then solved on
 retry) and click into a **review**: the recorded snapshot (every
 `question-frozen` record carries `review` — program, kind, opts/blank,
 expected, teach/context) rebuilt as a read-only card — program, your
 answer, verdict, the real output. Reviewing stashes the live view as DOM
-and restores it untouched on "↩ Back to the round"; new runtime content
-supersedes a stale review. **Try it again** re-runs and re-grades for
+and restores it untouched through the header navigation; new runtime
+content supersedes a stale review. **Previous** opens the latest answered
+question, Previous/Next traverse answered questions, and Next from the
+latest review restores the live question or summary. An unresolved live
+question has no Next action; its explicit Skip remains on the card.
+**Try it again** re-runs and re-grades for
 real (`retryAnswer` in tutor.mjs — the editor is snapshotted and
 restored around the retry run), but the score of record never moves:
 `rec.ok`, the kb seen/missed stats, and met grants all keep the first
@@ -145,13 +160,15 @@ screen the moment the retry starts — otherwise it would be copying),
 grades the refilled cells against a real re-run, then re-renders the
 table graded; a quiet "never mind" restores the recorded graded view.
 
-Escape hatches: **←**/Esc are one gesture, "**one level up**", after the
-progressive dismissal (notes drawer → review): round/summary → the menu,
-map → the menu, menu → the IDE. Stepping up from a live round never ends
-it — the practice surface **stashes the round's DOM** (`stashRound` /
+Escape hatches are deliberately named. **Topics**, **Back to topics**, and
+**Back to code** perform their labeled destination directly, including
+while a review is open. Esc remains progressive: notes drawer, then review,
+then one level up. Leaving a live round never ends it; the practice surface
+**stashes the round's DOM** (`stashRound` /
 `unstashRound`; view-level only, all round state stays in the persisted
 store) and the menu leads with "▶ Continue your round". `hideSurface`
-(collab go-live) keeps the same hide-not-end contract. Ending a round
+(collab go-live) keeps the same hide-not-end contract. **Finish round** is
+visually separated and asks for confirmation. Ending a round
 that was launched from the map ("Practice this ▶"/"Try it anyway ▶")
 returns to the **map** (`store.origin`), not the menu. "open in editor"
 on every program block; a "put the question's program back" chip appears
@@ -160,7 +177,8 @@ model, and any **miss** links "🔬 step through this run" — the graded
 trace is already scrubbable in the IDE; these world switches record a
 history entry so browser Back returns to the card. A **📝 scratch
 notes** drawer (persisted in `plp.notes.v1`, nothing reads it) rides the
-top bar. A **surface router** in tutor.mjs dispatches every ui call:
+top bar and includes its own visible **Collapse notes** control. A
+**surface router** in tutor.mjs dispatches every ui call:
 drills/menu/map → practice; guided lessons → the stage below (the IDE is
 *their* content). The round **summary** adds an explicit "🔍 Look back
 at the ones you missed" button (practice surface only) opening the first

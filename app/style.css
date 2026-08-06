@@ -551,7 +551,20 @@ body.practice > header, body.practice > #layout { display: none; }
   padding: var(--sp-2) var(--sp-4);
 }
 .pr-top button { font-size: var(--fs-body); }
+.pr-top [data-role=pr-previous], .pr-top [data-role=pr-next] {
+  white-space: nowrap;
+}
+.pr-finish-separator {
+  align-self: stretch; width: 1px; background: var(--t-border-strong);
+}
+.pr-top .pr-finish {
+  border-color: var(--t-miss); background: var(--t-miss-soft);
+}
 .pr-title { font-size: var(--fs-meta); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--t-ink-dim); }
+.pr-question-position {
+  font-size: var(--fs-meta); font-weight: 600; color: var(--t-ink-dim);
+  white-space: nowrap;
+}
 .pr-dots { display: flex; gap: 6px; align-items: center; }
 .pr-score { font-size: var(--fs-meta); font-weight: 600; color: var(--t-ink-dim); white-space: nowrap; }
 .pr-dot {
@@ -740,7 +753,11 @@ button.pr-quiet:hover { color: var(--t-ink); text-decoration: underline; }
   border-left: 1px solid var(--t-border-strong); z-index: 40;
 }
 .pr-notes-drawer[hidden] { display: none; }
-.pr-notes-head { font-size: var(--fs-meta); font-weight: 700; color: var(--t-ink-dim); }
+.pr-notes-head {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
+  font-size: var(--fs-meta); font-weight: 700; color: var(--t-ink-dim);
+}
+.pr-notes-head button { white-space: nowrap; font-size: var(--fs-meta); }
 .pr-notes-drawer textarea {
   flex: 1; resize: none; border: 1px solid var(--t-border);
   border-radius: var(--r-m); background: var(--t-code-bg); color: var(--t-ink);
@@ -753,6 +770,47 @@ button.pr-quiet:hover { color: var(--t-ink); text-decoration: underline; }
 }
 .pr-controls:empty { display: none; }
 .pr-controls button { font-size: var(--fs-body); padding: 8px 16px; }
+.pr-round-count {
+  flex: none; display: flex; flex-wrap: wrap; justify-content: center;
+  align-items: end; gap: var(--sp-2); padding: 0 var(--sp-4) var(--sp-2);
+  color: var(--t-ink-dim); font-size: var(--fs-meta);
+}
+.pr-round-count[hidden] { display: none; }
+.pr-round-count label { display: flex; align-items: center; gap: var(--sp-2); }
+.pr-round-count select, .pr-round-count input {
+  min-height: 36px; border: 1px solid var(--t-border); border-radius: var(--r-s);
+  background: var(--t-surface-1); color: var(--t-ink); padding: 4px 8px;
+}
+.pr-round-count input { width: 72px; }
+.pr-round-notice {
+  flex: none; align-self: center; width: min(680px, calc(100% - 2 * var(--sp-4)));
+  padding: var(--sp-2) var(--sp-3); border: 1px solid var(--t-accent-line);
+  border-radius: var(--r-m); background: var(--t-accent-soft);
+  color: var(--t-accent-ink); font-size: var(--fs-meta);
+}
+.pr-round-notice[hidden] { display: none; }
+@media (max-width: 720px) {
+  .pr-top {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "leave title notes"
+      "question dots score"
+      "previous next finish";
+    gap: var(--sp-1) var(--sp-2); padding: var(--sp-2);
+  }
+  .pr-top > .spacer, .pr-finish-separator { display: none; }
+  .pr-top [data-role=pr-leave] { grid-area: leave; }
+  .pr-title { grid-area: title; overflow: hidden; text-overflow: ellipsis; }
+  .pr-top [data-role=pr-notes] { grid-area: notes; }
+  .pr-question-position { grid-area: question; }
+  .pr-dots { grid-area: dots; min-width: 0; overflow-x: auto; padding: 3px; }
+  .pr-score { grid-area: score; }
+  .pr-top [data-role=pr-previous] { grid-area: previous; justify-self: start; }
+  .pr-top [data-role=pr-next] { grid-area: next; justify-self: end; }
+  .pr-top .pr-finish { grid-area: finish; justify-self: end; }
+  .pr-top button { font-size: var(--fs-meta); padding: 6px 8px; }
+}
 /* split control: a topic button with its ∞ endless companion */
 .t-control-split { display: inline-flex; }
 .t-control-split button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
