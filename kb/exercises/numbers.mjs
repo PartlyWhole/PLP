@@ -163,14 +163,23 @@ export default [
         const shape = pick(rng, ["add", "subtract", "multiply"]);
         if (shape === "add") {
           const a = int(rng, 2, 40), b = int(rng, 2, 40);
-          return { code: `print(${a} + ${b})\n`, shape, variant: "plain" };
+          return {
+            code: `print(${a} + ${b})\n`, shape, variant: "plain",
+            variantCard: `Python adds the two numbers: \`${a} + ${b}\` is ${a + b}.`,
+          };
         }
         if (shape === "subtract") {
           const b = int(rng, 2, 20), a = b + int(rng, 1, 20); // stays non-negative
-          return { code: `print(${a} - ${b})\n`, shape, variant: "plain" };
+          return {
+            code: `print(${a} - ${b})\n`, shape, variant: "plain",
+            variantCard: `Python subtracts: \`${a} - ${b}\` is ${a - b}.`,
+          };
         }
         const a = int(rng, 2, 9), b = int(rng, 2, 9);
-        return { code: `print(${a} * ${b})\n`, shape, variant: "plain" };
+        return {
+          code: `print(${a} * ${b})\n`, shape, variant: "plain",
+          variantCard: `Python multiplies: \`${a} * ${b}\` is ${a * b}.`,
+        };
       },
     },
   },
@@ -241,8 +250,16 @@ export default [
             variantCard: `\`str(${n})\` is the text \`"${n}"\`, joined to \`"${d}"\` gives \`${n}${d}\` — not ${n + d}.`,
           };
         }
-        if (shape === "digit-then-str") return { code: `print("${d}" + str(${n}))\n`, shape, variant: "plain", misconception: String(d + n) };
-        return { code: `print(str(${n}) + "${w}")\n`, shape, variant: "plain" };
+        if (shape === "digit-then-str") {
+          return {
+            code: `print("${d}" + str(${n}))\n`, shape, variant: "plain", misconception: String(d + n),
+            variantCard: `\`str(${n})\` is the text \`"${n}"\`, and \`"${d}" + "${n}"\` joins them into \`${d}${n}\` — not ${d + n}.`,
+          };
+        }
+        return {
+          code: `print(str(${n}) + "${w}")\n`, shape, variant: "plain",
+          variantCard: `\`str(${n})\` turns the number into the text \`"${n}"\`, joined to \`"${w}"\` gives \`${n}${w}\`.`,
+        };
       },
     },
   },
@@ -267,8 +284,16 @@ export default [
             variantCard: `\`int("${d}")\` is the number ${d}, and ${d} + ${n} is ${d + n} — not the text \`"${d}${n}"\`.`,
           };
         }
-        if (shape === "add-before") return { code: `print(${n} + int("${d}"))\n`, shape, variant: "plain" };
-        return { code: `print(int("${d}") - ${n})\n`, shape, variant: "plain" };
+        if (shape === "add-before") {
+          return {
+            code: `print(${n} + int("${d}"))\n`, shape, variant: "plain",
+            variantCard: `\`int("${d}")\` is the number ${d}, so ${n} + ${d} is ${n + d} — real addition, not joining text.`,
+          };
+        }
+        return {
+          code: `print(int("${d}") - ${n})\n`, shape, variant: "plain",
+          variantCard: `\`int("${d}")\` is the number ${d}, so ${d} - ${n} is ${d - n}.`,
+        };
       },
     },
   },
@@ -346,9 +371,17 @@ export default [
             variantCard: `\`"${a}"\` and \`"${b}"\` are text, so \`+\` joins them into \`${a}${b}\` — not the number ${a + b}.`,
           };
         }
-        if (shape === "three-digit-strings") return { code: `print("${a}" + "${b}" + "${c}")\n`, shape, variant: "plain", misconception: String(a + b + c) };
+        if (shape === "three-digit-strings") {
+          return {
+            code: `print("${a}" + "${b}" + "${c}")\n`, shape, variant: "plain", misconception: String(a + b + c),
+            variantCard: `Each piece is text, so \`+\` joins them: \`${a}${b}${c}\` — not the number ${a + b + c}.`,
+          };
+        }
         const nm = pick(rng, strNames);
-        return { code: `${nm} = "${a}"\nprint(${nm} + "${b}")\n`, shape, variant: "plain", misconception: String(a + b) };
+        return {
+          code: `${nm} = "${a}"\nprint(${nm} + "${b}")\n`, shape, variant: "plain", misconception: String(a + b),
+          variantCard: `\`${nm}\` holds the text \`"${a}"\`, so \`${nm} + "${b}"\` joins them into \`${a}${b}\` — not ${a + b}.`,
+        };
       },
     },
   },

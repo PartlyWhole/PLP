@@ -25,7 +25,10 @@ export default [
         if (shape === "one-word") text = pick(rng, words);
         else if (shape === "two-words") text = pick(rng, phrases).join(" ");
         else text = `${pick(rng, words)} ${pick(rng, words)} ${pick(rng, words)}`;
-        return { code: `print("${text}")\n`, shape, variant: "plain" };
+        return {
+          code: `print("${text}")\n`, shape, variant: "plain",
+          variantCard: `The quotes make text, so \`print\` shows exactly the letters between them: ${text} — no quotes.`,
+        };
       },
     },
   },
@@ -50,11 +53,17 @@ export default [
         const w = int(rng, 10, 20);
         const shape = pick(rng, ["bind-and-print", "two-binds"]);
         if (shape === "two-binds") {
-          return { code: `${n1} = ${v}\n${n2} = ${w}\nprint(${n1})\n`, shape: "two-binds", variant: "plain" };
+          return {
+            code: `${n1} = ${v}\n${n2} = ${w}\nprint(${n1})\n`, shape: "two-binds", variant: "plain",
+            variantCard: `\`${n1}\` holds ${v} and \`${n2}\` holds ${w}. \`print(${n1})\` shows what \`${n1}\` holds: ${v} — not ${n2}'s ${w}.`,
+          };
         }
         // E7: never reproduce name-holds-value's own card example `x = 4; print(x)`.
         while (n1 === "x" && v === 4) v = int(rng, 2, 9);
-        return { code: `${n1} = ${v}\nprint(${n1})\n`, shape: "bind-and-print", variant: "plain" };
+        return {
+          code: `${n1} = ${v}\nprint(${n1})\n`, shape: "bind-and-print", variant: "plain",
+          variantCard: `\`${n1} = ${v}\` stores ${v} under the name \`${n1}\`, so \`print(${n1})\` looks it up and shows ${v}.`,
+        };
       },
     },
   },
@@ -122,12 +131,19 @@ export default [
         const shape = pick(rng, ["bind-sum", "bind-product", "bind-three-terms"]);
         const a = int(rng, 2, 6); let b = int(rng, 2, 6); const c = int(rng, 2, 6);
         if (shape === "bind-three-terms") {
-          return { code: `${name} = ${a} + ${b} + ${c}\nprint(${name})\n`, shape, variant: "plain" };
+          return {
+            code: `${name} = ${a} + ${b} + ${c}\nprint(${name})\n`, shape, variant: "plain",
+            variantCard: `The right side is worked out first: ${a} + ${b} + ${c} is ${a + b + c}. That result is stored in \`${name}\` and printed.`,
+          };
         }
         // E7: never reproduce evaluate-before-bind's own card example `2 + 3`.
         while (shape === "bind-sum" && a === 2 && b === 3) b = int(rng, 2, 6);
         const op = shape === "bind-sum" ? "+" : "*";
-        return { code: `${name} = ${a} ${op} ${b}\nprint(${name})\n`, shape, variant: "plain" };
+        const result = op === "+" ? a + b : a * b;
+        return {
+          code: `${name} = ${a} ${op} ${b}\nprint(${name})\n`, shape, variant: "plain",
+          variantCard: `The right side is worked out first: \`${a} ${op} ${b}\` is ${result}. That value is stored in \`${name}\`, so \`print(${name})\` shows ${result}.`,
+        };
       },
     },
   },
@@ -167,7 +183,10 @@ export default [
               + `replaces its ${a}; the print shows ${c}.`,
           };
         }
-        return { code: `${name} = ${a}\n${name} = ${b}\nprint(${name})\n`, shape: "rebind", variant: "plain" };
+        return {
+          code: `${name} = ${a}\n${name} = ${b}\nprint(${name})\n`, shape: "rebind", variant: "plain",
+          variantCard: `The second line replaces the first: \`${name}\` no longer holds ${a}, it holds ${b}. So the print shows ${b}.`,
+        };
       },
     },
   },

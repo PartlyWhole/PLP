@@ -23,11 +23,17 @@ export default [
         const shape = pick(rng, ["three-items", "four-items", "named-list"]);
         if (shape === "named-list") {
           const items = Array.from({ length: 3 }, () => int(rng, 1, 9) * 10);
-          return { code: `xs = [${items.join(", ")}]\nfor x in xs:\n    print(x)\n`, shape, variant: "plain" };
+          return {
+            code: `xs = [${items.join(", ")}]\nfor x in xs:\n    print(x)\n`, shape, variant: "plain",
+            variantCard: `The loop visits each item of \`xs\` in turn and prints it, one per line: ${items.join(", ")}.`,
+          };
         }
         const n = shape === "three-items" ? 3 : 4;
         const items = Array.from({ length: n }, () => int(rng, 1, 9) * 10);
-        return { code: `for x in [${items.join(", ")}]:\n    print(x)\n`, shape, variant: "plain" };
+        return {
+          code: `for x in [${items.join(", ")}]:\n    print(x)\n`, shape, variant: "plain",
+          variantCard: `\`for x in\` runs the block once per item, printing each on its own line: ${items.join(", ")}.`,
+        };
       },
     },
   },

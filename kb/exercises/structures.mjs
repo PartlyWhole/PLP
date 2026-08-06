@@ -35,9 +35,18 @@ export default [
         const shape = pick(rng, ["one-pair", "two-pair-first", "two-pair-second"]);
         const [k1, k2] = twoKeys(rng);
         const v1 = int(rng, 1, 9), v2 = int(rng, 1, 9);
-        if (shape === "one-pair") return { code: `d = {"${k1}": ${v1}}\nprint(d["${k1}"])\n`, shape, variant: "plain" };
+        if (shape === "one-pair") {
+          return {
+            code: `d = {"${k1}": ${v1}}\nprint(d["${k1}"])\n`, shape, variant: "plain",
+            variantCard: `\`d["${k1}"]\` looks up the key \`"${k1}"\` and returns its value: ${v1}.`,
+          };
+        }
         const lookup = shape === "two-pair-first" ? k1 : k2;
-        return { code: `d = {"${k1}": ${v1}, "${k2}": ${v2}}\nprint(d["${lookup}"])\n`, shape, variant: "plain" };
+        const lookupVal = shape === "two-pair-first" ? v1 : v2;
+        return {
+          code: `d = {"${k1}": ${v1}, "${k2}": ${v2}}\nprint(d["${lookup}"])\n`, shape, variant: "plain",
+          variantCard: `\`d["${lookup}"]\` looks up \`"${lookup}"\`, which maps to ${lookupVal}.`,
+        };
       },
     },
   },
@@ -129,8 +138,18 @@ export default [
         const shape = pick(rng, ["key-present", "key-absent", "value-not-key"]);
         const [k1, k2] = twoKeys(rng);
         const v1 = int(rng, 1, 9);
-        if (shape === "key-present") return { code: `d = {"${k1}": ${v1}}\nprint("${k1}" in d)\n`, shape, variant: "plain" };
-        if (shape === "key-absent") return { code: `d = {"${k1}": ${v1}}\nprint("${k2}" in d)\n`, shape, variant: "plain" };
+        if (shape === "key-present") {
+          return {
+            code: `d = {"${k1}": ${v1}}\nprint("${k1}" in d)\n`, shape, variant: "plain",
+            variantCard: `\`in\` checks the KEYS. \`"${k1}"\` is a key of \`d\`, so the answer is \`True\`.`,
+          };
+        }
+        if (shape === "key-absent") {
+          return {
+            code: `d = {"${k1}": ${v1}}\nprint("${k2}" in d)\n`, shape, variant: "plain",
+            variantCard: `\`in\` checks the KEYS. \`"${k2}"\` is not a key of \`d\`, so the answer is \`False\`.`,
+          };
+        }
         return {
           code: `d = {"${k1}": ${v1}}\nprint(${v1} in d)\n`,
           shape, variant: "plain",
@@ -154,9 +173,22 @@ export default [
         const rng = mulberry32(seed);
         const shape = pick(rng, ["two-items", "three-items", "direct-print"]);
         const a = int(rng, 1, 9), b = int(rng, 1, 9), c = int(rng, 1, 9);
-        if (shape === "two-items") return { code: `t = (${a}, ${b})\nprint(t)\n`, shape, variant: "plain" };
-        if (shape === "three-items") return { code: `t = (${a}, ${b}, ${c})\nprint(t)\n`, shape, variant: "plain" };
-        return { code: `print((${a}, ${b}))\n`, shape, variant: "plain" };
+        if (shape === "two-items") {
+          return {
+            code: `t = (${a}, ${b})\nprint(t)\n`, shape, variant: "plain",
+            variantCard: `A tuple prints inside round brackets: \`(${a}, ${b})\`.`,
+          };
+        }
+        if (shape === "three-items") {
+          return {
+            code: `t = (${a}, ${b}, ${c})\nprint(t)\n`, shape, variant: "plain",
+            variantCard: `A tuple prints inside round brackets, in order: \`(${a}, ${b}, ${c})\`.`,
+          };
+        }
+        return {
+          code: `print((${a}, ${b}))\n`, shape, variant: "plain",
+          variantCard: `The pair prints as a tuple, in round brackets: \`(${a}, ${b})\`.`,
+        };
       },
     },
   },

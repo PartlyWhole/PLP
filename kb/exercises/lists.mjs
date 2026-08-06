@@ -35,13 +35,17 @@ export default [
         const shape = pick(rng, ["two-items", "three-items", "direct-print"]);
         if (shape === "direct-print") {
           const items = Array.from({ length: 2 }, () => int(rng, 1, 9));
-          return { code: `print([${items.join(", ")}])\n`, shape, variant: "plain" };
+          return {
+            code: `print([${items.join(", ")}])\n`, shape, variant: "plain",
+            variantCard: `A list prints with square brackets and commas, exactly as written: [${items.join(", ")}].`,
+          };
         }
         const n = shape === "two-items" ? 2 : 3;
         const items = Array.from({ length: n }, () => int(rng, 1, 9));
         return {
           code: `${name} = [${items.join(", ")}]\nprint(${name})\n`,
           shape, variant: "plain",
+          variantCard: `\`${name}\` holds the list, so \`print(${name})\` shows it with its square brackets: [${items.join(", ")}].`,
         };
       },
     },
@@ -127,6 +131,7 @@ export default [
         return {
           code: `${name} = [${items.join(", ")}]\n${name}.append(${v})\nprint(${name})\n`,
           shape: "append-then-print", variant: "plain",
+          variantCard: `\`append(${v})\` adds ${v} to the end of the same list, so it becomes [${[...items, v].join(", ")}].`,
         };
       },
     },

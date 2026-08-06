@@ -32,7 +32,11 @@ export default [
             variantCard: "Each yes-or-no value prints exactly as spelled: `True`, then `False` — capital first letter, no quotes.",
           };
         }
-        return { code: `print(${v === "true" ? "True" : "False"})\n`, shape: v, variant: v };
+        const spelled = v === "true" ? "True" : "False";
+        return {
+          code: `print(${spelled})\n`, shape: v, variant: v,
+          variantCard: `\`print(${spelled})\` shows the yes-or-no value spelled exactly: \`${spelled}\` — capital first letter, no quotes.`,
+        };
       },
     },
   },
@@ -82,9 +86,20 @@ export default [
         const rng = mulberry32(seed);
         const shape = pick(rng, ["and", "or", "not"]);
         const x = pick(rng, ["True", "False"]);
-        if (shape === "not") return { code: `print(not ${x})\n`, shape, variant: "not" };
+        if (shape === "not") {
+          return {
+            code: `print(not ${x})\n`, shape, variant: "not",
+            variantCard: `\`not\` flips the value: \`not ${x}\` is \`${x === "True" ? "False" : "True"}\`.`,
+          };
+        }
         const y = pick(rng, ["True", "False"]);
-        return { code: `print(${x} ${shape} ${y})\n`, shape, variant: shape };
+        const result = shape === "and"
+          ? ((x === "True" && y === "True") ? "True" : "False")
+          : ((x === "True" || y === "True") ? "True" : "False");
+        return {
+          code: `print(${x} ${shape} ${y})\n`, shape, variant: shape,
+          variantCard: `\`${x} ${shape} ${y}\` is \`${result}\` — \`${shape}\` needs ${shape === "and" ? "both sides" : "just one side"} to be \`True\`.`,
+        };
       },
     },
   },
@@ -112,8 +127,18 @@ export default [
         const pool = words.slice();
         const w = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
         const after = pool.splice(int(rng, 0, pool.length - 1), 1)[0];
-        if (shape === "runs") return { code: `if True:\n    print("${w}")\n`, shape, variant: "plain" };
-        if (shape === "skips") return { code: `if False:\n    print("${w}")\nprint("${after}")\n`, shape, variant: "plain", misconception: w };
+        if (shape === "runs") {
+          return {
+            code: `if True:\n    print("${w}")\n`, shape, variant: "plain",
+            variantCard: `The test is \`True\`, so the block runs and prints \`${w}\`.`,
+          };
+        }
+        if (shape === "skips") {
+          return {
+            code: `if False:\n    print("${w}")\nprint("${after}")\n`, shape, variant: "plain", misconception: w,
+            variantCard: `The test is \`False\`, so the indented block is skipped — \`${w}\` never prints. Only \`${after}\` shows.`,
+          };
+        }
         if (shape === "compare-test") {
           const a = int(rng, 2, 9), b = int(rng, 2, 9);
           const runs = a > b;

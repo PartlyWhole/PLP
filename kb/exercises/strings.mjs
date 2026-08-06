@@ -52,10 +52,23 @@ export default [
         const rng = mulberry32(seed);
         const shape = pick(rng, ["two-literals", "three-literals", "name-plus-literal"]);
         const a = pick(rng, words), b = pick(rng, words), c = pick(rng, words);
-        if (shape === "two-literals") return { code: `print("${a}" + "${b}")\n`, shape, variant: "plain" };
-        if (shape === "three-literals") return { code: `print("${a}" + "${b}" + "${c}")\n`, shape, variant: "plain" };
+        if (shape === "two-literals") {
+          return {
+            code: `print("${a}" + "${b}")\n`, shape, variant: "plain",
+            variantCard: `\`+\` on text joins the pieces end to end: \`"${a}" + "${b}"\` is \`${a}${b}\` — one word, no space.`,
+          };
+        }
+        if (shape === "three-literals") {
+          return {
+            code: `print("${a}" + "${b}" + "${c}")\n`, shape, variant: "plain",
+            variantCard: `\`+\` joins each piece end to end: \`${a}${b}${c}\` — no spaces added.`,
+          };
+        }
         const nm = pick(rng, strNames);
-        return { code: `${nm} = "${a}"\nprint(${nm} + "${b}")\n`, shape, variant: "plain" };
+        return {
+          code: `${nm} = "${a}"\nprint(${nm} + "${b}")\n`, shape, variant: "plain",
+          variantCard: `\`${nm}\` holds \`"${a}"\`, joined to \`"${b}"\` gives \`${a}${b}\`.`,
+        };
       },
     },
   },
@@ -74,10 +87,23 @@ export default [
         const rng = mulberry32(seed);
         const shape = pick(rng, ["literal-times", "times-literal", "name-times"]);
         const w = pick(rng, words), n = int(rng, 2, 4);
-        if (shape === "literal-times") return { code: `print("${w}" * ${n})\n`, shape, variant: "plain" };
-        if (shape === "times-literal") return { code: `print(${n} * "${w}")\n`, shape, variant: "plain" };
+        if (shape === "literal-times") {
+          return {
+            code: `print("${w}" * ${n})\n`, shape, variant: "plain",
+            variantCard: `\`* ${n}\` repeats the text ${n} times, end to end: \`${w.repeat(n)}\`.`,
+          };
+        }
+        if (shape === "times-literal") {
+          return {
+            code: `print(${n} * "${w}")\n`, shape, variant: "plain",
+            variantCard: `\`${n} *\` repeats \`"${w}"\` ${n} times: \`${w.repeat(n)}\`.`,
+          };
+        }
         const nm = pick(rng, strNames);
-        return { code: `${nm} = "${w}"\nprint(${nm} * ${n})\n`, shape, variant: "plain" };
+        return {
+          code: `${nm} = "${w}"\nprint(${nm} * ${n})\n`, shape, variant: "plain",
+          variantCard: `\`${nm}\` holds \`"${w}"\`; \`* ${n}\` repeats it ${n} times: \`${w.repeat(n)}\`.`,
+        };
       },
     },
   },
