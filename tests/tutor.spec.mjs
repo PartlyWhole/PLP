@@ -199,12 +199,14 @@ test.describe("PLP tutor (T-series)", () => {
 
     // A WRONG fill: 14 * 8 is 112, not the target 6.
     await page.evaluate(() => window.plp.tutor.lockPrediction("*"));
-    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 15_000 });
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "correction", null, { timeout: 15_000 });
     const s = await page.evaluate(() => window.plp.tutor.state());
     expect(s.lastAnswer).toBe("wrong");
-    // The filled program really ran (the reveal): editor + console prove it.
+    // The filled program really ran, but the card does not disclose its
+    // result. The editor and hidden IDE console prove the engine path here.
     expect((await page.evaluate(() => window.plp.editor.getValue())).trim()).toBe("print(14 * 8)");
     expect((await page.evaluate(() => window.plp.console.text())).trim()).toBe("112");
+    await expect(page.locator("#practice .pr-reveal, #practice .tutor-expected")).toHaveCount(0);
     // Mastery recorded by concept TAG (arith-on-ints), not by exercise id.
     expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0008": { seen: 1, missed: 1 } });
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
@@ -249,7 +251,7 @@ test.describe("PLP tutor (T-series)", () => {
     };
     const answer = async (text) => {
       await page.evaluate((t) => window.plp.tutor.lockPrediction(t), text);
-      await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 20_000 });
+      await page.waitForFunction(() => ["pause", "correction"].includes(window.plp.tutor.state().waiting), null, { timeout: 20_000 });
       return page.evaluate(() => ({
         lastAnswer: window.plp.tutor.state().lastAnswer,
         editor: window.plp.editor.getValue(),
@@ -281,7 +283,8 @@ test.describe("PLP tutor (T-series)", () => {
     r = await answer(`${accName} = ${accName} +`);
     expect(r.lastAnswer).toBe("wrong");
     expect(r.errors).toEqual([]);
-    expect(await page.evaluate(() => window.plp.tutor.state().waiting)).toBe("pause");
+    expect(await page.evaluate(() => window.plp.tutor.state().waiting)).toBe("correction");
+    await expect(page.locator("#practice .pr-reveal, #practice .tutor-expected")).toHaveCount(0);
 
     // 4. Mobile smart quotes are normalized BEFORE the splice: the curly-quoted
     // line would be a syntax error, and the console reveal shows what really
@@ -328,7 +331,7 @@ test.describe("PLP tutor (T-series)", () => {
     };
     found.answer = async (line, text) => {
       await page.evaluate((a) => window.plp.tutor.submit(a), { line, text });
-      await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 20_000 });
+      await page.waitForFunction(() => ["pause", "correction"].includes(window.plp.tutor.state().waiting), null, { timeout: 20_000 });
       return page.evaluate(() => ({
         lastAnswer: window.plp.tutor.state().lastAnswer,
         editor: window.plp.editor.getValue(),
@@ -407,7 +410,8 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#practice .pr-review .pr-errreview .pr-errline"))
       .toHaveCount(round.code.replace(/\n$/, "").split("\n").length);
     await expect(page.locator("#practice .pr-review .pr-errreview .pr-errline.ok")).toHaveCount(1);
-    await expect(page.locator("#practice .pr-review .pr-reveal pre")).toContainText(round.target.split("\n")[0]);
+    await expect(page.locator("#practice .pr-review .pr-reveal:not(.pr-answer-reveal) pre"))
+      .toContainText(round.target.split("\n")[0]);
     await expect(page.locator("#practice .pr-review .pr-retry.pr-retry-fix")).toHaveCount(1);
 
     // Starting the retry swaps the marked answer for a live picker + box.
@@ -422,13 +426,13 @@ test.describe("PLP tutor (T-series)", () => {
     expect(bad.ok).toBe(false);
     const good = await page.evaluate((fix) => window.plp.tutor.retry(0, { line: 2, text: fix }), round.fix);
     expect(good.ok).toBe(true);
-    expect(good.expectedText.trim()).toBe(round.target);
+    expect(good).toEqual({ ok: true });
     const after = await page.evaluate(() => ({
       rec: (() => { const x = window.plp.tutor.feed().find((c) => c.type === "question-frozen"); return { ok: x.ok, retry: x.retry }; })(),
       editor: window.plp.editor.getValue(),
     }));
     // The score of record keeps the FIRST attempt; the retry only decorates.
-    expect(after.rec).toEqual({ ok: true, retry: { ok: true, tries: 2 } });
+    expect(after.rec).toEqual({ ok: true, retry: { ok: true, tries: 2, answer: { line: 2, text: round.fix } } });
     expect(after.editor).toBe(liveCode); // the live round's program survived
     await page.evaluate(() => window.plp.tutor.closeReview());
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
@@ -554,55 +558,113 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
-  test("reveal-in-card: locking shows the real output in the card, the explain keeps it, the next question resets; predict-state shows the value + memory escape", async ({ page }) => {
+  test("wrong answer stays hidden through retry and reload until the learner reveals it", async ({ page }) => {
     await setup(page);
-    await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
+    await page.evaluate(() => { localStorage.clear(); });
     await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 7, count: 2 }));
     await expect(page.locator("body")).toHaveClass(/practice/);
-    await expect(page.locator("#practice .pr-question")).toBeVisible();
-    await expect(page.locator("#practice .pr-reveal")).toHaveCount(0);
-
-    // Lock a (wrong) prediction: the real run's output appears IN the card.
     await page.evaluate(() => window.plp.tutor.lockPrediction("definitely wrong"));
-    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 30_000 });
-    await expect(page.locator("#practice .pr-reveal")).toBeVisible();
-    await expect(page.locator("#practice .pr-reveal .pr-reveal-label")).toContainText("it printed");
-    const revealed = await page.evaluate(() => document.querySelector("#practice .pr-reveal pre").textContent.trim());
-    expect(revealed.length).toBeGreaterThan(0);
-    // …and the explain face renders in the SAME card, reveal still visible.
-    await expect(page.locator("#practice .pr-question .pr-explain .tutor-card")).toHaveCount(1);
-
-    // Continue → the next question is a fresh card with no reveal.
-    // Header Next is the canonical advancement control after grading; the
-    // old bottom Continue control is gone. Before grading, Next is hidden
-    // and the explicit Skip action remains.
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "correction", null, { timeout: 30_000 });
+    const first = await page.evaluate(() => {
+      const rec = window.plp.tutor.feed().find((c) => c.type === "question-frozen");
+      return {
+        rec: { ok: rec.ok, disclosure: rec.disclosure, expected: rec.review.expectedText },
+        score: window.plp.tutor.score(), stats: window.plp.tutor.drillStats(),
+      };
+    });
+    expect(first.rec.ok).toBe(false);
+    expect(first.rec.disclosure).toBe("hidden");
+    expect(first.score).toEqual({ answered: 1, right: 0, streak: 0, best: 0 });
+    expect(Object.values(first.stats)).toEqual([{ seen: 1, missed: 1 }]);
+    await expect(page.locator("#practice .pr-reveal, #practice .tutor-expected, #practice .pr-explain .tutor-card")).toHaveCount(0);
+    await expect(page.locator("#practice .pr-reveal-answer")).toBeVisible();
     await expect(page.locator("#practice [data-role=pr-next]")).toBeVisible();
-    await expect(page.locator("#practice [data-role=pr-controls] button", { hasText: "Continue" })).toHaveCount(0);
-    await page.locator("#practice [data-role=pr-next]").click();
-    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 15_000 });
-    await expect(page.locator("#practice [data-role=pr-question-position]")).toHaveText("Question 2 of 2");
-    await expect(page.locator("#practice [data-role=pr-next]")).toBeHidden();
-    await expect(page.locator("#practice .pr-question .pr-actions button", { hasText: "Skip" })).toBeVisible();
-    await expect(page.locator("#practice .pr-reveal")).toHaveCount(0);
-    await expect(page.locator("#practice .pr-question")).toBeVisible();
 
-    // predict-state: the reveal is the probed value, with the memory escape.
-    // (warm stats: the predict-state fixture's focus is deep — cold-biased
-    // single-question rounds would ~never deal it)
-    await page.evaluate(() => window.plp.tutor.exit());
-    await page.evaluate(() => localStorage.setItem("plp.kb.v1", JSON.stringify({ "0005": { seen: 24, missed: 0 } })));
-    await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 4, count: 1 }));
-    expect((await page.evaluate(() => window.plp.tutor.ask())).kind).toBe("predict-state");
-    await page.evaluate(() => window.plp.tutor.lockPrediction("[1]"));
-    await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
-    await expect(page.locator("#practice .pr-reveal .pr-reveal-label")).toContainText("it really holds");
-    // The escape hatch drops to the IDE, where the trace already filled the
-    // memory model.
-    await page.locator("#practice .pr-see-memory").click();
-    await expect(page.locator("body")).not.toHaveClass(/practice/);
-    await expect(page.locator("#memory-pane")).toBeVisible();
-    expect(await page.evaluate(() => window.plp.memory.steps().length)).toBeGreaterThan(0);
+    // Correction is the live question, not a dismissible historical review.
+    // Esc leaves it resumably instead of exposing the frozen first-attempt
+    // card without retry/reveal/Next controls.
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#practice [data-role=pr-controls] button", { hasText: "Continue your round" })).toBeVisible();
+    await page.locator("#practice [data-role=pr-controls] button", { hasText: "Continue your round" }).click();
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "correction", null, { timeout: 30_000 });
+    await expect(page.locator("#practice .pr-reveal-answer")).toBeVisible();
+
+    // Reload restores the correction instead of re-running or double-counting.
+    await page.reload();
+    await page.waitForFunction(() => window.plp?.tutor?.state().waiting === "correction", null, { timeout: 30_000 });
+    expect(await page.evaluate(() => window.plp.tutor.score())).toEqual(first.score);
+    expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual(first.stats);
+    await expect(page.locator("#practice .pr-reveal, #practice .tutor-expected")).toHaveCount(0);
+
+    const retry = await page.evaluate(() => window.plp.tutor.retryCurrent("still wrong"));
+    expect(retry).toEqual({ ok: false });
+    await expect(page.locator("#practice .pr-reveal, #practice .tutor-expected, #practice .truth, #practice .tutor-cell-truth")).toHaveCount(0);
+    const afterRetry = await page.evaluate(() => {
+      const rec = window.plp.tutor.feed().find((c) => c.type === "question-frozen");
+      return { ok: rec.ok, retry: rec.retry, score: window.plp.tutor.score(), stats: window.plp.tutor.drillStats() };
+    });
+    expect(afterRetry.ok).toBe(false);
+    expect(afterRetry.retry).toEqual({ ok: false, tries: 1, answer: "still wrong" });
+    expect(afterRetry.score).toEqual(first.score);
+    expect(afterRetry.stats).toEqual(first.stats);
+
+    await page.locator("#practice .pr-reveal-answer").click();
+    await expect(page.locator("#practice .pr-reveal pre")).toContainText(first.rec.expected.trim());
+    await expect(page.locator("#practice .pr-reveal-answer")).toHaveCount(0);
+    expect(await page.evaluate(() => window.plp.tutor.score())).toEqual(first.score);
+    expect((await page.evaluate(() => window.plp.tutor.feed().find((c) => c.type === "question-frozen").disclosure))).toBe("revealed");
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("Next on a hidden miss advances without the answer or variant explanation", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.clear(); window.plp.tutor.startDrill("numbers", { seed: 8, count: 2 }); });
+    await page.evaluate(() => window.plp.tutor.lockPrediction("definitely wrong"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "correction", null, { timeout: 30_000 });
+    await page.locator("#practice [data-role=pr-next]").click();
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("wrong-unrevealed");
+    await expect(page.locator("#practice .pr-reveal, #practice .pr-explain .tutor-card")).toHaveCount(0);
+    await expect(page.locator("#practice [data-role=pr-question-position]")).toHaveText("Question 2 of 2");
+    await page.locator("#practice [data-role=pr-previous]").click();
+    await expect(page.locator("#practice .pr-review")).toBeVisible();
+    await expect(page.locator("#practice .pr-reveal, #practice .truth, #practice .tutor-cell-truth")).toHaveCount(0);
+    await expect(page.locator("#practice .pr-reveal-answer")).toBeVisible();
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("a correct retry survives reload but never changes the first-attempt score or mastery", async ({ page }) => {
+    await setup(page);
+    await page.evaluate(() => { localStorage.clear(); window.plp.tutor.startDrill("numbers", { seed: 8, count: 1 }); });
+    await page.evaluate(() => window.plp.tutor.lockPrediction("definitely wrong"));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "correction", null, { timeout: 30_000 });
+    const before = await page.evaluate(() => {
+      const rec = window.plp.tutor.feed().find((c) => c.type === "question-frozen");
+      return { expected: rec.review.expectedText, score: window.plp.tutor.score(), stats: window.plp.tutor.drillStats() };
+    });
+    expect(await page.evaluate((answer) => window.plp.tutor.retryCurrent(answer), before.expected.trim())).toEqual({ ok: true });
+    let state = await page.evaluate(() => {
+      const rec = window.plp.tutor.feed().find((c) => c.type === "question-frozen");
+      return { ok: rec.ok, retry: rec.retry, disclosure: rec.disclosure, score: window.plp.tutor.score(), met: window.plp.tutor.met() };
+    });
+    expect(state.ok).toBe(false);
+    expect(state.retry.ok).toBe(true);
+    expect(state.disclosure).toBe("hidden");
+    expect(state.score).toEqual(before.score);
+    expect(state.met).toEqual({});
+    await expect(page.locator("#practice .pr-retry, #practice .pr-reveal-answer")).toHaveCount(0);
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+
+    await page.reload();
+    await page.waitForFunction(() => window.plp?.tutor?.state().waiting === "correction", null, { timeout: 30_000 });
+    await expect(page.locator("#practice .pr-retry-badge")).toContainText("solved on retry");
+    await expect(page.locator("#practice .pr-reveal-answer")).toHaveCount(0);
+    await page.locator("#practice [data-role=pr-next]").click();
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 30_000 });
+    state = await page.evaluate(() => ({ score: window.plp.tutor.score(), stats: window.plp.tutor.drillStats(), met: window.plp.tutor.met() }));
+    expect(state.score).toEqual(before.score);
+    expect(state.stats).toEqual(before.stats);
+    expect(state.met).toEqual({});
   });
 
   test("topic meters + round summary: menu buttons show mastery; a finished round summarizes and suggests the next step", async ({ page }) => {
@@ -628,7 +690,7 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#practice [data-role=pr-controls] .t-meter").first()).toBeAttached();
     expect(await page.evaluate(() => document.querySelectorAll("#practice [data-role=pr-controls] .t-meter-count").length)).toBe(0);
 
-    // A 2-question round: one right (grants met), one skipped.
+    // A 2-question round: one hidden miss, one skipped.
     await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 7, count: 2 }));
     const q1 = await page.evaluate(() => window.plp.tutor.ask());
     expect(q1.kind).toBe("predict-output");
@@ -636,8 +698,8 @@ test.describe("PLP tutor (T-series)", () => {
     // evaluating it mentally is impossible here, so miss it on purpose, then
     // skip question 2 — summary shape is what's under test.
     await page.evaluate(() => window.plp.tutor.lockPrediction("wrong on purpose"));
-    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 15_000 });
-    await page.evaluate(() => window.plp.tutor.continue());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "correction", null, { timeout: 15_000 });
+    await page.evaluate(() => window.plp.tutor.next());
     await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 15_000 });
     await page.evaluate(() => window.plp.tutor.skip());
     await page.evaluate(() => window.plp.tutor.continue());
@@ -1245,7 +1307,9 @@ test.describe("PLP tutor (T-series)", () => {
     await page.evaluate(() => window.plp.tutor.lockPrediction("'hi!'"));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("wrong");
-    // The reveal never prints a value — it says the name is gone.
+    await expect(page.locator("#practice .pr-reveal")).toHaveCount(0);
+    await page.evaluate(() => window.plp.tutor.revealAnswer());
+    // Once requested, the reveal never prints a value. It says the name is gone.
     const reveal = await page.evaluate(() => {
       const b = [...document.querySelectorAll(".pr-reveal")].pop();
       return b && { label: b.querySelector(".pr-reveal-label").textContent, text: b.querySelector("pre").textContent };
@@ -1264,7 +1328,7 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
-  test("drill round: seeded session, miss stats, explain cards, reload-restores same round", async ({ page }) => {
+  test("drill round: seeded session, miss stats, hidden correction reload-restores same round", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => localStorage.removeItem("plp.drills.v1"));
     // Seed 8 is the cold two-plain-predict-output fixture (derivation: first
@@ -1274,11 +1338,12 @@ test.describe("PLP tutor (T-series)", () => {
     expect(id).toBe("drill-numbers-8");
     expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
 
-    // Miss on purpose → template explain card arrives and pauses.
+    // Miss on purpose: it is counted, but the explanation stays hidden.
     await page.evaluate(() => window.plp.tutor.lockPrediction("definitely wrong"));
     let s = await page.evaluate(() => window.plp.tutor.state());
     expect(s.lastAnswer).toBe("wrong");
-    expect(s.waiting).toBe("pause");
+    expect(s.waiting).toBe("correction");
+    await expect(page.locator("#practice .pr-explain, #practice .pr-reveal")).toHaveCount(0);
     const stats = await page.evaluate(() => window.plp.tutor.drillStats());
     const bumped = Object.values(stats);
     expect(bumped.length).toBe(1);
@@ -1289,8 +1354,11 @@ test.describe("PLP tutor (T-series)", () => {
     await page.waitForFunction(() => Boolean(window.plp?.tutor));
     s = await page.evaluate(() => window.plp.tutor.state());
     expect(s.lessonId).toBe("drill-numbers-8");
-    // Reload-as-continue moves past the pause to the round's next question.
-    expect(s.waiting).toBe("ask");
+    // Reload is idempotent and keeps the learner on the same correction.
+    expect(s.waiting).toBe("correction");
+    expect(Object.values(await page.evaluate(() => window.plp.tutor.drillStats()))).toEqual(bumped);
+    await page.evaluate(() => window.plp.tutor.next());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 15_000 });
 
     // Finish the round (skip counts as a miss and triggers the explain pause).
     await page.evaluate(() => window.plp.tutor.skip());
@@ -1478,7 +1546,7 @@ test.describe("PLP tutor (T-series)", () => {
     await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
     // Lock EXACTLY the designed wrong answer → wrong AND matched.
     await page.evaluate(() => window.plp.tutor.lockPrediction("[1, 8]"));
-    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 30_000 });
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "correction", null, { timeout: 30_000 });
     let mc = await page.evaluate(() => window.plp.tutor.mcStats());
     expect(mc["000H"]?.hits).toBe(1);
     // The next compile (fed the store, as both call sites are) reserves the
@@ -1490,6 +1558,8 @@ test.describe("PLP tutor (T-series)", () => {
     });
     expect(dealt).toContain("000H");
     // Answering the follow-up (right this time) settles the entry.
+    await page.evaluate(() => window.plp.tutor.next());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 15_000 });
     await page.evaluate(() => window.plp.tutor.continue());
     await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
     await page.evaluate(() => window.plp.tutor.lockPrediction("[2, 9, 50]"));
@@ -1529,13 +1599,13 @@ test.describe("PLP tutor (T-series)", () => {
     // output text, and the review card must hold a single program).
     await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 8, count: 2 }));
 
-    // Q1 wrong: the reveal carries the reflect link (the graded trace is
-    // already scrubbable in the memory model), and its dot reads red.
+    // Q1 wrong: no answer or trace link is disclosed, and its dot reads red.
     await page.evaluate(() => window.plp.tutor.lockPrediction("definitely wrong"));
-    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 30_000 });
-    await expect(page.locator("#practice .pr-reveal .pr-see-memory")).toContainText("step through this run");
-    const expected1 = (await page.evaluate(() => document.querySelector("#practice .pr-reveal pre").textContent)).replace(/\n$/, "");
-    await page.evaluate(() => window.plp.tutor.continue());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "correction", null, { timeout: 30_000 });
+    await expect(page.locator("#practice .pr-reveal, #practice .pr-see-memory")).toHaveCount(0);
+    const expected1 = await page.evaluate(() =>
+      window.plp.tutor.feed().find((c) => c.type === "question-frozen").review.expectedText.replace(/\n$/, ""));
+    await page.evaluate(() => window.plp.tutor.next());
     await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 15_000 });
     await expect(page.locator("#practice .pr-dot.miss")).toHaveCount(1);
     const q2code = await page.evaluate(() => window.plp.editor.getValue());
@@ -1673,7 +1743,7 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
-  test("trace-table ask: lint accepts the kind; silent trace; non-empty gate; per-cell marks; wrong grants nothing", async ({ page }) => {
+  test("trace-table miss hides every partial result until explicit reveal", async ({ page }) => {
     await setup(page);
     // lintLesson accepts the kind via the questionGenerators registry.
     const lintErrors = await page.evaluate(() => window.plp.tutor.lintLesson({
@@ -1692,16 +1762,15 @@ test.describe("PLP tutor (T-series)", () => {
     expect((await page.evaluate(() => window.plp.tutor.state())).waiting).toBe("ask");
     await expect(page.locator("#practice .pr-note")).toContainText("Fill every box first");
 
-    // One wrong cell: ok false, per-cell marks, the truth beside the miss.
+    // One wrong cell: the first miss counts, but no cell-level correctness or
+    // truth appears while the learner can still retry.
     await page.evaluate(() => window.plp.tutor.submit({ b0: "[1,2,3]", b1: "999" }));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
     const s = await page.evaluate(() => window.plp.tutor.state());
     expect(s.lastAnswer).toBe("wrong");
-    await expect(page.locator("#practice .tutor-trace-table input.ok")).toHaveCount(1); // container spacing forgiven on b0
-    await expect(page.locator("#practice .tutor-trace-table input.bad")).toHaveCount(1);
-    await expect(page.locator("#practice .tutor-trace-table .tutor-cell-truth")).toContainText("1");
-    await expect(page.locator("#practice .pr-reveal pre")).toContainText("1 of 2 steps right");
-    await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("1 of 2");
+    expect(s.waiting).toBe("correction");
+    await expect(page.locator("#practice .tutor-trace-table .ok, #practice .tutor-trace-table .bad")).toHaveCount(0);
+    await expect(page.locator("#practice .tutor-trace-table .tutor-cell-truth, #practice .pr-reveal")).toHaveCount(0);
     // The record froze with the review snapshot; the score counted a miss.
     const rec = await page.evaluate(() =>
       window.plp.tutor.feed().findLast((c) => c.type === "question-frozen"));
@@ -1712,6 +1781,10 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0009": { seen: 1, missed: 1 } });
     // A wrong table grants no met.
     expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
+    await page.locator("#practice .pr-reveal-answer").click();
+    await expect(page.locator("#practice .tutor-trace-table code.ok")).toHaveCount(1);
+    await expect(page.locator("#practice .tutor-trace-table code.bad")).toHaveCount(1);
+    await expect(page.locator("#practice .tutor-cell-truth")).toContainText("1");
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
@@ -1748,10 +1821,10 @@ test.describe("PLP tutor (T-series)", () => {
     const liveCode = await page.evaluate(() => window.plp.editor.getValue());
     await expect(page.locator("#practice .pr-dot.miss")).toHaveCount(1);
 
-    // The red dot opens the review: graded table (truth beside the miss)
-    // plus the "Try it again" entry point and the score-keeping note.
+    // The red dot opens the hidden review plus the "Try it again" entry point
+    // and the score-keeping note. No graded cell or truth is exposed.
     await page.locator("#practice button.pr-dot").click();
-    await expect(page.locator("#practice .pr-review .tutor-trace-table code.bad")).toHaveCount(1);
+    await expect(page.locator("#practice .pr-review .tutor-trace-table code.bad, #practice .pr-review .tutor-cell-truth")).toHaveCount(0);
     await expect(page.locator("#practice .pr-review .pr-retry-note")).toContainText("keeps the first try");
 
     // Starting the retry swaps in a FRESH blank table: no graded marks, no
@@ -1761,9 +1834,9 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#practice .pr-review .tutor-trace-table code.ok, #practice .pr-review .tutor-trace-table code.bad")).toHaveCount(0);
     await expect(page.locator("#practice .pr-review .tutor-trace-table .hint")).toHaveCount(0);
 
-    // The quiet escape restores the graded view without grading anything.
+    // The quiet escape restores the recorded but still-hidden view.
     await page.locator("#practice .pr-retry-cancel").click();
-    await expect(page.locator("#practice .pr-review .tutor-trace-table code.bad")).toHaveCount(1);
+    await expect(page.locator("#practice .pr-review .tutor-trace-table code.bad, #practice .pr-review .tutor-cell-truth")).toHaveCount(0);
     await expect(page.locator("#practice .pr-review .tutor-trace-table input")).toHaveCount(0);
 
     // Retry for real: the empty gate holds, then an all-correct fill grades
@@ -1775,9 +1848,12 @@ test.describe("PLP tutor (T-series)", () => {
     await inputs.nth(0).fill("[1, 2, 3]");
     await inputs.nth(1).fill("1");
     await page.locator("#practice .pr-retry-table button.primary", { hasText: "Check my answers" }).click();
+    await page.waitForFunction(() => window.plp.tutor.feed().find((c) => c.type === "question-frozen")?.retry?.ok === true, null, { timeout: 30_000 });
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
     await expect(page.locator("#practice .pr-retry-verdict")).toContainText("✓ every step!", { timeout: 30_000 });
-    // The re-graded table shows every cell right.
-    await expect(page.locator("#practice .pr-review .tutor-trace-table code.ok")).toHaveCount(2);
+    // The learner's retry cells are marked right without swapping in the
+    // recorded truth table.
+    await expect(page.locator("#practice .pr-review .tutor-trace-table input.ok")).toHaveCount(2);
 
     // Score of record untouched; the retry only decorates.
     const after = await page.evaluate(() => ({
@@ -1842,16 +1918,15 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#practice .pr-question .pr-program")).toHaveCount(0);
     await expect(page.locator("#practice .pr-mechanics")).toContainText("↑ and ↓");
 
-    // A WRONG arrangement (the two binds swapped) runs for real and prints
-    // the other value — the reveal shows what it actually printed.
+    // A WRONG arrangement (the two binds swapped) runs for real, but its
+    // actual output and canonical order remain hidden.
     const wrong = orderIdsFor(ask, [ask.lines[1], ask.lines[0], ask.lines[2]]);
     await page.evaluate((ids) => window.plp.tutor.submit(ids), wrong);
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("wrong");
     const printed = (await page.evaluate(() => window.plp.console.text())).trim();
     expect(printed).not.toBe(ask.targetOutput);
-    await expect(page.locator("#practice .pr-reveal pre")).toContainText(printed);
-    await expect(page.locator("#practice .pr-order.bad")).toHaveCount(1);
+    await expect(page.locator("#practice .pr-reveal, #practice .pr-order.bad, #practice .pr-answer-reveal")).toHaveCount(0);
     expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "000A": { seen: 1, missed: 1 } });
     expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
@@ -1911,15 +1986,13 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#practice .pr-errkind")).toHaveText(["NameError", "TypeError", "IndexError", "KeyError"]);
     await expect(page.locator("#practice .pr-mechanics")).toContainText("tap the line it stops on");
 
-    // Half right (right kind, wrong line) is still wrong — but the verdict
-    // says which half landed, and the truth is marked on the picker.
+    // Half right (right kind, wrong line) is still wrong, without revealing
+    // which half landed or marking the answer on the picker.
     await page.evaluate(() => window.plp.tutor.submit({ line: 1, type: "NameError" }));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("wrong");
-    await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("Right kind, wrong line");
-    await expect(page.locator("#practice .pr-reveal pre")).toContainText("NameError");
-    await expect(page.locator("#practice .pr-reveal pre")).toContainText("line 3");
-    await expect(page.locator("#practice .pr-errline.truth")).toHaveCount(1);
+    await expect(page.locator("#practice .pr-review-answer .tutor-verdict")).toContainText("Not yet");
+    await expect(page.locator("#practice .pr-reveal, #practice .pr-errline.truth, #practice .pr-errline.bad")).toHaveCount(0);
     expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "002N": { seen: 1, missed: 1 } });
     expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
@@ -1952,6 +2025,9 @@ test.describe("PLP tutor (T-series)", () => {
 
     await page.evaluate(() => window.plp.tutor.review(0));
     await expect(page.locator("#practice .pr-review .pr-errreview .pr-errline")).toHaveCount(3);
+    await expect(page.locator("#practice .pr-review .pr-errreview .pr-errline.bad, #practice .pr-review .pr-errreview .pr-errline.truth")).toHaveCount(0);
+    await expect(page.locator("#practice .pr-review .pr-errreview .hint")).not.toContainText("NameError");
+    await page.locator("#practice .pr-reveal-answer").click();
     await expect(page.locator("#practice .pr-review .pr-errreview .pr-errline.bad")).toHaveCount(1);
     await expect(page.locator("#practice .pr-review .pr-errreview .pr-errline.truth")).toHaveCount(1);
     await expect(page.locator("#practice .pr-review .pr-errreview .hint")).toContainText("it raised NameError");
@@ -1966,14 +2042,14 @@ test.describe("PLP tutor (T-series)", () => {
     // A correct retry re-runs for real and decorates the record only.
     const res = await page.evaluate(() => window.plp.tutor.retry(0, { line: 3, type: "NameError" }));
     expect(res.ok).toBe(true);
-    expect(res.expectedText).toContain("line 3");
+    expect(res).toEqual({ ok: true });
     const after = await page.evaluate(() => ({
       rec: (() => { const r = window.plp.tutor.feed().find((c) => c.type === "question-frozen"); return { ok: r.ok, retry: r.retry }; })(),
       stats: window.plp.tutor.drillStats(),
       met: window.plp.tutor.met(),
       editor: window.plp.editor.getValue(),
     }));
-    expect(after.rec).toEqual({ ok: false, retry: { ok: true, tries: 1 } });
+    expect(after.rec).toEqual({ ok: false, retry: { ok: true, tries: 1, answer: { line: 3, type: "NameError" } } });
     expect(after.stats).toEqual({ "002N": { seen: 1, missed: 1 } });
     expect(after.met).toEqual({}); // a retry never grants
     expect(after.editor).toBe(liveCode);
@@ -2004,7 +2080,10 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#practice .pr-review .pr-order-arrangement pre"))
       .toHaveText([ask.lines[1], ask.lines[0], ask.lines[2]].join("\n"));
     await expect(page.locator("#practice .pr-review .pr-review-answer .tutor-verdict")).toContainText("✗");
-    await expect(page.locator("#practice .pr-review .pr-reveal pre")).toContainText(rec.review.expectedText.trim());
+    await expect(page.locator("#practice .pr-review .pr-reveal, #practice .pr-review .pr-answer-reveal")).toHaveCount(0);
+    await page.locator("#practice .pr-reveal-answer").click();
+    await expect(page.locator("#practice .pr-review .pr-reveal:not(.pr-answer-reveal) pre"))
+      .toContainText(rec.review.expectedText.trim());
     await expect(page.locator("#practice .pr-review .pr-retry.pr-retry-order")).toHaveCount(1);
 
     // Starting the retry brings the DEALT items back as a live widget.
@@ -2023,14 +2102,14 @@ test.describe("PLP tutor (T-series)", () => {
     // decorates the record — and never touches the score of record.
     const res = await page.evaluate((ids) => window.plp.tutor.retry(0, ids), orderIdsFor(ask, ask.lines));
     expect(res.ok).toBe(true);
-    expect(res.expectedText.trim()).toBe(ask.targetOutput);
+    expect(res).toEqual({ ok: true });
     const after = await page.evaluate(() => ({
       rec: (() => { const r = window.plp.tutor.feed().find((c) => c.type === "question-frozen"); return { ok: r.ok, retry: r.retry }; })(),
       stats: window.plp.tutor.drillStats(),
       met: window.plp.tutor.met(),
       editor: window.plp.editor.getValue(),
     }));
-    expect(after.rec).toEqual({ ok: false, retry: { ok: true, tries: 1 } });
+    expect(after.rec).toEqual({ ok: false, retry: { ok: true, tries: 1, answer: orderIdsFor(ask, ask.lines) } });
     expect(after.stats).toEqual({ "000A": { seen: 1, missed: 1 } });
     expect(after.met).toEqual({});
     expect(after.editor).toBe(liveCode); // the live round's program survived
@@ -2176,8 +2255,8 @@ test.describe("PLP tutor (T-series)", () => {
     await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
     await page.evaluate(() => window.plp.tutor.startDrill("numbers", { seed: 8, count: 2 }));
     await page.evaluate(() => window.plp.tutor.lockPrediction("definitely wrong"));
-    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause", null, { timeout: 30_000 });
-    await page.evaluate(() => window.plp.tutor.continue());
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "correction", null, { timeout: 30_000 });
+    await page.evaluate(() => window.plp.tutor.next());
     await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 15_000 });
     // The miss dot renders its ✗ glyph (CSS ::after over the styled class).
     await expect(page.locator("#practice button.pr-dot.miss")).toHaveCount(1);
@@ -2296,12 +2375,11 @@ test.describe("PLP tutor (T-series)", () => {
     await page.evaluate(() => window.plp.tutor.lockPrediction("moon\nblue"));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("wrong");
-    // The run really happened, answered from the script — a single echo of
-    // the typed line, in the right place (invariant 4).
+    // The run really happened, answered from the script with one echo, but
+    // the card does not disclose the transcript after a miss.
     expect(await page.evaluate(() => window.plp.console.text())).toBe("moon\nYour name? blue\nblue\n");
     expect(await page.evaluate(() => window.plp.console.engineText())).toBe("moon\nYour name? blue\n");
-    await expect(page.locator("#practice .pr-reveal .pr-reveal-label")).toHaveText("the console really showed");
-    await expect(page.locator("#practice .pr-reveal pre")).toContainText("Your name? blue");
+    await expect(page.locator("#practice .pr-reveal, #practice .tutor-expected")).toHaveCount(0);
     expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0026": { seen: 1, missed: 1 } });
     expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
@@ -2377,6 +2455,7 @@ test.describe("PLP tutor (T-series)", () => {
 
     await page.evaluate(() => window.plp.tutor.review(0));
     await expect(page.locator("#practice .pr-review .pr-stdin-chip code")).toHaveText(["blue"]);
+    await expect(page.locator("#practice .pr-review .pr-reveal, #practice .pr-review .tutor-expected")).toHaveCount(0);
     // The retry widget matches the live card: the growing line boxes (never a
     // textarea, which has no keyboard submit), one box to start.
     await expect(page.locator("#practice .pr-review .pr-retry textarea")).toHaveCount(0);
@@ -2384,14 +2463,14 @@ test.describe("PLP tutor (T-series)", () => {
 
     const res = await page.evaluate(() => window.plp.tutor.retry(0, "moon\nYour name? blue\nblue"));
     expect(res.ok).toBe(true);
-    expect(res.expectedText).toBe("moon\nYour name? blue\nblue\n");
+    expect(res).toEqual({ ok: true });
     const after = await page.evaluate(() => ({
       rec: (() => { const r = window.plp.tutor.feed().find((c) => c.type === "question-frozen"); return { ok: r.ok, retry: r.retry }; })(),
       stats: window.plp.tutor.drillStats(),
       met: window.plp.tutor.met(),
       editor: window.plp.editor.getValue(),
     }));
-    expect(after.rec).toEqual({ ok: false, retry: { ok: true, tries: 1 } });
+    expect(after.rec).toEqual({ ok: false, retry: { ok: true, tries: 1, answer: "moon\nYour name? blue\nblue" } });
     expect(after.stats).toEqual({ "0026": { seen: 1, missed: 1 } });
     expect(after.met).toEqual({}); // a retry never grants
     expect(after.editor).toBe(liveCode);
@@ -2452,7 +2531,11 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(boxes).toHaveCount(3);
     await page.keyboard.press("Enter"); // empty last box → drop it and submit
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
-    await expect(boxes).toHaveCount(2); // the empty box is gone from the answer
+    // A miss replaces the live widget with the hidden correction review; a
+    // correct answer keeps the two frozen boxes. Either way the empty third
+    // box is gone.
+    const hold = await page.evaluate(() => window.plp.tutor.state().waiting);
+    await expect(boxes).toHaveCount(hold === "correction" ? 0 : 2);
 
     // It graded against the REAL run, exactly as before: the recorded answer is
     // the "\n"-joined boxes, and the truth is the console's own text.

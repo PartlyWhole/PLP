@@ -62,11 +62,12 @@ the header and the whole IDE grid): one card at a time — the program
 links, under a slim bar with a labeled destination, `Question N of M`,
 progress dots, Previous/Next review navigation, scratch notes, and a
 separated Finish round action. The engine still runs
-every program for real underneath; the card's **reveal** ("▶ it printed…")
-is the graded run's actual output (the `card.reveal` contract in
-tutor.mjs), and the explain face renders into the same card with the
-reveal still visible. Round summaries, the topic menu, and the concept
-map are full-surface cards on the same view.
+every program for real underneath. A correct first answer may show the
+graded run's actual output because the learner has already supplied the
+truth. A wrong first answer records the miss once, but hides the run's
+answer, partial cell results, and explanation until the learner either
+solves it or chooses **Reveal answer**. Round summaries, the topic menu,
+and the concept map are full-surface cards on the same view.
 
 Prose is dieted to the moment it applies: no round banner (the header
 shows progress), the 🌱 rule **statement** rides on the first ask of a
@@ -88,9 +89,10 @@ renders a step table (one column per watched name, one row per executed
 line where a watched name changed; the runtime traces silently FIRST
 because the trace is both the answer key and the table skeleton), the
 student fills every cell, one lock grades them all per-cell against the
-real trace, and the reveal is "N of M steps right" plus the memory-model
-link. Score is all-or-nothing; a clean first-attempt perfect table
-grants met (see design/lesson-kb-binding.md §4).
+real trace. A wrong table enters correction with no per-cell marks or
+truth; explicit reveal shows "N of M steps right", the per-cell results,
+and the memory-model link. Score is all-or-nothing; a clean first-attempt
+perfect table grants met (see design/lesson-kb-binding.md §4).
 
 **order-the-lines** (Parsons, expansion ladder §R2) is the fifth kind: the
 KB emits the lines in CANONICAL order and buildKBSession draws the deal
@@ -106,9 +108,10 @@ target — so any order that really prints the target is right and an
 arrangement that raises simply never completes. This form grants NO met
 in v1 (an arrangement is production, weaker than §4's prediction
 evidence classes); stats, streak and template retirement still move.
-Review shows the recorded arrangement, the verdict and what it really
-printed; the retry re-deals the same items as a live widget and runs the
-new arrangement for real (`retryAnswer` takes an ARRAY of item ids here,
+Review shows the recorded arrangement and first-attempt verdict. What it
+really printed remains hidden after a miss until explicit reveal; the
+retry re-deals the same items as a live widget and runs the new
+arrangement for real (`retryAnswer` takes an ARRAY of item ids here,
 mirroring the trace-table map branch).
 
 **Endless mode and the score tracker.** "∞ Endless practice" on the menu
@@ -125,22 +128,26 @@ line shows the lifetime tally derived from the kb seen/missed stats.
 Ending an endless run (✕) earns the whole run's summary card — dots,
 newly-met chips, misses — with "∞ Go again".
 
-**Every graded answer holds.** After grading, the round pauses on both
-outcomes (kb-session emits a bare `{ pause: true }` step on the correct
-branch; the wrong branch already paused on its explain card): the card
-freezes with the verdict big in `.pr-verdict-slot`, the reveal under it,
-and the header's canonical **Next →** action (Enter works because the
-frozen card's input is readOnly, so the keystroke falls through to the
-surface). The old bottom Continue action is absorbed by the practice
-surface; guided lessons keep their stage controls. Without this beat the
-one-card surface would wipe the "✓ Exactly right!" before it was read.
+**Every graded answer holds.** A correct first answer pauses on the
+frozen result with the header's canonical **Next →** action. A wrong
+first answer instead creates a persisted correction state on that same
+question. The learner can **Try again**, **Reveal answer**, or choose
+**Next problem →** without disclosure. Wrong retries disclose no answer,
+partial mark, actual value, or variant explanation. A correct retry is
+saved in `rec.retry` and waits for Next; it does not change the recorded
+first-attempt miss, score, stats, or mastery. Explicit reveal discloses
+the typed truth and authored explanation without changing the score.
+Moving on while hidden uses the internal `wrong-unrevealed` outcome so
+the answer-bearing variant is skipped. Guided lessons keep their stage
+controls and generated-ask retry ladder.
 
 **Dots are the round's scoreboard.** Answered dots
 color green (hit) / red (miss; a green ring = missed, then solved on
 retry) and click into a **review**: the recorded snapshot (every
 `question-frozen` record carries `review` — program, kind, opts/blank,
-expected, teach/context) rebuilt as a read-only card — program, your
-answer, verdict, the real output. Reviewing stashes the live view as DOM
+expected, teach/context) rebuilt as a read-only card. An unrevealed miss
+shows the learner's answer and verdict but no truth; legacy records that
+predate the `disclosure` field remain revealed. Reviewing stashes the live view as DOM
 and restores it untouched through the header navigation; new runtime
 content supersedes a stale review. **Previous** opens the latest answered
 question, Previous/Next traverse answered questions, and Next from the
@@ -157,8 +164,10 @@ retry re-deals the shuffled rows and runs the new arrangement; a
 trace-table retry
 swaps the graded table for a fresh BLANK one (the truth leaves the
 screen the moment the retry starts — otherwise it would be copying),
-grades the refilled cells against a real re-run, then re-renders the
-table graded; a quiet "never mind" restores the recorded graded view.
+grades the refilled cells against a real re-run, and only marks the table
+when the whole retry is correct. A wrong retry stays editable and gives
+no per-cell feedback; a quiet "never mind" restores the still-hidden
+recorded view.
 
 Escape hatches are deliberately named. **Topics**, **Back to topics**, and
 **Back to code** perform their labeled destination directly, including
@@ -173,8 +182,9 @@ that was launched from the map ("Practice this ▶"/"Try it anyway ▶")
 returns to the **map** (`store.origin`), not the menu. "open in editor"
 on every program block; a "put the question's program back" chip appears
 if the code was edited outside; predict-state reveals link to the memory
-model, and any **miss** links "🔬 step through this run" — the graded
-trace is already scrubbable in the IDE; these world switches record a
+model. A miss links "🔬 step through this run" only after the learner
+reveals the answer, because the graded trace itself can disclose it;
+these world switches record a
 history entry so browser Back returns to the card. A **📝 scratch
 notes** drawer (persisted in `plp.notes.v1`, nothing reads it) rides the
 top bar and includes its own visible **Collapse notes** control. A
@@ -391,9 +401,11 @@ beats, predict-then-verify, persistence — the compiled script is stored
 verbatim, so reload restores the identical round).
 
 Ground truth is always the engine: exercises generate programs, never
-answers. A miss (wrong or skipped) shows the program's `variantCard`
-(interpolating the exact values asked) or the concept's canonical rule
-card, and bumps `plp.kb.v1` per-CONCEPT stats (`{seen, missed}`, keyed by
+answers. A skipped question keeps the existing immediate teaching path.
+A wrong answer shows the program's `variantCard` (interpolating the exact
+values asked) or the concept's canonical rule card only after a correct
+retry or explicit reveal; moving on while hidden suppresses it. The first
+attempt bumps `plp.kb.v1` per-CONCEPT stats (`{seen, missed}`, keyed by
 permanent tag; one-time migration from the legacy `plp.drills.v1`
 template store). A clean first-attempt correct answer (predict-output,
 predict-state, or an all-correct trace-table) additionally grants
@@ -453,7 +465,8 @@ artifact, byte-exact by the K-doc test; regenerate with
 ```
 
 Sequencing is strictly ordered with one-shot `if` detours keyed on
-`lastAnswer` (`"correct" | "wrong" | "skipped"`). This is deliberately
+`lastAnswer` (`"correct" | "wrong" | "skipped"`; drills also use the
+internal `"wrong-unrevealed"` to bypass answer-bearing variants). This is deliberately
 smaller than the removed director's beat grammar; it grows only when a
 lesson being authored demands it.
 
@@ -472,12 +485,16 @@ lesson being authored demands it.
   trailing blank lines, and content-equivalent container display (spacing
   around commas/colons inside brackets/parens/braces, repr quote style) —
   never a content difference. Hints are available pre-lock;
-  there are no post-reveal retries.
+  KB practice misses use the correction lifecycle above. Guided lessons
+  keep their authored post-grade behavior.
 
 ## Persistence and the code stash
 
 `plp.tutor.v1` holds `{ lessonId, resumeIndex, lastAnswer, cards, stash,
-lastLoadedCode }`. Cards are serializable descriptors; interactive cards
+lastLoadedCode, pendingCorrection }`. Cards are serializable descriptors;
+wrong practice records persist `disclosure: "hidden"` plus any `retry`,
+so reload restores the correction without grading or counting again.
+Legacy records without a disclosure field are treated as revealed. Interactive cards
 are recorded only in frozen form at resolution, so a reload during a
 blocking step re-creates it live (no duplicates). Reload during a `pause`
 resumes past it.
@@ -497,6 +514,7 @@ emits.
 
 `plp.tutor`: `start(unitId)`, `exit()`, `state()`, `feed()`, `continue()`,
 `ask()`, `submit(answers?)`, `lockPrediction(text?)`, `skip()`,
+`correction()`, `retryCurrent(answer)`, `revealAnswer()`, `next()`,
 `lintLesson`. `plp.layout`: `setTutorVisible/isTutorVisible`.
 T-series tests: [tests/tutor.spec.mjs](../tests/tutor.spec.mjs).
 
@@ -508,3 +526,6 @@ T-series tests: [tests/tutor.spec.mjs](../tests/tutor.spec.mjs).
 - Generated asks on reload regenerate from a possibly-empty trace and then
   skip; predict-output re-asks cleanly.
 - `attempts`/hints apply per ask; there is no cross-lesson adaptivity yet.
+- Retry-before-reveal covers every ask kind currently emitted by KB practice.
+  Generic `generateQuestion` asks retain the guided lesson's authored
+  attempts/hints ladder; the KB compiler does not currently emit those kinds.

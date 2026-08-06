@@ -133,7 +133,14 @@ export function createPracticeUI({ layout, getCode }) {
   // "Topics" always goes to topics, including while a review is open.
   function levelUp() {
     if (!notesDrawer.hidden) { toggleNotes(false); return; }
-    if (reviewState) { closeReview(); return; }
+    if (reviewState) {
+      // A correction is the live round state, not a dismissible historical
+      // review. Esc leaves the round resumably instead of exposing the frozen
+      // first-attempt card underneath.
+      if (reviewState.correction) { (onBack ?? hide)(); return; }
+      closeReview();
+      return;
+    }
     (onBack ?? hide)();
   }
   leaveBtn.addEventListener("click", () => {
@@ -185,10 +192,19 @@ export function createPracticeUI({ layout, getCode }) {
   function updateNavigation() {
     updateQuestionPosition();
     if (reviewState) {
+      if (reviewState.correction) {
+        previousBtn.hidden = true;
+        nextBtn.hidden = false;
+        nextBtn.disabled = false;
+        nextBtn.textContent = "Next problem →";
+        nextBtn.title = "Continue to the next problem";
+        return;
+      }
       const pos = reviewIndices.indexOf(reviewState.index);
       previousBtn.hidden = pos <= 0;
       nextBtn.hidden = false;
       nextBtn.disabled = false;
+      nextBtn.textContent = "Next →";
       nextBtn.title = pos >= reviewIndices.length - 1
         ? "Return to the current problem"
         : `Review question ${reviewIndices[pos + 1] + 1}`;
@@ -201,6 +217,7 @@ export function createPracticeUI({ layout, getCode }) {
       : "";
     nextBtn.hidden = typeof liveNextAction !== "function";
     nextBtn.disabled = typeof liveNextAction !== "function";
+    nextBtn.textContent = "Next →";
     nextBtn.title = nextBtn.hidden ? "" : "Continue to the next problem";
   }
   previousBtn.addEventListener("click", () => {
@@ -214,6 +231,10 @@ export function createPracticeUI({ layout, getCode }) {
   });
   nextBtn.addEventListener("click", () => {
     if (reviewState) {
+      if (reviewState.correction) {
+        reviewState.onNext?.();
+        return;
+      }
       const pos = reviewIndices.indexOf(reviewState.index);
       if (pos >= 0 && pos < reviewIndices.length - 1) onReview?.(reviewIndices[pos + 1]);
       else closeReview();
@@ -578,10 +599,11 @@ export function createPracticeUI({ layout, getCode }) {
   let roundStash = null;
   function stashRound() {
     if (roundStash) return;
-    if (reviewState) closeReview(); // resume lands on the live view, not a review
+    if (reviewState && !reviewState.correction) closeReview();
     roundStash = {
       saved: [...body.children], savedControls: [...controlsHost.children], current,
       liveNextAction, reviewIndices: [...reviewIndices],
+      correctionReview: reviewState?.correction ? reviewState : null,
     };
   }
   function unstashRound() {
@@ -589,7 +611,7 @@ export function createPracticeUI({ layout, getCode }) {
     discardReview();
     const {
       saved, savedControls, current: cur, liveNextAction: nextAction,
-      reviewIndices: savedReviewIndices,
+      reviewIndices: savedReviewIndices, correctionReview,
     } = roundStash;
     roundStash = null;
     body.textContent = "";
@@ -597,6 +619,8 @@ export function createPracticeUI({ layout, getCode }) {
     controlsHost.textContent = "";
     for (const el of savedControls) controlsHost.appendChild(el);
     current = cur;
+    reviewState = correctionReview ?? null;
+    root.classList.toggle("reviewing", Boolean(reviewState));
     liveNextAction = nextAction ?? null;
     reviewIndices = savedReviewIndices ?? [];
     updateNavigation();
@@ -610,7 +634,7 @@ export function createPracticeUI({ layout, getCode }) {
   // Reviewing swaps the surface to a rebuilt snapshot card; the live view
   // (an in-flight ask, the summary, the menu) is stashed as DOM and comes
   // back untouched on close. New runtime content supersedes a review.
-  let reviewState = null; // { saved: Node[], savedControls: Node[], index }
+  let reviewState = null; // { saved, savedControls, index, correction?, onNext? }
   let onReview = null;
 
   function discardReview() {
@@ -623,9 +647,12 @@ export function createPracticeUI({ layout, getCode }) {
     if (!reviewState) {
       reviewState = {
         saved: [...body.children], savedControls: [...controlsHost.children], index: desc.index,
+        correction: desc.correction === true, onNext: desc.onNext ?? null,
       };
     } else {
       reviewState.index = desc.index;
+      reviewState.correction = desc.correction === true;
+      reviewState.onNext = desc.onNext ?? null;
     }
     body.textContent = "";
     controlsHost.textContent = "";
@@ -649,7 +676,7 @@ export function createPracticeUI({ layout, getCode }) {
 
   // A trace-table review: the completed table read-only — the learner's
   // answer vs the truth per blank cell, ✓/✗ from the recorded grading.
-  function buildReviewTable(table, answersById = {}) {
+  function buildReviewTable(table, answersById = {}, { revealed = true } = {}) {
     const t = document.createElement("table");
     t.className = "mem-table quiz-mem tutor-trace-table";
     const first = table.rows.find((r) => !r.elided);
@@ -688,18 +715,22 @@ export function createPracticeUI({ layout, getCode }) {
         if (c.blankId && answersById[c.blankId] !== undefined) {
           const ok = table.perBlank?.[c.blankId] === true;
           const yours = document.createElement("code");
-          yours.className = ok ? "ok" : "bad";
-          yours.textContent = `${answersById[c.blankId]} ${ok ? "✓" : "✗"}`;
+          if (revealed) yours.className = ok ? "ok" : "bad";
+          yours.textContent = revealed
+            ? `${answersById[c.blankId]} ${ok ? "✓" : "✗"}`
+            : String(answersById[c.blankId]);
           td.appendChild(yours);
-          if (!ok) {
+          if (revealed && !ok) {
             const truth = document.createElement("span");
-            truth.className = "hint";
+            truth.className = "hint tutor-cell-truth";
             truth.textContent = ` → ${table.expectedById?.[c.blankId] ?? ""}`;
             td.appendChild(truth);
           }
-        } else if (c.blankId) {
+        } else if (c.blankId && revealed) {
           // Skipped question: no answers recorded — show the truth plainly.
           td.textContent = table.expectedById?.[c.blankId] ?? c.value;
+        } else if (c.blankId) {
+          td.textContent = "?";
         } else {
           td.textContent = c.value;
         }
@@ -800,7 +831,7 @@ export function createPracticeUI({ layout, getCode }) {
   // composition) reuses it for its FIND half — there the mark is simply
   // whether the REPAIR worked, because the pick itself is never graded.
   // Text only (invariant 8).
-  function buildPickedError(desc) {
+  function buildPickedError(desc, { revealed = true } = {}) {
     const wrap = document.createElement("div");
     wrap.className = "pr-errreview";
     const lines = String(desc.pickerCode).replace(/\n$/, "").split("\n");
@@ -811,10 +842,10 @@ export function createPracticeUI({ layout, getCode }) {
       const row = document.createElement("div");
       row.className = "pr-errline";
       const fix = desc.form === "fix-the-bug";
-      if (desc.picked?.line === n) {
+      if (revealed && desc.picked?.line === n) {
         row.classList.add(fix ? (desc.ok ? "ok" : "bad") : desc.actual && desc.actual.line === n ? "ok" : "bad");
       }
-      if (!fix && desc.actual && desc.actual.line === n && desc.picked?.line !== n) row.classList.add("truth");
+      if (revealed && !fix && desc.actual && desc.actual.line === n && desc.picked?.line !== n) row.classList.add("truth");
       const num = document.createElement("span");
       num.className = "uid pr-errline-num";
       num.textContent = String(n);
@@ -827,7 +858,7 @@ export function createPracticeUI({ layout, getCode }) {
     if (desc.picked?.type) {
       const p = document.createElement("p");
       p.className = "hint";
-      p.textContent = desc.actual
+      p.textContent = revealed && desc.actual
         ? `you picked ${desc.picked.type} · it raised ${desc.actual.type}`
         : `you picked ${desc.picked.type}`;
       wrap.appendChild(p);
@@ -841,7 +872,9 @@ export function createPracticeUI({ layout, getCode }) {
 
     const head = document.createElement("p");
     head.className = "pr-review-head";
-    head.textContent = `Question ${desc.index + 1} — looking back`;
+    head.textContent = desc.correction
+      ? `Question ${desc.index + 1} - try again or move on`
+      : `Question ${desc.index + 1} - looking back`;
     el.appendChild(head);
 
     if (desc.context?.code) el.appendChild(buildContextBlock(desc.context));
@@ -855,7 +888,7 @@ export function createPracticeUI({ layout, getCode }) {
     if (desc.table?.rows) {
       tableSlot = document.createElement("div");
       tableSlot.className = "pr-table-slot";
-      tableSlot.appendChild(buildReviewTable(desc.table, desc.answersById ?? {}));
+      tableSlot.appendChild(buildReviewTable(desc.table, desc.answersById ?? {}, { revealed: desc.revealed }));
       el.appendChild(tableSlot);
     }
     // order-the-lines: the arrangement the learner submitted, in a slot a
@@ -879,7 +912,7 @@ export function createPracticeUI({ layout, getCode }) {
     if ((desc.kind === "predict-the-error" || desc.form === "fix-the-bug") && desc.pickerCode) {
       pickerSlot = document.createElement("div");
       pickerSlot.className = "pr-picker-slot";
-      pickerSlot.appendChild(buildPickedError(desc));
+      pickerSlot.appendChild(buildPickedError(desc, { revealed: desc.revealed }));
       el.appendChild(pickerSlot);
     }
     if (desc.prompt) {
@@ -912,6 +945,17 @@ export function createPracticeUI({ layout, getCode }) {
     el.appendChild(revealSlot);
     if (desc.expectedText !== undefined) {
       revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: desc.expectedText, correct: desc.ok, gone: desc.expectedGone === true }));
+    }
+    if (desc.answerReveal) {
+      const block = document.createElement("div");
+      block.className = "pr-reveal open pr-answer-reveal";
+      const label = document.createElement("span");
+      label.className = "pr-reveal-label";
+      label.textContent = desc.answerReveal.label;
+      const pre = document.createElement("pre");
+      pre.textContent = desc.answerReveal.text;
+      block.append(label, pre);
+      revealSlot.appendChild(block);
     }
 
     if (desc.onRetry && desc.kind === "order-the-lines" && orderSlot) {
@@ -966,16 +1010,16 @@ export function createPracticeUI({ layout, getCode }) {
         checkBtn.disabled = false;
         verdictOut.textContent = "";
         if (!res) { verdictOut.textContent = "couldn't run just now — try again in a moment"; return; }
-        view.freeze();
-        view.applyResult({ correct: res.ok });
-        verdictOut.appendChild(verdictSpan(res.ok, res.ok ? "✓ that prints it!" : "✗ not yet — that's what it printed above"));
-        checkBtn.hidden = true;
-        cancelBtn.hidden = false;
-        startBtn.hidden = false;
-        if (res.expectedText !== undefined) {
-          revealSlot.textContent = "";
-          revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: res.expectedText, correct: res.ok }));
+        if (!res.ok) {
+          verdictOut.appendChild(verdictSpan(false, "✗ Not yet - try another order"));
+          return;
         }
+        view.freeze();
+        view.applyResult({ correct: true });
+        verdictOut.appendChild(verdictSpan(true, "✓ that prints it!"));
+        checkBtn.hidden = true;
+        cancelBtn.hidden = true;
+        startBtn.hidden = true;
       });
       cancelBtn.addEventListener("click", showRecorded);
       wrap.append(startBtn, checkBtn, cancelBtn, verdictOut, note);
@@ -1042,19 +1086,18 @@ export function createPracticeUI({ layout, getCode }) {
         checkBtn.disabled = false;
         verdictOut.textContent = "";
         if (!res) { verdictOut.textContent = "couldn't run just now — try again in a moment"; return; }
-        view.freeze();
-        view.mark({ ok: res.ok });
-        box.readOnly = true;
-        box.classList.toggle("ok", res.ok);
-        box.classList.toggle("bad", !res.ok);
-        verdictOut.appendChild(verdictSpan(res.ok, res.ok ? "✓ that prints it!" : "✗ not yet — that's what it printed"));
-        checkBtn.hidden = true;
-        cancelBtn.hidden = false;
-        startBtn.hidden = false;
-        if (res.expectedText !== undefined) {
-          revealSlot.textContent = "";
-          revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: res.expectedText, correct: res.ok }));
+        if (!res.ok) {
+          verdictOut.appendChild(verdictSpan(false, "✗ Not yet - try another fix"));
+          return;
         }
+        view.freeze();
+        view.mark({ ok: true });
+        box.readOnly = true;
+        box.classList.add("ok");
+        verdictOut.appendChild(verdictSpan(true, "✓ that prints it!"));
+        checkBtn.hidden = true;
+        cancelBtn.hidden = true;
+        startBtn.hidden = true;
       });
       cancelBtn.addEventListener("click", showRecorded);
       wrap.append(startBtn, checkBtn, cancelBtn, verdictOut, note);
@@ -1113,24 +1156,24 @@ export function createPracticeUI({ layout, getCode }) {
         checkBtn.disabled = false;
         verdictOut.textContent = "";
         if (!res) { verdictOut.textContent = "couldn't run just now — try again in a moment"; return; }
-        view.freeze();
-        view.applyResult({ lineOk: res.lineOk, typeOk: res.typeOk, actual: res.actual });
-        verdictOut.appendChild(verdictSpan(res.ok, res.ok ? "✓ right line, right kind!" : "✗ not yet — the truth is marked above"));
-        checkBtn.hidden = true;
-        cancelBtn.hidden = false;
-        startBtn.hidden = false;
-        if (res.expectedText !== undefined) {
-          revealSlot.textContent = "";
-          revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: res.expectedText, correct: res.ok }));
+        if (!res.ok) {
+          verdictOut.appendChild(verdictSpan(false, "✗ Not yet - try again"));
+          return;
         }
+        view.freeze();
+        view.applyResult({ lineOk: true, typeOk: true, actual: null });
+        verdictOut.appendChild(verdictSpan(true, "✓ right line, right kind!"));
+        checkBtn.hidden = true;
+        cancelBtn.hidden = true;
+        startBtn.hidden = true;
       });
       cancelBtn.addEventListener("click", showRecorded);
       wrap.append(startBtn, checkBtn, cancelBtn, verdictOut, note);
       el.appendChild(wrap);
     } else if (desc.onRetry && desc.kind === "trace-table" && tableSlot) {
-      // A trace-table retry is a genuine second walk: the graded table (and
-      // its truth) leaves the screen, a fresh blank table takes its place,
-      // and the answers grade for real against a re-run of the program.
+      // A trace-table retry is a genuine second walk: the recorded table
+      // leaves the screen, a fresh blank table takes its place, and the
+      // answers grade privately against a re-run of the program.
       const wrap = document.createElement("div");
       wrap.className = "pr-retry pr-retry-table";
       const startBtn = document.createElement("button");
@@ -1145,17 +1188,17 @@ export function createPracticeUI({ layout, getCode }) {
       const cancelBtn = document.createElement("button");
       cancelBtn.type = "button";
       cancelBtn.className = "pr-quiet pr-retry-cancel";
-      cancelBtn.textContent = "never mind, show the graded table";
+      cancelBtn.textContent = "never mind, show what I answered";
       cancelBtn.hidden = true;
       const verdictOut = document.createElement("p");
       verdictOut.className = "pr-retry-verdict";
       const note = document.createElement("p");
       note.className = "hint pr-retry-note";
       note.textContent = "retries are for you — your score keeps the first try";
-      const gradedEl = tableSlot.firstChild; // the recorded graded view
+      const recordedEl = tableSlot.firstChild;
       let attempt = null;
       const showGraded = () => {
-        tableSlot.replaceChildren(gradedEl);
+        tableSlot.replaceChildren(recordedEl);
         attempt = null;
         verdictOut.textContent = "";
         startBtn.hidden = false;
@@ -1192,19 +1235,14 @@ export function createPracticeUI({ layout, getCode }) {
           verdictOut.textContent = "couldn't run just now — try again in a moment";
           return;
         }
-        // Re-render the attempt GRADED: per-cell marks, truth beside misses
-        // (the same renderer the recorded review uses).
-        const total = Object.keys(res.perBlank ?? {}).length;
-        const right = Object.values(res.perBlank ?? {}).filter(Boolean).length;
-        tableSlot.replaceChildren(buildReviewTable(
-          { rows: desc.table.rows, expectedById: res.expectedById, perBlank: res.perBlank },
-          answers,
-        ));
-        attempt = null;
-        verdictOut.appendChild(verdictSpan(res.ok, res.ok
-          ? "✓ every step!"
-          : `✗ ${right} of ${total} — the truth is shown`));
-        startBtn.hidden = false;
+        if (!res.ok) {
+          for (const inp of attempt.inputs()) inp.readOnly = false;
+          verdictOut.appendChild(verdictSpan(false, "✗ Not yet - revise any steps you want"));
+          return;
+        }
+        for (const inp of attempt.inputs()) inp.classList.add("ok");
+        verdictOut.appendChild(verdictSpan(true, "✓ every step!"));
+        startBtn.hidden = true;
         checkBtn.hidden = true;
         cancelBtn.hidden = true;
       };
@@ -1261,11 +1299,13 @@ export function createPracticeUI({ layout, getCode }) {
         setBusy(false);
         verdictOut.textContent = "";
         if (!res) { verdictOut.textContent = "couldn't run just now — try again in a moment"; return; }
-        verdictOut.appendChild(verdictSpan(res.ok, res.ok ? "✓ that's it!" : "✗ not yet — the real answer is above"));
-        if (res.expectedText !== undefined) {
-          revealSlot.textContent = "";
-          revealSlot.appendChild(buildRevealBlock({ kind: desc.kind, text: res.expectedText, correct: res.ok }));
+        if (!res.ok) {
+          verdictOut.appendChild(verdictSpan(false, "✗ Not yet - try again"));
+          return;
         }
+        setBusy(true);
+        btn.hidden = true;
+        verdictOut.appendChild(verdictSpan(true, "✓ that's it!"));
       };
       btn.addEventListener("click", go);
       // Single-line retries submit on Enter; multi-line ones on the widget's
@@ -1273,6 +1313,18 @@ export function createPracticeUI({ layout, getCode }) {
       if (!multiline) input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !input.readOnly) go(); });
       wrap.append(input, btn, verdictOut, note);
       el.appendChild(wrap);
+    }
+
+    if (desc.onReveal) {
+      const actions = document.createElement("div");
+      actions.className = "pr-actions pr-disclosure-actions";
+      const reveal = document.createElement("button");
+      reveal.type = "button";
+      reveal.className = "pr-quiet pr-reveal-answer";
+      reveal.textContent = "Reveal answer";
+      reveal.addEventListener("click", () => desc.onReveal?.());
+      actions.appendChild(reveal);
+      el.appendChild(actions);
     }
 
     return el;

@@ -147,8 +147,9 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     // deduplicated store.programs), so reviewing an old bubble can show
     // that program when the editor has since moved on.
     if (store.currentProg != null && desc.prog === undefined) desc.prog = store.currentProg;
-    (store.cards ??= []).push(desc);
+    const index = (store.cards ??= []).push(desc) - 1;
     persist();
+    return index;
   }
 
   // Register the program a beat is about; dedupe exact repeats.
@@ -522,6 +523,12 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     }
 
     if (step.ask !== undefined) {
+      // A first-attempt miss is already scored, but deliberately remains on
+      // this ask until the learner retries, reveals, or moves on. Reloading
+      // must rebuild that correction state instead of grading the ask again.
+      if (store.pendingCorrection?.stepIndex === stepIndex) {
+        return restorePendingCorrection();
+      }
       store.resumeIndex = stepIndex; // re-ask on reload
       persist();
       // predict-output and predict-state share the predict-then-verify path:
@@ -576,9 +583,13 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
 
   // ---- asks ---------------------------------------------------------------
   function resolveAsk(card, { prompt, ok, verdict, answerText, lastAnswer, kind, template, concept, review, misconception, misconceptionOf, followUp }) {
+    const correction = Boolean(store.drillLesson && lastAnswer === "wrong" && review?.code);
+    const shownVerdict = correction
+      ? "✗ Not yet - your first try is recorded"
+      : verdict;
     card.freeze();
     card.setNote("");
-    card.verdict(ok, verdict);
+    card.verdict(ok, shownVerdict);
     // Misconception match (R1.1): a WRONG answer equal (under the grading
     // normalization) to the instance's designed wrong answer is evidence of
     // that specific confusion — record it against the tag it belongs to.
@@ -591,7 +602,15 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     // `review` is the reviewable snapshot (program, kind, opts, expected):
     // enough to rebuild this question later from the store alone — the dot
     // bar's "go back to it" and the retry flow both feed on it.
-    record({ type: "question-frozen", prompt, ok, verdict, answerText, concept, ...(review ? { review } : {}) });
+    const rec = {
+      type: "question-frozen", prompt, ok, verdict: shownVerdict, answerText, concept,
+      ...(review ? { review } : {}),
+      // Legacy records have no disclosure field and remain revealed. Every
+      // newly recorded miss starts hidden; correct answers already proved the
+      // truth themselves and keep the familiar visible review.
+      disclosure: correction ? "hidden" : "revealed",
+    };
+    const cardIndex = record(rec);
     store.lastAnswer = lastAnswer;
     if (concept) bumpDrillStats(concept, lastAnswer === "correct");
     if (template) bumpTemplateStats(template, ok);
@@ -612,6 +631,12 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       ui.setScore(s);
     }
     events.emit("quiz-graded", { kind, correct: ok, template, concept, misconception: matchedMc });
+    if (correction) {
+      store.pendingCorrection = { cardIndex, stepIndex };
+      persist();
+      pushProgress();
+      return showPendingCorrection(rec);
+    }
     resume();
   }
 
@@ -812,10 +837,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       // (predict-state). Stage handles have no reveal method — they keep the
       // classic wrong-only expected block below, byte-identical.
       const goneTruth = isState && result.expected.gone === true;
-      card.reveal?.({
+      if (result.correct || !store.drillLesson) card.reveal?.({
         text: result.expected.text, correct: result.correct, kind: ask.kind, gone: goneTruth,
       });
-      if (!result.correct && !card.reveal) {
+      if (!result.correct && !store.drillLesson && !card.reveal) {
         appendExpected(card.body, {
           label: goneTruth ? "It holds nothing:"
             : isState ? "What it really held:" : "What it really printed:",
@@ -980,8 +1005,8 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       const got = normalizeOutput(text);
       const correct = got === normalizeOutput(full) || got === normalizeOutput(noEcho);
       ans.mark(correct);
-      card.reveal?.({ text: full, correct, kind: "predict-io" });
-      if (!correct && !card.reveal) {
+      if (correct || !store.drillLesson) card.reveal?.({ text: full, correct, kind: "predict-io" });
+      if (!correct && !store.drillLesson && !card.reveal) {
         appendExpected(card.body, { label: "What the console really showed:", text: full });
       }
       // MET GRANT (lesson-kb-binding §4): predicting the transcript of a
@@ -1135,9 +1160,11 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       // In-card reveal: what the FILLED program really printed. The
       // "fill that works" block below is the answer token, not a duplicate —
       // it renders on every surface.
-      if (q) card.reveal?.({ text: q.grade({ text: "" }).expected.text, correct, kind: "fill-one-blank" });
-      picker?.mark({ ok: correct });
-      if (!correct) {
+      if (q && (correct || !store.drillLesson)) {
+        card.reveal?.({ text: q.grade({ text: "" }).expected.text, correct, kind: "fill-one-blank" });
+      }
+      if (correct || !store.drillLesson) picker?.mark({ ok: correct });
+      if (!correct && !store.drillLesson) {
         appendExpected(card.body, {
           label: isFix ? `A fix that works — line ${ask.blank.line}:` : "A fill that works:",
           text: ask.blank.target,
@@ -1251,8 +1278,8 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       const correct = Boolean(q && q.grade({ text: ask.targetOutput }).correct);
       const expectedText = q ? q.grade({ text: "" }).expected.text : "";
       view.applyResult({ correct });
-      card.reveal?.({ text: expectedText, correct, kind: "order-the-lines" });
-      if (!correct && !card.reveal) {
+      if (correct || !store.drillLesson) card.reveal?.({ text: expectedText, correct, kind: "order-the-lines" });
+      if (!correct && !store.drillLesson && !card.reveal) {
         appendExpected(card.body, { label: "What your order really printed:", text: expectedText });
       }
       resolveAsk(card, {
@@ -1356,9 +1383,9 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       const typeOk = picked.type === actual.type;
       const correct = lineOk && typeOk;
       const revealText = revealTextFor(actual);
-      view.applyResult({ lineOk, typeOk, actual });
-      card.reveal?.({ text: revealText, correct, kind: "predict-the-error" });
-      if (!correct && !card.reveal) {
+      if (correct || !store.drillLesson) view.applyResult({ lineOk, typeOk, actual });
+      if (correct || !store.drillLesson) card.reveal?.({ text: revealText, correct, kind: "predict-the-error" });
+      if (!correct && !store.drillLesson && !card.reveal) {
         appendExpected(card.body, { label: "Where it really stopped:", text: revealText });
       }
       const metTag = ask.focus ?? ask.concept;
@@ -1468,10 +1495,12 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         view.freeze?.();
         card.setActions([]);
         const result = q.grade(answers);
-        view.applyResult(result);
+        if (result.correct || !store.drillLesson) view.applyResult(result);
         const nTotal = q.blanks.length;
         const nRight = q.blanks.filter((b) => result.perBlank[b.id]).length;
-        card.reveal?.({ text: `${nRight} of ${nTotal} steps right`, correct: result.correct, kind: "trace-table" });
+        if (result.correct || !store.drillLesson) {
+          card.reveal?.({ text: `${nRight} of ${nTotal} steps right`, correct: result.correct, kind: "trace-table" });
+        }
         // Met grant (lesson-kb-binding §4): a clean first-attempt all-correct
         // table — before the final hint — evidences the focused concept.
         // trace-table has no retries, so the attempt is first by construction.
@@ -1733,10 +1762,13 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
   // re-grades for real, but NEVER touches the score of record: rec.ok, the
   // kb seen/missed stats, and met grants all keep the first attempt — the
   // retry outcome only decorates the record (rec.retry) and its dot.
-  function reviewQuestion(i) {
+  function reviewQuestion(i, { correction = false } = {}) {
     const rec = frozenRecords()[i];
     if (!rec) return null;
     const r = rec.review ?? {};
+    // Old records predate learner-controlled disclosure and keep their
+    // historical revealed review. New misses opt in to the hidden state.
+    const revealed = rec.disclosure !== "hidden";
     // fix-the-bug shows the BUGGY program in its line picker (with the picked
     // line marked), so it wants no separate program block and no "___" — the
     // program was never holed.
@@ -1748,24 +1780,119 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       // predict-the-error shows the numbered line picker instead of a plain
       // program block — same reason: the widget IS the program.
       : ["order-the-lines", "predict-the-error"].includes(r.kind) ? null : r.code;
+    const table = r.table?.rows ? {
+      rows: r.table.rows,
+      ...(revealed ? {
+        expectedById: r.table.expectedById,
+        perBlank: r.table.perBlank,
+      } : {}),
+    } : undefined;
+    let answerReveal = null;
+    if (revealed && r.kind === "fill-one-blank" && r.blank?.target != null) {
+      answerReveal = {
+        label: r.form === "fix-the-bug"
+          ? `One fix that works - line ${r.blank.line}`
+          : "One answer that works",
+        text: r.blank.target,
+      };
+    } else if (revealed && r.kind === "order-the-lines" && r.canonical?.length) {
+      answerReveal = { label: "One order that works", text: r.canonical.join("\n") };
+    }
     practiceUI.showReview?.({
       index: i,
       prompt: rec.prompt, ok: rec.ok, verdict: rec.verdict,
       answerText: rec.answerText, retry: rec.retry,
-      kind: r.kind, form: r.form, code: displayCode, expectedText: r.expectedText,
-      table: r.table, answersById: r.answersById,
+      kind: r.kind, form: r.form, code: displayCode,
+      expectedText: revealed ? r.expectedText : undefined,
+      expectedGone: revealed ? r.expectedGone : undefined,
+      answerReveal,
+      table, answersById: r.answersById, revealed,
       items: r.items, answerOrder: r.answerOrder, canonical: r.canonical,
-      picked: r.picked, actual: r.actual,
+      picked: r.picked, actual: revealed ? r.actual : undefined,
       pickerCode: r.kind === "predict-the-error" || r.form === "fix-the-bug" ? r.code : undefined,
       teach: r.teach, context: r.context, stdinScript: r.stdinScript,
       multiline: r.multiline === true, // retry widget matches the live one
       // Single-answer kinds get the single-input widget; trace-table gets
       // a fresh blank table (the UI branches on kind — retryAnswer takes a
       // text string or an answersById map accordingly).
-      onRetry: r.code ? (answer) => retryAnswer(rec, answer) : null,
+      // Revealed and legacy records may still be retried for practice, but
+      // the first-attempt score remains immutable.
+      onRetry: r.code && !rec.retry?.ok
+        ? (answer) => retryAndRefresh(rec, answer, { correction })
+        : null,
+      onReveal: !revealed && !rec.retry?.ok ? () => revealRecord(rec, { correction }) : null,
+      onNext: correction ? () => finishCorrection(rec) : null,
+      correction,
       onBack: () => practiceUI.closeReview?.(),
     });
     return rec;
+  }
+
+  function showPendingCorrection(rec) {
+    const i = frozenRecords().indexOf(rec);
+    if (i < 0) return false;
+    setWaiting({
+      type: "correction",
+      kind: rec.review?.kind,
+      retry: (answer) => retryAndRefresh(rec, answer, { correction: true }),
+      reveal: () => revealRecord(rec, { correction: true }),
+      next: () => finishCorrection(rec),
+    });
+    reviewQuestion(i, { correction: true });
+    return true;
+  }
+
+  async function retryAndRefresh(rec, answer, { correction = false } = {}) {
+    const result = await retryAnswer(rec, answer);
+    if (result?.ok && correction) {
+      const i = frozenRecords().indexOf(rec);
+      if (i >= 0) reviewQuestion(i, { correction });
+    }
+    return result;
+  }
+
+  function restorePendingCorrection() {
+    const pending = store.pendingCorrection;
+    const rec = (store.cards ?? [])[pending?.cardIndex];
+    if (rec?.type === "question-frozen") return showPendingCorrection(rec);
+    // Corrupt or partial old state must never disclose an answer or re-score
+    // the ask. Move on as an unrevealed miss instead of trapping the round.
+    delete store.pendingCorrection;
+    store.lastAnswer = "wrong-unrevealed";
+    store.resumeIndex = stepIndex + 1;
+    persist();
+    return false;
+  }
+
+  function revealRecord(rec, { correction = false } = {}) {
+    if (!rec || rec.disclosure !== "hidden") return rec;
+    rec.disclosure = "revealed";
+    persist();
+    const i = frozenRecords().indexOf(rec);
+    if (i >= 0) reviewQuestion(i, { correction });
+    return rec;
+  }
+
+  function finishCorrection(rec) {
+    const pending = store.pendingCorrection;
+    if (!pending || (store.cards ?? [])[pending.cardIndex] !== rec) return false;
+    const understood = rec.disclosure === "revealed" || rec.retry?.ok === true;
+    delete store.pendingCorrection;
+    // `wrong-unrevealed` intentionally does not match the compiled
+    // variant-card condition. A solved or explicitly revealed miss may show
+    // that explanation safely, while an unrevealed Next goes straight on.
+    store.lastAnswer = understood ? "wrong" : "wrong-unrevealed";
+    persist();
+    practiceUI.closeReview?.();
+    resume();
+    return true;
+  }
+
+  function saveRetry(rec, answer, ok) {
+    rec.retry = { ok, tries: (rec.retry?.tries ?? 0) + 1, answer };
+    persist();
+    pushProgress();
+    return { ok };
   }
 
   async function retryAnswer(rec, text) {
@@ -1784,14 +1911,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         const q = generateQuestion("trace-table", ctx(), r.opts ?? {});
         if (!q) return null;
         const res = q.grade(text);
-        rec.retry = { ok: res.correct, tries: (rec.retry?.tries ?? 0) + 1 };
-        persist();
-        pushProgress(); // the dot picks up its missed-then-solved state
-        return {
-          ok: res.correct,
-          perBlank: res.perBlank,
-          expectedById: Object.fromEntries(q.blanks.map((b) => [b.id, b.expected])),
-        };
+        return saveRetry(rec, text, res.correct);
       } finally {
         editor.setValue(before);
       }
@@ -1812,10 +1932,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         const lineOk = text.line === actual.line;
         const typeOk = text.type === actual.type;
         const ok = lineOk && typeOk;
-        rec.retry = { ok, tries: (rec.retry?.tries ?? 0) + 1 };
-        persist();
-        pushProgress();
-        return { ok, lineOk, typeOk, actual, expectedText: revealTextFor(actual) };
+        return saveRetry(rec, text, ok);
       } finally {
         editor.setValue(before);
       }
@@ -1835,11 +1952,8 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         const expectedText = c.consoleText;
         const got = normalizeOutput(text);
         const ok = got === normalizeOutput(expectedText) || got === normalizeOutput(c.consoleTextNoEcho);
-        rec.retry = { ok, tries: (rec.retry?.tries ?? 0) + 1 };
         if (r.expectedText === undefined) r.expectedText = expectedText;
-        persist();
-        pushProgress();
-        return { ok, expectedText };
+        return saveRetry(rec, text, ok);
       } finally {
         editor.setValue(before);
       }
@@ -1859,10 +1973,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         const q = summary.terminal_reason === "completed" ? generateQuestion("predict-output", ctx(), {}) : null;
         const ok = Boolean(q && q.grade({ text: r.targetOutput }).correct);
         const expectedText = q ? q.grade({ text: "" }).expected.text : "";
-        rec.retry = { ok, tries: (rec.retry?.tries ?? 0) + 1 };
-        persist();
-        pushProgress();
-        return { ok, expectedText };
+        return saveRetry(rec, text, ok);
       } finally {
         editor.setValue(before);
       }
@@ -1893,13 +2004,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         ok = res.correct;
         expectedText = res.expected.text;
       }
-      rec.retry = { ok, tries: (rec.retry?.tries ?? 0) + 1 };
       // A skipped question never ran, so its record had no answer to show —
       // the retry's real run fills it in for future reviews.
       if (r.expectedText === undefined && expectedText !== undefined) r.expectedText = expectedText;
-      persist();
-      pushProgress(); // the dot picks up its missed-then-solved state
-      return { ok, expectedText };
+      return saveRetry(rec, text, ok);
     } finally {
       editor.setValue(before);
     }
@@ -1975,8 +2083,16 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     // Test/debug drivers (invariant 9: tests assert through window.plp).
     continue: () => { if (waiting?.type === "pause") resume(); },
     ask: () => (waiting?.type === "ask" ? { kind: waiting.kind } : null),
+    correction: () => (waiting?.type === "correction"
+      ? { kind: waiting.kind, revealed: store.pendingCorrection
+        ? (store.cards ?? [])[store.pendingCorrection.cardIndex]?.disclosure === "revealed"
+        : false }
+      : null),
     review: (i) => reviewQuestion(i),
     retry: (i, text) => { const rec = frozenRecords()[i]; return rec ? retryAnswer(rec, text) : null; },
+    retryCurrent: (answer) => waiting?.retry?.(answer),
+    revealAnswer: () => waiting?.reveal?.(),
+    next: () => waiting?.next?.(),
     closeReview: () => practiceUI.closeReview?.(),
     submit: (answers) => waiting?.submit?.(answers),
     lockPrediction: (text) => waiting?.lock?.(text),
