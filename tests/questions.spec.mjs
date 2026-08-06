@@ -443,6 +443,112 @@ test.describe("PLP questions (Q-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
+  test("trace-simulation: raw line occurrences preserve loop control and final output without future rows", async ({ page }) => {
+    await page.goto(SITE);
+    await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
+    await page.waitForFunction(() => Boolean(window.plp));
+    const code = "n = 0\nwhile n < 2:\n    n = n + 1\nprint(n)\n";
+    await page.evaluate((source) => window.plp.editor.setValue(source), code);
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    const r = await page.evaluate(({ source }) => {
+      const q = window.plp.questions.generateQuestion("trace-simulation", {
+        source,
+        steps: window.plp.memory.steps(),
+        positions: window.plp.memory.linePositions(),
+      }, { names: ["n"] });
+      const sequence = Array.from({ length: q.stepCount }, (_, i) => q.revealNext(i));
+      const effects = sequence.slice(0, -1).map((_, i) => q.revealEffects(i));
+      const before = q.step(0);
+      const wrongLine = q.gradeNext(0, { kind: "line", line: 2 });
+      const rightLine = q.gradeNext(0, { kind: "line", line: 1 });
+      const rightEffect = q.gradeEffects(0, {
+        bindings: { changed: { n: "0" }, gone: [] }, output: { writes: false },
+      });
+      const wrongEffect = q.gradeEffects(0, {
+        bindings: { changed: {}, gone: [] }, output: { writes: false },
+      });
+      return { sequence, effects, before, wrongLine, rightLine, rightEffect, wrongEffect };
+    }, { source: code });
+    expect(r.sequence.map((x) => x.kind === "end" ? "end" : x.line))
+      .toEqual([1, 2, 3, 2, 3, 2, 4, "end"]);
+    // The final failed while test is a real occurrence with no state effect.
+    expect(r.effects[5].bindings.changed).toEqual({});
+    // The print's output arrives on the later module-return boundary but is
+    // credited to the print line that produced it.
+    expect(r.effects[6].output).toEqual({ writes: true, text: "2\n" });
+    // The safe current-step payload contains state but never the expected line.
+    expect(r.before).toEqual({ cursor: 0, total: 8, id: "e0", before: { n: null }, terminal: false });
+    expect(r.wrongLine.correct).toBe(false);
+    expect(r.rightLine.correct).toBe(true);
+    expect(r.rightEffect.correct).toBe(true);
+    expect(r.wrongEffect.correct).toBe(false);
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("trace-simulation: same-line loop iterations split; call return resumes at the caller", async ({ page }) => {
+    await page.goto(SITE);
+    await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });
+    await page.waitForFunction(() => Boolean(window.plp));
+    const sameLine = "total = 0\nfor x in [1, 2, 3]: total = total + x\nprint(total)\n";
+    await page.evaluate((source) => window.plp.editor.setValue(source), sameLine);
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    const repeated = await page.evaluate((source) => {
+      const q = window.plp.questions.generateQuestion("trace-simulation", {
+        source, steps: window.plp.memory.steps(), positions: window.plp.memory.linePositions(),
+      }, { names: ["total", "x"] });
+      return {
+        positionCount: window.plp.memory.linePositions().length,
+        lines: Array.from({ length: q.stepCount }, (_, i) => q.revealNext(i)),
+        effects: Array.from({ length: q.stepCount - 1 }, (_, i) => q.revealEffects(i)),
+      };
+    }, sameLine);
+    expect(repeated.positionCount).toBe(3); // line mode collapsed line 2
+    expect(repeated.lines.map((x) => x.kind === "end" ? "end" : x.line))
+      .toEqual([1, 2, 2, 2, 2, 3, "end"]);
+    expect(repeated.effects.slice(1, 4).map((x) => x.bindings.changed.total)).toEqual(["1", "3", "6"]);
+    expect(repeated.effects[4].bindings.changed).toEqual({}); // exhaustion pass
+
+    const call = "def double(n):\n    result = n * 2\n    return result\nx = double(3)\nprint(x)\n";
+    await page.evaluate((source) => window.plp.editor.setValue(source), call);
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    const called = await page.evaluate((source) => {
+      const q = window.plp.questions.generateQuestion("trace-simulation", {
+        source, steps: window.plp.memory.steps(), positions: window.plp.memory.linePositions(),
+      }, { names: ["x"] });
+      return {
+        lines: Array.from({ length: q.stepCount }, (_, i) => q.revealNext(i)),
+        effects: Array.from({ length: q.stepCount - 1 }, (_, i) => q.revealEffects(i)),
+      };
+    }, call);
+    // The raw call-event header is not presented as if `def` ran again.
+    expect(called.lines.map((x) => x.kind === "end" ? "end" : `${x.function}:${x.line}`))
+      .toEqual(["<module>:1", "<module>:4", "double:2", "double:3", "<module>:5", "end"]);
+    expect(called.effects[3].returnValue).toBe("6");
+    expect(called.effects[3].bindings.changed).toEqual({ x: "6" });
+    expect(called.effects[3].attribution.x).toMatchObject({
+      kind: "caller-resume", line: 4, function: "<module>",
+    });
+    expect(called.lines[4]).toMatchObject({ kind: "line", line: 5 });
+
+    // Progressive grading keeps the legacy trace-table forgiveness for
+    // equivalent container spellings, including dictionary key order.
+    const containerCode = "d = {'a': 1, 'b': 2}\nprint(d)\n";
+    await page.evaluate((source) => window.plp.editor.setValue(source), containerCode);
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    const containerGrade = await page.evaluate((source) => {
+      const q = window.plp.questions.generateQuestion("trace-simulation", {
+        source, steps: window.plp.memory.steps(), positions: window.plp.memory.linePositions(),
+      }, { names: ["d"] });
+      return q.gradeEffects(0, {
+        bindings: { changed: { d: "{'b': 2, 'a': 1}" }, gone: [] },
+        output: { writes: false },
+      });
+    }, containerCode);
+    expect(containerGrade.correct).toBe(true);
+    expect(containerGrade.perField.changedValues).toBe(true);
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
   // The growing one-line-box widget (question-ui.createLinesInput) is the
   // answer surface for every several-line ask. It has no generator either, so
   // it is unit-checked directly: one box to start (the count must never hint

@@ -1245,6 +1245,7 @@ test.describe("PLP tutor (T-series)", () => {
     await page.evaluate(() => {
       localStorage.removeItem("plp.kb.met.v1");
       localStorage.removeItem("plp.kb.v1");
+      localStorage.removeItem("plp.kb.tmpl.v1");
       const lesson = {
         id: "ps-inline",
         title: "Predict state",
@@ -1872,6 +1873,270 @@ test.describe("PLP tutor (T-series)", () => {
     // The dot now reads missed-then-solved (red with the green ring).
     await expect(page.locator("#practice .pr-dot.miss.retried")).toHaveCount(1);
     await page.evaluate(() => window.plp.tutor.closeReview());
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  async function seedTraceSimulationRound(page) {
+    await page.evaluate(() => {
+      localStorage.removeItem("plp.kb.met.v1");
+      localStorage.removeItem("plp.kb.v1");
+      const lesson = {
+        id: "trace-sim-inline",
+        title: "Build the trace",
+        steps: [
+          { loadCode: "n = 0\nprint(n)\n" },
+          { ask: {
+            kind: "trace-simulation", form: "trace-table", probeNames: ["n"],
+            concept: "0009", template: "trace-sim-inline-template",
+          } },
+          { pause: true },
+          { done: "done" },
+        ],
+      };
+      localStorage.setItem("plp.tutor.v1", JSON.stringify({
+        lessonId: lesson.id, drillLesson: lesson, resumeIndex: 0, cards: [],
+      }));
+      location.reload();
+    });
+  }
+
+  async function startTraceSimulationRound(page) {
+    await seedTraceSimulationRound(page);
+    await page.waitForFunction(() => window.plp?.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    await page.evaluate(() => {
+      if (!document.body.classList.contains("practice")) window.plp.tutor.toggleSurface();
+    });
+    expect(await page.evaluate(() => window.plp.tutor.ask())).toEqual({ kind: "trace-simulation" });
+  }
+
+  test("trace-simulation reveals no future rows, retries privately, and marks current-phase reveals", async ({ page }) => {
+    await setup(page);
+    await startTraceSimulationRound(page);
+    await expect(page.locator("#practice .trace-sim-phase")).toHaveAttribute("data-phase", "next-line");
+    await expect(page.locator("#practice .trace-sim-ledger-row")).toHaveCount(0);
+    // The silent answer-key trace is concealed before any escape to Code can
+    // expose it. The pure question retains its immutable derived timeline.
+    await page.waitForFunction(() => window.plp.console.buffer().trim() === "");
+    expect(await page.evaluate(() => ({
+      steps: window.plp.memory.steps().length,
+      console: window.plp.console.text(),
+      buffer: window.plp.console.buffer(),
+      records: window.plp.records().length,
+      summary: window.plp.runner.summary(),
+      errors: window.plp.checkErrors(),
+    }))).toEqual({
+      steps: 0, console: "", buffer: "", records: 0, summary: null, errors: [],
+    });
+    expect(await page.evaluate(() => {
+      const trace = JSON.parse(localStorage.getItem("plp.tutor.v1")).activeTrace;
+      const futureKeys = ["signature", "events", "sourceLines", "timeline"]
+        .filter((key) => Object.hasOwn(trace, key));
+      return {
+        version: trace.version, options: trace.options,
+        committed: trace.committed, futureKeys,
+      };
+    })).toEqual({
+      version: 2, options: { maxEvents: null }, committed: [], futureKeys: [],
+    });
+
+    // Program end and source lines are one accessible pressed-button group.
+    const lineOne = page.locator("#practice .trace-sim-line[data-line='1']");
+    const programEnd = page.locator("#practice .trace-sim-end");
+    await expect(lineOne).toHaveAttribute("aria-pressed", "false");
+    await expect(programEnd).toHaveAttribute("aria-pressed", "false");
+    await programEnd.click();
+    await expect(programEnd).toHaveAttribute("aria-pressed", "true");
+    await lineOne.click();
+    await expect(lineOne).toHaveAttribute("aria-pressed", "true");
+    await expect(programEnd).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator("#practice .trace-sim-phase button.picked")).toHaveCount(1);
+
+    // Wrong next-line pick: first miss is remembered, but no correct line or
+    // future row appears. A correct retry advances only to this line's effects.
+    await page.evaluate(() => window.plp.tutor.submit({ kind: "line", line: 2 }));
+    await expect(page.locator("#practice .pr-note")).toContainText("does not execute next");
+    await expect(page.locator("#practice .trace-sim-ledger-row")).toHaveCount(0);
+    await page.evaluate(() => window.plp.tutor.submit({ kind: "line", line: 1 }));
+    await expect(page.locator("#practice .trace-sim-phase")).toHaveAttribute("data-phase", "effects");
+
+    // Wrong effects remain private: no per-field mark, truth, or ledger row.
+    await page.evaluate(() => window.plp.tutor.submit({
+      bindings: { changed: {}, gone: [] }, output: { writes: false },
+    }));
+    await expect(page.locator("#practice .pr-note")).toContainText("effects is not right");
+    await expect(page.locator("#practice .trace-sim .ok, #practice .trace-sim .bad, #practice .trace-sim .truth")).toHaveCount(0);
+    await expect(page.locator("#practice .trace-sim-ledger-row")).toHaveCount(0);
+    await page.evaluate(() => window.plp.tutor.submit({
+      bindings: { changed: { n: "0" }, gone: [] }, output: { writes: false },
+    }));
+    await expect(page.locator("#practice .trace-sim-ledger-row")).toHaveCount(1);
+    await expect(page.locator("#practice .trace-sim-ledger-row").first()).toContainText("solved after retry");
+
+    // Revealing the line and then its effects marks the whole committed row
+    // revealed, rather than visually claiming independent work.
+    await page.evaluate(() => window.plp.tutor.revealAnswer());
+    await expect(page.locator("#practice .trace-sim-phase")).toHaveAttribute("data-phase", "effects");
+    await page.evaluate(() => window.plp.tutor.revealAnswer());
+    await expect(page.locator("#practice .trace-sim-ledger-row")).toHaveCount(2);
+    await expect(page.locator("#practice .trace-sim-ledger-row").nth(1)).toContainText("revealed");
+    await page.evaluate(() => window.plp.tutor.revealAnswer()); // reveal Program ends
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause");
+
+    const result = await page.evaluate(() => {
+      const rec = window.plp.tutor.feed().find((c) => c.type === "question-frozen");
+      return {
+        ok: rec.ok, retry: rec.retry ?? null,
+        committed: rec.review.trace.committed.map((x) => ({ next: x.next.kind, revealed: x.revealed })),
+        stats: window.plp.tutor.drillStats(),
+      };
+    });
+    expect(result.ok).toBe(false);
+    expect(result.retry).toBeNull(); // revealed help is not independent retry success
+    expect(result.committed).toEqual([
+      { next: "line", revealed: false },
+      { next: "line", revealed: true },
+      { next: "end", revealed: true },
+    ]);
+    expect(result.stats).toEqual({ "0009": { seen: 1, missed: 1 } });
+
+    // Historical review is rebuilt only from the saved committed ledger.
+    await page.evaluate(() => window.plp.tutor.review(0));
+    await expect(page.locator("#practice .pr-review .trace-sim-review .trace-sim-ledger-row")).toHaveCount(3);
+    await expect(page.locator("#practice .pr-review .trace-sim-review")).toContainText("Program ends");
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("trace-simulation reload resumes the current phase and preserves the first miss", async ({ page }) => {
+    await setup(page);
+    await startTraceSimulationRound(page);
+    await page.evaluate(() => window.plp.tutor.submit({ kind: "line", line: 1 }));
+    await page.evaluate(() => window.plp.tutor.submit({
+      bindings: { changed: {}, gone: [] }, output: { writes: false },
+    }));
+    let stored = await page.evaluate(() => JSON.parse(localStorage.getItem("plp.tutor.v1")).activeTrace);
+    expect(stored.phase).toBe("effects");
+    expect(stored.effectMisses).toBe(1);
+    expect(stored.pristine).toBe(false);
+
+    await page.reload();
+    await page.waitForFunction(() => window.plp?.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    await expect(page.locator("#practice .trace-sim-phase")).toHaveAttribute("data-phase", "effects");
+    await page.waitForFunction(() => window.plp.console.buffer().trim() === "");
+    expect(await page.evaluate(() => ({
+      steps: window.plp.memory.steps().length,
+      console: window.plp.console.text(),
+      buffer: window.plp.console.buffer(),
+      records: window.plp.records().length,
+    }))).toEqual({ steps: 0, console: "", buffer: "", records: 0 });
+    stored = await page.evaluate(() => JSON.parse(localStorage.getItem("plp.tutor.v1")).activeTrace);
+    expect(stored.effectMisses).toBe(1);
+
+    await page.evaluate(() => window.plp.tutor.submit({
+      bindings: { changed: { n: "0" }, gone: [] }, output: { writes: false },
+    }));
+    await expect(page.locator("#practice .trace-sim-phase")).toHaveAttribute("data-phase", "next-line");
+    await expect(page.locator("#practice .trace-sim-ledger-row")).toHaveCount(1);
+    await expect(page.locator("#practice .trace-sim-ledger-row").first()).toContainText("solved after retry");
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("trace-simulation counts its first phase miss once even when the round ends unfinished", async ({ page }) => {
+    await setup(page);
+    await startTraceSimulationRound(page);
+
+    await page.evaluate(() => window.plp.tutor.submit({ kind: "line", line: 2 }));
+    const first = await page.evaluate(() => ({
+      score: window.plp.tutor.score(),
+      stats: window.plp.tutor.drillStats(),
+      template: JSON.parse(localStorage.getItem("plp.kb.tmpl.v1")),
+      outcomeCounted: JSON.parse(localStorage.getItem("plp.tutor.v1")).activeTrace.outcomeCounted,
+      frozen: window.plp.tutor.feed().filter((c) => c.type === "question-frozen").length,
+    }));
+    expect(first).toEqual({
+      score: { answered: 1, right: 0, streak: 0, best: 0 },
+      stats: { "0009": { seen: 1, missed: 1 } },
+      template: { "trace-sim-inline-template": { seen: 1, right: 0 } },
+      outcomeCounted: true,
+      frozen: 0,
+    });
+
+    // Rebuilding the resumable question re-traces its oracle, but its
+    // persisted first-attempt outcome is not counted again. Force the
+    // non-reusable bounds path and seed invalid derived truth to prove
+    // regeneration resets only the cursor/ledger, not the scored miss.
+    await page.evaluate(() => {
+      const saved = JSON.parse(localStorage.getItem("plp.tutor.v1"));
+      saved.activeTrace.cursor = 999;
+      saved.activeTrace.phase = "effects";
+      saved.activeTrace.committed = [{ stale: true }];
+      localStorage.setItem("plp.tutor.v1", JSON.stringify(saved));
+    });
+    await page.reload();
+    await page.waitForFunction(() => window.plp?.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    expect(await page.evaluate(() => ({
+      score: window.plp.tutor.score(),
+      stats: window.plp.tutor.drillStats(),
+      template: JSON.parse(localStorage.getItem("plp.kb.tmpl.v1")),
+    }))).toEqual({ score: first.score, stats: first.stats, template: first.template });
+    expect(await page.evaluate(() => {
+      const trace = JSON.parse(localStorage.getItem("plp.tutor.v1")).activeTrace;
+      return {
+        version: trace.version,
+        cursor: trace.cursor, phase: trace.phase, committed: trace.committed,
+        pristine: trace.pristine, outcomeCounted: trace.outcomeCounted,
+        hasSignature: Object.hasOwn(trace, "signature"),
+      };
+    })).toEqual({
+      version: 2,
+      cursor: 0, phase: "next-line", committed: [],
+      pristine: false, outcomeCounted: true,
+      hasSignature: false,
+    });
+
+    // Confirmed Finish discards the unfinished UI, not its already-counted
+    // persistent concept and template outcome.
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.locator("#practice [data-role=pr-exit-lesson]").click();
+    await page.waitForFunction(() => window.plp.tutor.state().lessonId === null);
+    expect(await page.evaluate(() => ({
+      score: window.plp.tutor.score(),
+      stats: window.plp.tutor.drillStats(),
+      template: JSON.parse(localStorage.getItem("plp.kb.tmpl.v1")),
+    }))).toEqual({ score: null, stats: first.stats, template: first.template });
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("trace-simulation cannot resurrect an exercise finished while its oracle trace is running", async ({ page }) => {
+    await setup(page);
+    await seedTraceSimulationRound(page);
+    await page.waitForFunction(() => window.plp?.runner.isRunning(), null, { timeout: 30_000 });
+    await page.evaluate(() => {
+      if (!document.body.classList.contains("practice")) window.plp.tutor.toggleSurface();
+    });
+    await expect(page.locator("#practice [data-role=pr-exit-lesson]")).toBeVisible();
+
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.locator("#practice [data-role=pr-exit-lesson]").click();
+    await page.waitForFunction(() => window.plp.tutor.state().lessonId === null);
+    await page.waitForFunction(() => !window.plp.runner.isRunning(), null, { timeout: 30_000 });
+    await page.waitForFunction(() => window.plp.records().length === 0
+      && window.plp.memory.steps().length === 0
+      && window.plp.console.text() === ""
+      && window.plp.console.buffer().trim() === ""
+      && window.plp.runner.summary() === null);
+
+    expect(await page.evaluate(() => {
+      const saved = JSON.parse(localStorage.getItem("plp.tutor.v1"));
+      return {
+        state: window.plp.tutor.state(),
+        hasActiveTrace: Object.hasOwn(saved, "activeTrace"),
+        feed: window.plp.tutor.feed(),
+      };
+    })).toEqual({
+      state: { lessonId: null, stepIndex: -1, waiting: null, lastAnswer: null },
+      hasActiveTrace: false,
+      feed: [],
+    });
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 

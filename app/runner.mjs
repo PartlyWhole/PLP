@@ -73,6 +73,7 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
   let booted = false;
   let runCounter = 0;
   let lastSummary = null;
+  let discardedCheckErrors = null;
   let autoFallback = false;
 
   const ensureSession = () => session ??= createTraceWorker({ wheelUrl: WHEEL_URL });
@@ -112,6 +113,7 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
     if (running || fast.isRunning()) throw new Error("a run is already active");
     records = [];
     lastSummary = null;
+    discardedCheckErrors = null;
     memory.reset();
     consoleUI.reset();
     editor.clearHighlight();
@@ -184,12 +186,14 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
     running = true;
     if (!keepPanes) {
       records = [];
+      discardedCheckErrors = null;
       memory.reset();
       consoleUI.reset();
       editor.clearHighlight();
       consoleUI.system("── run (no memory model — press Trace for that) ──");
     }
     lastSummary = null;
+    discardedCheckErrors = null;
     onStatus?.({ type: "state", state: "running" });
     const runId = `plp-run-${Date.now()}-${++runCounter}`;
     hooks?.onRunStart?.(runId, { mode: "untraced" });
@@ -233,6 +237,19 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
     consoleUI.append("echo", line + "\n");
     hooks?.onInput?.(line);
     events.emit("input-answered", { line });
+  }
+
+  // A tutor may run a completed trace only to derive a private answer key.
+  // Once its pure question model has been built, discard the backing stream
+  // and summary so debug consumers cannot inspect future execution. Never
+  // touch an active run; its stream is still the runner's source of truth.
+  function discardCompletedTrace() {
+    if (running || fast.isRunning()) return false;
+    if (records.length) discardedCheckErrors = traceStreamCheck(records).errors;
+    else discardedCheckErrors ??= [];
+    records = [];
+    lastSummary = null;
+    return true;
   }
 
   // Scripted input (expansion ladder §R4a): trace a program, answering each
@@ -281,10 +298,11 @@ export function createRunner({ editor, memory, consoleUI, onStatus, hooks }) {
     autoFallback: () => autoFallback,
     interrupt,
     provideInput,
+    discardCompletedTrace,
     isRunning: () => running || fast.isRunning(),
     fastState: () => fast.debugState(),
     records: () => records,
     summary: () => lastSummary,
-    checkErrors: () => traceStreamCheck(records).errors,
+    checkErrors: () => discardedCheckErrors ?? traceStreamCheck(records).errors,
   };
 }

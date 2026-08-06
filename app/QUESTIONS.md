@@ -52,6 +52,7 @@ questions match what the student sees in the panes.
 | `code-order` | the program's lines, shuffled — put them in working order (indentation preserved as a cue) | `{seed}` |
 | `code-structure` | `mode: "structure"`: detail lines given, write the structural lines (def/for/if/return/…); `mode: "details"`: the reverse | `{mode}` |
 | `code-args` | one call expression with its arguments blanked | `{line}` 1-based, or `{seed}` |
+| `trace-simulation` | progressively predict each raw executed source-line occurrence, then that occurrence's watched binding/output effects; finish by predicting program end | `{names: [...], maxEvents = 24}` |
 | `trace-table` | walk the program line by line, filling in what each watched name holds after each step; graded per blank against the real trace | `{names: [...], maxBlanks = 8}` |
 | `predict-output` | type the program's exact output — whole program, or "printed so far" at one executed line (`outputUpTo`, the pure twin of the console's `showUpTo`) | `{position}` linePositions index; default last. Grading forgives trailing whitespace/blank lines only |
 
@@ -60,6 +61,34 @@ mulberry32 PRNG). A generator returns `null` when it can't build a sensible
 question here (e.g. no observable memory diff, no calls, no trace yet).
 
 Memory questions use graph construction by default.
+
+### trace-simulation payload + grading
+
+The progressive simulation combines two trace projections. Raw `event: "line"`
+records define the control-flow sequence, preserving repeated occurrences of a
+single physical line. `memory.linePositions()` remains the produced-state
+boundary for the final occurrence in each contiguous location group; repeated
+raw lines inside one group use the following raw-line snapshot. This avoids
+both line mode's one-line-loop collapse and its call-event function-header
+position.
+
+The question exposes safe current-step methods rather than future rows:
+
+```js
+q.step(cursor)                 // current watched state; no expected line
+q.gradeNext(cursor, answer)    // {kind:"line", line:N} or {kind:"end"}
+q.effectPrompt(cursor)         // controls for the already-selected line
+q.gradeEffects(cursor, answer) // changed-name map + output + return value
+q.revealNext(cursor)           // explicit current-phase reveal only
+q.revealEffects(cursor)
+```
+
+For an ordinary call, a callee return owns its return value while any caller
+binding that becomes visible at resumption carries `caller-resume` attribution
+to the original call site. Nested/suspended calls, disappearing watched names,
+incomplete traces, and traces over 24 raw line occurrences fail closed in v1.
+The practice runtime persists only committed history and the current phase,
+never uncommitted future truth.
 
 ### trace-table payload + grading
 

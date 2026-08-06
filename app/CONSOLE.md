@@ -70,7 +70,7 @@ Line discipline (`term.onData`):
 
 | member | contract |
 |---|---|
-| `reset()` | clears store + screen + input state (run start) |
+| `reset()` | immediately clears the store + input state, drains older queued xterm writes by generation, then resets and replays current chunks; returns a promise for the settled screen |
 | `append(stream, text)` | store + live write |
 | `system(text)` | dim line, guaranteed to start at column 0 |
 | `showUpTo(steps, index)` | scrub view; `index < 0` = "before the program runs"; live end restores full replay |
@@ -82,8 +82,12 @@ Line discipline (`term.onData`):
 | `isWaiting()` | line-mode flag (tests wait on this) |
 | `term` | raw xterm instance (cell attributes, cols/rows — test/debug only) |
 
-**Async caveat**: `term.write` is asynchronous; after triggering a replay,
-read `buffer()` under a poll (see `tests/emulator.spec.mjs`).
+**Async caveat**: `term.write` is asynchronous. During a pending reset, new
+chunks remain authoritative in the store while live screen writes are
+suppressed. The settled reset replays those chunks once, and a stale reset
+callback cannot affect a newer generation. Await `reset()` when the empty
+screen must be guaranteed before exposing it; otherwise read `buffer()` under
+a poll (see `tests/emulator.spec.mjs`).
 
 ## Deliberate limitations (truthfulness)
 

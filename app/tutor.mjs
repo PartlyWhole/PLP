@@ -26,7 +26,7 @@
 // printed. The run IS the reveal.
 
 import { generateQuestion, questionGenerators, normalizeAnswer, normalizeOutput } from "./questions.mjs";
-import { renderQuestionBody, renderTraceTable, renderOrderLines, renderErrorPicker, renderLinePicker, createAnswerInput, createLinesInput, createGoneChip, appendExpected } from "./question-ui.mjs";
+import { renderQuestionBody, renderTraceTable, renderTraceSimulation, renderOrderLines, renderErrorPicker, renderLinePicker, createAnswerInput, createLinesInput, createGoneChip, appendExpected } from "./question-ui.mjs";
 import { buildKBSession, kbTopics, migrateStats, spliceBlank, lineBlank, lintLessonConcepts, frontierTags, drillTopicFor, topicProgress, conceptTopics } from "./kb-session.mjs";
 import { summarizeRound } from "./progress.mjs";
 import { mapModel, renderConceptMap } from "./concept-map.mjs";
@@ -536,6 +536,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       if (step.ask.kind === "predict-output" || step.ask.kind === "predict-state") return execPredictOutput(step.ask);
       if (step.ask.kind === "fill-one-blank") return execFillBlank(step.ask);
       if (step.ask.kind === "trace-table") return execTraceTable(step.ask);
+      if (step.ask.kind === "trace-simulation") return execTraceSimulation(step.ask);
       if (step.ask.kind === "order-the-lines") return execOrderLines(step.ask);
       if (step.ask.kind === "predict-the-error") return execPredictError(step.ask);
       if (step.ask.kind === "predict-io") return execPredictIO(step.ask);
@@ -582,8 +583,32 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
   }
 
   // ---- asks ---------------------------------------------------------------
-  function resolveAsk(card, { prompt, ok, verdict, answerText, lastAnswer, kind, template, concept, review, misconception, misconceptionOf, followUp }) {
-    const correction = Boolean(store.drillLesson && lastAnswer === "wrong" && review?.code);
+  function countAskOutcome({ ok, lastAnswer, template, concept, kind, misconceptionMatched = false }) {
+    if (concept) bumpDrillStats(concept, lastAnswer === "correct");
+    if (template) bumpTemplateStats(template, ok);
+    // The score tracker (drills only): session right-count and streak on a
+    // first-attempt basis - the same basis as everything else. The all-time
+    // best streak persists separately (plp.score.v1).
+    if (store.drillLesson) {
+      const s = store.score ??= { answered: 0, right: 0, streak: 0, best: 0 };
+      s.answered += 1;
+      if (ok) {
+        s.right += 1;
+        s.streak += 1;
+        s.best = Math.max(s.best, s.streak);
+        bumpLifetimeBest(s.streak);
+      } else {
+        s.streak = 0;
+      }
+      ui.setScore(s);
+    }
+    events.emit("quiz-graded", {
+      kind, correct: ok, template, concept, misconception: misconceptionMatched,
+    });
+  }
+
+  function resolveAsk(card, { prompt, ok, verdict, answerText, lastAnswer, kind, template, concept, review, misconception, misconceptionOf, followUp, settled = false, retry, outcomeCounted = false }) {
+    const correction = Boolean(store.drillLesson && lastAnswer === "wrong" && review?.code && !settled);
     const shownVerdict = correction
       ? "✗ Not yet - your first try is recorded"
       : verdict;
@@ -605,6 +630,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     const rec = {
       type: "question-frozen", prompt, ok, verdict: shownVerdict, answerText, concept,
       ...(review ? { review } : {}),
+      ...(retry ? { retry } : {}),
       // Legacy records have no disclosure field and remain revealed. Every
       // newly recorded miss starts hidden; correct answers already proved the
       // truth themselves and keep the familiar visible review.
@@ -612,25 +638,9 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     };
     const cardIndex = record(rec);
     store.lastAnswer = lastAnswer;
-    if (concept) bumpDrillStats(concept, lastAnswer === "correct");
-    if (template) bumpTemplateStats(template, ok);
-    // The score tracker (drills only): session right-count and streak on a
-    // first-attempt basis — the same basis as everything else. The all-time
-    // best streak persists separately (plp.score.v1).
-    if (store.drillLesson) {
-      const s = store.score ??= { answered: 0, right: 0, streak: 0, best: 0 };
-      s.answered += 1;
-      if (ok) {
-        s.right += 1;
-        s.streak += 1;
-        s.best = Math.max(s.best, s.streak);
-        bumpLifetimeBest(s.streak);
-      } else {
-        s.streak = 0;
-      }
-      ui.setScore(s);
-    }
-    events.emit("quiz-graded", { kind, correct: ok, template, concept, misconception: matchedMc });
+    if (!outcomeCounted) countAskOutcome({
+      ok, lastAnswer, template, concept, kind, misconceptionMatched: matchedMc,
+    });
     if (correction) {
       store.pendingCorrection = { cardIndex, stepIndex };
       persist();
@@ -1437,6 +1447,308 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
     return true;
   }
 
+  // Progressive trace simulation: the runtime traces silently to obtain the
+  // answer key, then exposes exactly one raw executed-line occurrence at a
+  // time. A miss never discloses the next line or an effect field; the learner
+  // may retry indefinitely or explicitly reveal only the current phase.
+  function execTraceSimulation(ask) {
+    events.emit("quiz-question", { kind: "trace-simulation" });
+    const oracleLesson = lesson;
+    const oracleStore = store;
+    const oracleStepIndex = stepIndex;
+    const ranCode = editor.getValue();
+    const traceOptions = { maxEvents: ask.maxEvents ?? null };
+    (async () => {
+      const summary = await actions.trace();
+      // Finish/replacement can happen while the private trace is running.
+      // Its continuation no longer owns tutor state, so remove only the
+      // completed oracle it created and never resurrect the old question.
+      const roundChanged = lesson !== oracleLesson
+        || store !== oracleStore
+        || stepIndex !== oracleStepIndex;
+      if (roundChanged) {
+        if (actions.discardCompletedTrace?.()) {
+          memory.reset();
+          await consoleUI.reset();
+        }
+        return;
+      }
+      const q = summary?.terminal_reason === "completed"
+        ? generateQuestion("trace-simulation", ctx(), {
+          names: ask.probeNames, maxEvents: ask.maxEvents,
+        })
+        : null;
+      if (!q) {
+        delete store.activeTrace;
+        const desc = {
+          type: "sys",
+          text: summary
+            ? "(couldn't build a progressive trace here - moving on)"
+            : "(the run couldn't start - moving on)",
+        };
+        record(desc);
+        ui.addCard(desc);
+        batch.push(desc);
+        store.lastAnswer = "skipped";
+        resume();
+        return;
+      }
+
+      // The silent trace is an answer key, not learner-visible state. If the
+      // learner steps back to Code while this resumable question is active,
+      // neither debug records, the memory scrubber, nor console may disclose
+      // the future trace. The pure question has captured the oracle it needs.
+      actions.discardCompletedTrace?.();
+      memory.reset();
+      await consoleUI.reset();
+
+      let progress = store.activeTrace;
+      const endCursor = q.stepCount - 1;
+      const progressInBounds = Number.isInteger(progress?.cursor)
+        && progress.cursor >= 0
+        && progress.cursor <= endCursor
+        && (progress.phase === "next-line" || progress.phase === "effects")
+        && !(progress.phase === "effects" && progress.cursor === endCursor)
+        && Array.isArray(progress.committed)
+        && progress.committed.length === progress.cursor;
+      const reusable = progress?.version === 2
+        && progress.stepIndex === oracleStepIndex
+        && progress.code === ranCode
+        && JSON.stringify(progress.names) === JSON.stringify(q.names)
+        && JSON.stringify(progress.options) === JSON.stringify(traceOptions)
+        && progressInBounds;
+      if (!reusable) {
+        // Changed inputs or invalid bounds discard derived trace truth, but
+        // cannot undo or re-count a first-attempt miss on this ask. Carry only
+        // scoring history; rebuild all cursor/ledger state from the new oracle.
+        const sameStep = progress?.stepIndex === oracleStepIndex;
+        const carriedMiss = sameStep && (progress?.pristine === false || progress?.outcomeCounted === true);
+        const carriedOutcome = sameStep && progress?.outcomeCounted === true;
+        progress = {
+          version: 2, stepIndex: oracleStepIndex, code: ranCode,
+          names: q.names, options: traceOptions,
+          cursor: 0, phase: "next-line",
+          committed: [], pristine: !carriedMiss,
+          usedReveal: carriedMiss && progress?.usedReveal === true,
+          outcomeCounted: carriedOutcome,
+          lineMisses: carriedMiss ? (progress?.lineMisses ?? 0) : 0,
+          effectMisses: carriedMiss ? (progress?.effectMisses ?? 0) : 0,
+          currentLineMisses: 0, currentEffectMisses: 0,
+          currentRevealed: false,
+          draftNext: null, draftEffects: null,
+        };
+        store.activeTrace = progress;
+        persist();
+      }
+
+      let view = null;
+      const card = ui.addInteractiveCard({
+        teach: ask.teach, context: ask.context, form: ask.form ?? "trace-table",
+        prompt: ask.prompt ?? q.prompt,
+        program: false,
+        render: (body) => { view = renderTraceSimulation(body, q); return view; },
+        actions: [],
+        prog: store.currentProg,
+      });
+      ui.popBatch(batch, card);
+      batch = [];
+
+      const save = () => { store.activeTrace = progress; persist(); };
+      const countFirstMiss = () => {
+        if (progress.outcomeCounted) return;
+        progress.outcomeCounted = true;
+        store.lastAnswer = "wrong";
+        countAskOutcome({
+          ok: false, lastAnswer: "wrong",
+          template: ask.template, concept: ask.concept,
+          kind: "trace-simulation",
+        });
+      };
+      const showPhase = () => {
+        view.setCommitted(progress.committed);
+        if (progress.phase === "effects") view.showEffects(progress.cursor, progress.draftEffects);
+        else view.showNext(progress.cursor, progress.draftNext);
+      };
+      const answerMissing = (answer) => {
+        for (const value of Object.values(answer?.bindings?.changed ?? {})) {
+          if (!String(value ?? "").trim()) return "Give every changed name its new value";
+        }
+        if (answer?.output?.writes && !String(answer.output.text ?? "").length) {
+          return "Type the exact output from this line";
+        }
+        if (Object.hasOwn(answer ?? {}, "returnValue") && !String(answer.returnValue ?? "").trim()) {
+          return "Give the value this line returns";
+        }
+        return null;
+      };
+      const finishTrace = ({ terminalRevealed = false } = {}) => {
+        const terminal = q.revealNext(progress.cursor);
+        progress.committed.push({
+          next: terminal, effects: null,
+          revealed: terminalRevealed,
+          corrected: progress.currentLineMisses > 0 && !terminalRevealed,
+        });
+        const ok = progress.pristine;
+        const independentlySolved = !ok && !progress.usedReveal;
+        const tries = progress.lineMisses + progress.effectMisses;
+        view.setCommitted(progress.committed);
+        view.freeze();
+        delete store.activeTrace;
+        persist();
+        const metTag = ask.focus ?? ask.concept;
+        if (ok && metTag) {
+          if (grantMet(metTag, ask.focus ? "lesson" : "drill")) {
+            (store.roundMet ??= []).push(metTag);
+            persist();
+          }
+        }
+        resolveAsk(card, {
+          prompt: ask.prompt ?? q.prompt,
+          ok,
+          verdict: ok
+            ? "✓ You built the whole trace!"
+            : progress.usedReveal
+              ? "Trace complete - your first miss still counts"
+              : "✓ Trace complete after retry - your first miss still counts",
+          answerText: `${progress.committed.length - 1} executed lines`,
+          lastAnswer: ok ? "correct" : "wrong",
+          template: ask.template, concept: ask.concept, kind: "trace-simulation",
+          misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
+          settled: true,
+          outcomeCounted: progress.outcomeCounted === true,
+          ...(independentlySolved ? { retry: { ok: true, tries, answer: "completed trace" } } : {}),
+          review: {
+            kind: "trace-simulation", form: ask.form, code: ranCode,
+            opts: { names: ask.probeNames, maxEvents: ask.maxEvents },
+            trace: { committed: progress.committed, names: q.names },
+            teach: ask.teach, context: ask.context,
+          },
+        });
+      };
+      const commitEffects = ({ revealed = false } = {}) => {
+        const next = q.revealNext(progress.cursor);
+        const effects = q.revealEffects(progress.cursor);
+        const stepRevealed = revealed || progress.currentRevealed === true;
+        progress.committed.push({
+          next, effects, revealed: stepRevealed,
+          corrected: (progress.currentLineMisses + progress.currentEffectMisses) > 0 && !stepRevealed,
+        });
+        progress.cursor += 1;
+        progress.phase = "next-line";
+        progress.draftNext = null;
+        progress.draftEffects = null;
+        progress.currentLineMisses = 0;
+        progress.currentEffectMisses = 0;
+        progress.currentRevealed = false;
+        card.setNote("");
+        save();
+        showPhase();
+        arm();
+      };
+      const checkNext = (provided) => {
+        const answer = provided ?? view.collectNext();
+        if (!answer) { card.setNote("Choose the line that executes next"); return; }
+        progress.draftNext = answer;
+        const result = q.gradeNext(progress.cursor, answer);
+        if (!result.correct) {
+          progress.pristine = false;
+          progress.lineMisses += 1;
+          progress.currentLineMisses += 1;
+          countFirstMiss();
+          save();
+          card.setNote("That line does not execute next - try again or reveal this phase");
+          return;
+        }
+        if (answer.kind === "end") { finishTrace(); return; }
+        progress.phase = "effects";
+        progress.draftNext = result.expected;
+        progress.draftEffects = null;
+        card.setNote("");
+        save();
+        showPhase();
+        arm();
+      };
+      const checkEffects = (provided) => {
+        const answer = provided ?? view.collectEffects();
+        const missing = answerMissing(answer);
+        if (missing) { card.setNote(missing); return; }
+        progress.draftEffects = answer;
+        const result = q.gradeEffects(progress.cursor, answer);
+        if (!result.correct) {
+          progress.pristine = false;
+          progress.effectMisses += 1;
+          progress.currentEffectMisses += 1;
+          countFirstMiss();
+          save();
+          card.setNote("Something in this step's effects is not right - try again or reveal this phase");
+          return;
+        }
+        commitEffects();
+      };
+      const revealPhase = () => {
+        progress.pristine = false;
+        progress.usedReveal = true;
+        progress.currentRevealed = true;
+        countFirstMiss();
+        card.setNote("");
+        if (progress.phase === "next-line") {
+          const expected = q.revealNext(progress.cursor);
+          progress.draftNext = expected;
+          if (expected.kind === "end") { finishTrace({ terminalRevealed: true }); return; }
+          progress.phase = "effects";
+          progress.draftEffects = null;
+          save();
+          showPhase();
+          arm();
+          return;
+        }
+        progress.draftEffects = q.revealEffects(progress.cursor);
+        save();
+        commitEffects({ revealed: true });
+      };
+      const skip = () => {
+        const partial = [...progress.committed];
+        delete store.activeTrace;
+        persist();
+        resolveAsk(card, {
+          prompt: ask.prompt ?? q.prompt, ok: false, verdict: "skipped",
+          answerText: `${partial.length} trace steps completed`,
+          lastAnswer: "skipped", template: ask.template, concept: ask.concept,
+          kind: "trace-simulation", settled: true,
+          outcomeCounted: progress.outcomeCounted === true,
+          misconceptionOf: ask.misconceptionOf, followUp: ask.followUp,
+          review: {
+            kind: "trace-simulation", form: ask.form, code: ranCode,
+            opts: { names: ask.probeNames, maxEvents: ask.maxEvents },
+            trace: { committed: partial, names: q.names },
+            teach: ask.teach, context: ask.context,
+          },
+        });
+      };
+      function arm() {
+        const effects = progress.phase === "effects";
+        card.setActions([
+          {
+            label: effects ? "Check this step ▶" : "Check next line ▶",
+            primary: true,
+            onClick: () => effects ? checkEffects() : checkNext(),
+          },
+          { label: effects ? "Reveal effects" : "Reveal next line", onClick: revealPhase },
+          { label: "Skip this exercise", onClick: skip },
+        ]);
+        setWaiting({
+          type: "ask", kind: "trace-simulation",
+          submit: (answer) => progress.phase === "effects" ? checkEffects(answer) : checkNext(answer),
+          reveal: revealPhase, skip,
+        });
+      }
+
+      showPhase();
+      arm();
+    })();
+    return true;
+  }
+
   // trace-table: walk the program's execution step by step, filling in what
   // each watched name holds after each line. The trace runs SILENTLY first —
   // ground truth must exist before the table can even be built — then every
@@ -1807,6 +2119,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       expectedGone: revealed ? r.expectedGone : undefined,
       answerReveal,
       table, answersById: r.answersById, revealed,
+      trace: r.trace,
       items: r.items, answerOrder: r.answerOrder, canonical: r.canonical,
       picked: r.picked, actual: revealed ? r.actual : undefined,
       pickerCode: r.kind === "predict-the-error" || r.form === "fix-the-bug" ? r.code : undefined,
@@ -1817,7 +2130,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       // text string or an answersById map accordingly).
       // Revealed and legacy records may still be retried for practice, but
       // the first-attempt score remains immutable.
-      onRetry: r.code && !rec.retry?.ok
+      onRetry: r.code && r.kind !== "trace-simulation" && !rec.retry?.ok
         ? (answer) => retryAndRefresh(rec, answer, { correction })
         : null,
       onReveal: !revealed && !rec.retry?.ok ? () => revealRecord(rec, { correction }) : null,

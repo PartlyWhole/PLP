@@ -316,6 +316,253 @@ export function appendExpected(container, { label = "actual output:", text } = {
   container.appendChild(div);
 }
 
+// Progressive trace simulation. Unlike the legacy trace table, this surface
+// never receives or renders future rows: the tutor supplies only verified
+// `committed` entries and asks this view to render the current phase.
+export function renderTraceSimulation(body, q) {
+  const wrap = document.createElement("div");
+  wrap.className = "trace-sim";
+  const ledger = document.createElement("ol");
+  ledger.className = "trace-sim-ledger";
+  const state = document.createElement("div");
+  state.className = "trace-sim-state";
+  const phaseHost = document.createElement("div");
+  phaseHost.className = "trace-sim-phase";
+  wrap.append(ledger, state, phaseHost);
+  body.appendChild(wrap);
+
+  let nextAnswer = null;
+  let changedInputs = new Map();
+  let outputCheck = null;
+  let outputInput = null;
+  let returnInput = null;
+
+  function renderState(cursor) {
+    state.textContent = "";
+    const label = document.createElement("span");
+    label.className = "trace-sim-state-label";
+    label.textContent = cursor === 0 ? "Before the program" : "State so far";
+    state.appendChild(label);
+    const bindings = q.step(cursor).before;
+    for (const name of q.names) {
+      const chip = document.createElement("span");
+      chip.className = "trace-sim-state-chip";
+      const code = document.createElement("code");
+      code.textContent = bindings[name] == null ? `${name}: unbound` : `${name} = ${bindings[name]}`;
+      chip.appendChild(code);
+      state.appendChild(chip);
+    }
+  }
+
+  function setCommitted(committed = []) {
+    ledger.textContent = "";
+    for (const entry of committed) {
+      const li = document.createElement("li");
+      li.className = "trace-sim-ledger-row";
+      if (entry.revealed) li.classList.add("revealed");
+      const head = document.createElement("div");
+      head.className = "trace-sim-ledger-head";
+      const line = document.createElement("strong");
+      line.textContent = entry.next.kind === "end"
+        ? "Program ends"
+        : `Line ${entry.next.line}${entry.next.function !== "<module>" ? ` in ${entry.next.function}()` : ""}`;
+      head.appendChild(line);
+      if (entry.revealed) {
+        const badge = document.createElement("span");
+        badge.className = "trace-sim-revealed";
+        badge.textContent = "revealed";
+        head.appendChild(badge);
+      } else if (entry.corrected) {
+        const badge = document.createElement("span");
+        badge.className = "trace-sim-corrected";
+        badge.textContent = "solved after retry";
+        head.appendChild(badge);
+      }
+      li.appendChild(head);
+      if (entry.next.kind === "line") {
+        const code = document.createElement("code");
+        code.className = "trace-sim-code";
+        code.textContent = entry.next.codeText;
+        li.appendChild(code);
+      }
+      const effects = entry.effects;
+      if (effects) {
+        const facts = document.createElement("ul");
+        facts.className = "trace-sim-facts";
+        const addFact = (text) => {
+          const fact = document.createElement("li");
+          fact.textContent = text;
+          facts.appendChild(fact);
+        };
+        for (const [name, value] of Object.entries(effects.bindings?.changed ?? {})) {
+          const at = effects.attribution?.[name];
+          addFact(at?.kind === "caller-resume"
+            ? `resume line ${at.line}: ${name} = ${value}`
+            : `${name} = ${value}`);
+        }
+        for (const name of effects.bindings?.gone ?? []) addFact(`${name} is gone`);
+        if (Object.hasOwn(effects, "returnValue")) addFact(`returns ${effects.returnValue}`);
+        if (effects.output?.writes) addFact(`prints ${JSON.stringify(effects.output.text)}`);
+        for (const transition of effects.transitions ?? []) {
+          if (transition.kind === "call") addFact(`calls ${transition.function}()`);
+        }
+        if (!facts.children.length) addFact("no watched value or output changes");
+        li.appendChild(facts);
+      }
+      ledger.appendChild(li);
+    }
+    ledger.hidden = committed.length === 0;
+  }
+
+  function showNext(cursor, draft = null) {
+    renderState(cursor);
+    phaseHost.textContent = "";
+    phaseHost.dataset.phase = "next-line";
+    nextAnswer = draft;
+    const prompt = document.createElement("h4");
+    prompt.textContent = cursor === 0 ? "Which line executes first?" : "Which line executes next?";
+    const lines = document.createElement("div");
+    lines.className = "trace-sim-lines";
+    const choices = [];
+    const choose = (picked, answer) => {
+      nextAnswer = answer;
+      for (const choice of choices) {
+        const selected = choice === picked;
+        choice.classList.toggle("picked", selected);
+        choice.setAttribute("aria-pressed", String(selected));
+      }
+    };
+    for (const source of q.sourceLines) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "trace-sim-line";
+      btn.dataset.line = String(source.line);
+      btn.disabled = !source.selectable;
+      const num = document.createElement("span");
+      num.className = "uid";
+      num.textContent = String(source.line);
+      const code = document.createElement("code");
+      code.textContent = source.text || " ";
+      btn.append(num, code);
+      const chosen = draft?.kind === "line" && Number(draft.line) === source.line;
+      btn.classList.toggle("picked", chosen);
+      btn.setAttribute("aria-pressed", String(chosen));
+      choices.push(btn);
+      btn.addEventListener("click", () => {
+        choose(btn, { kind: "line", line: source.line });
+      });
+      lines.appendChild(btn);
+    }
+    const end = document.createElement("button");
+    end.type = "button";
+    end.className = "trace-sim-end";
+    end.textContent = "Program ends";
+    const endChosen = draft?.kind === "end";
+    end.classList.toggle("picked", endChosen);
+    end.setAttribute("aria-pressed", String(endChosen));
+    choices.push(end);
+    end.addEventListener("click", () => {
+      choose(end, { kind: "end" });
+    });
+    phaseHost.append(prompt, lines, end);
+  }
+
+  function showEffects(cursor, draft = null) {
+    renderState(cursor);
+    phaseHost.textContent = "";
+    phaseHost.dataset.phase = "effects";
+    changedInputs = new Map();
+    const info = q.effectPrompt(cursor);
+    const prompt = document.createElement("h4");
+    prompt.textContent = `What does line ${info.line} produce?`;
+    const code = document.createElement("code");
+    code.className = "trace-sim-current-code";
+    code.textContent = info.codeText;
+    const names = document.createElement("div");
+    names.className = "trace-sim-effects";
+    const label = document.createElement("p");
+    label.className = "hint";
+    label.textContent = "Tap every watched name that changes, then give its new value.";
+    names.appendChild(label);
+    for (const name of q.names) {
+      const row = document.createElement("div");
+      row.className = "trace-sim-effect-row";
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "trace-sim-name-toggle";
+      toggle.textContent = name;
+      const input = createAnswerInput({ singleLine: true, placeholder: `${name}'s new value` });
+      const initial = draft?.bindings?.changed?.[name];
+      input.hidden = initial === undefined;
+      if (initial !== undefined) {
+        toggle.classList.add("picked");
+        toggle.setAttribute("aria-pressed", "true");
+        input.value = initial;
+        changedInputs.set(name, input);
+      } else toggle.setAttribute("aria-pressed", "false");
+      toggle.addEventListener("click", () => {
+        const on = !changedInputs.has(name);
+        toggle.classList.toggle("picked", on);
+        toggle.setAttribute("aria-pressed", String(on));
+        input.hidden = !on;
+        if (on) { changedInputs.set(name, input); input.focus(); }
+        else changedInputs.delete(name);
+      });
+      row.append(toggle, input);
+      names.appendChild(row);
+    }
+    const outputRow = document.createElement("label");
+    outputRow.className = "trace-sim-output-row";
+    outputCheck = document.createElement("input");
+    outputCheck.type = "checkbox";
+    outputCheck.checked = draft?.output?.writes === true;
+    outputRow.append(outputCheck, " This line prints output");
+    outputInput = createAnswerInput({ placeholder: "exact output from this line" });
+    outputInput.hidden = !outputCheck.checked;
+    outputInput.value = draft?.output?.text ?? "";
+    outputCheck.addEventListener("change", () => {
+      outputInput.hidden = !outputCheck.checked;
+      if (outputCheck.checked) outputInput.focus();
+    });
+    names.append(outputRow, outputInput);
+    returnInput = null;
+    if (info.hasReturn) {
+      const returnRow = document.createElement("label");
+      returnRow.className = "trace-sim-return-row";
+      returnRow.append("Return value");
+      returnInput = createAnswerInput({ singleLine: true, placeholder: "value returned" });
+      returnInput.value = draft?.returnValue ?? "";
+      returnRow.appendChild(returnInput);
+      names.appendChild(returnRow);
+    }
+    phaseHost.append(prompt, code, names);
+  }
+
+  return {
+    setCommitted,
+    showNext,
+    showEffects,
+    collectNext: () => nextAnswer,
+    collectEffects() {
+      return {
+        bindings: {
+          changed: Object.fromEntries([...changedInputs].map(([name, input]) => [name, input.value])),
+          gone: [],
+        },
+        output: outputCheck?.checked
+          ? { writes: true, text: outputInput?.value ?? "" }
+          : { writes: false },
+        ...(returnInput ? { returnValue: returnInput.value } : {}),
+      };
+    },
+    freeze() {
+      for (const control of wrap.querySelectorAll("button, input, textarea")) control.disabled = true;
+    },
+    line: null,
+    wide: true,
+  };
+}
+
 // The trace-table renderer: one row per kept execution step, one column per
 // watched name; changed cells are inputs (data-blank-id), givens are text.
 // Returns the standard view surface plus freeze() (used by the tutor's lock).

@@ -245,6 +245,7 @@ const tutor = createTutor({
     // a program asks for more than the script holds.
     provideInput: (line) => runner.provideInput(line),
     interrupt: () => runner.interrupt(),
+    discardCompletedTrace: () => runner.discardCompletedTrace(),
     // The last run's uncaught exception, or null. The traced stream's final
     // record is the terminal one, and it carries `exception` exactly when the
     // program raised — the same object renderRunEnd prints from

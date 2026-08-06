@@ -707,6 +707,58 @@ button.pr-quiet:hover { color: var(--t-ink); text-decoration: underline; }
 .pr-table-slot { overflow-x: auto; }
 .pr-retry-cancel { font-size: var(--fs-meta); color: var(--t-ink-dim); }
 
+/* progressive trace simulation: only verified history plus one live step */
+.trace-sim { display: flex; flex-direction: column; gap: var(--sp-3); width: 100%; }
+.trace-sim-ledger {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  margin: 0; padding: 0; list-style: none;
+}
+.trace-sim-ledger-row {
+  padding: var(--sp-2) var(--sp-3); border: 1px solid var(--t-border);
+  border-radius: var(--r-m); background: var(--t-surface-1);
+}
+.trace-sim-ledger-row.revealed { border-style: dashed; }
+.trace-sim-ledger-head { display: flex; align-items: center; gap: var(--sp-2); }
+.trace-sim-revealed, .trace-sim-corrected {
+  font-size: var(--fs-meta); padding: 1px 8px; border-radius: var(--r-pill);
+  border: 1px solid var(--t-border-strong); color: var(--t-ink-dim);
+}
+.trace-sim-corrected { border-color: var(--t-success); color: var(--t-success); }
+.trace-sim-code { display: block; margin-top: var(--sp-1); white-space: pre-wrap; }
+.trace-sim-facts { margin: var(--sp-1) 0 0; padding-left: var(--sp-4); color: var(--t-ink-dim); }
+.trace-sim-state { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.trace-sim-state-label { font-size: var(--fs-meta); color: var(--t-ink-dim); }
+.trace-sim-state-chip {
+  padding: 2px 9px; border-radius: var(--r-pill);
+  border: 1px solid var(--t-border); background: var(--t-code-bg);
+}
+.trace-sim-state-chip code { background: none; padding: 0; }
+.trace-sim-phase { display: flex; flex-direction: column; gap: var(--sp-2); }
+.trace-sim-phase h4 { margin: 0; }
+.trace-sim-lines { display: flex; flex-direction: column; gap: var(--sp-1); }
+.trace-sim-line {
+  display: grid; grid-template-columns: 2.5em 1fr; align-items: center;
+  width: 100%; min-height: 38px; padding: 4px 8px; text-align: left;
+  background: var(--t-code-bg); border: 1px solid var(--t-border); border-radius: var(--r-s);
+}
+.trace-sim-line code { white-space: pre-wrap; }
+.trace-sim-line:disabled { opacity: 0.35; }
+.trace-sim-line.picked, .trace-sim-end.picked, .trace-sim-name-toggle.picked {
+  border-color: var(--t-accent); background: var(--t-accent-soft);
+}
+.trace-sim-end { align-self: flex-start; }
+.trace-sim-current-code {
+  display: block; padding: var(--sp-2) var(--sp-3); white-space: pre-wrap;
+  background: var(--t-code-bg); border-radius: var(--r-s);
+}
+.trace-sim-effects { display: flex; flex-direction: column; gap: var(--sp-2); }
+.trace-sim-effects > p { margin: 0; }
+.trace-sim-effect-row { display: flex; align-items: center; gap: var(--sp-2); }
+.trace-sim-name-toggle { min-width: 90px; }
+.trace-sim-effect-row .tutor-output-input { flex: 1 1 auto; }
+.trace-sim-output-row { display: flex; align-items: center; gap: var(--sp-1); }
+.trace-sim-return-row { display: flex; flex-direction: column; gap: var(--sp-1); }
+
 /* order-the-lines (Parsons): ↑/↓ rows, touch-first — no drag anywhere */
 .pr-order { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; }
 .pr-order-row {

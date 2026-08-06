@@ -84,15 +84,25 @@ compiler's two-problem variety cap and says why the round is shorter
 instead of silently ignoring the preference.
 
 **Ask kinds on this surface**: predict-output (incl. spot-the-difference
-context), predict-state, fill-one-blank, and **trace-table** — the card
-renders a step table (one column per watched name, one row per executed
-line where a watched name changed; the runtime traces silently FIRST
-because the trace is both the answer key and the table skeleton), the
-student fills every cell, one lock grades them all per-cell against the
-real trace. A wrong table enters correction with no per-cell marks or
-truth; explicit reveal shows "N of M steps right", the per-cell results,
-and the memory-model link. Score is all-or-nothing; a clean first-attempt
-perfect table grants met (see design/lesson-kb-binding.md §4).
+context), predict-state, fill-one-blank, and the KB's progressive
+**trace-simulation**. Trace-table remains the authoring form and explicit
+guided `trace-table` asks keep their legacy all-at-once table, but compiled KB
+practice maps that form to the progressive runtime without changing `kb/`.
+The runtime traces silently first, derives an immutable answer key, then
+discards the runner records and summary and clears the memory and console panes
+so leaving for Code or inspecting the debug API cannot expose it. The learner
+predicts one raw executed source-line occurrence, then selects every watched
+name that changes and supplies its value, output, and any return value. Only
+verified past rows enter the ledger. A miss reveals no correct line, field, or
+future row; unlimited retries or a current-phase Reveal keep moving. The first
+miss remains the score of record, while an unrevealed completed correction gets
+the solved-on-retry ring. Clean whole-trace work grants met. Progress persists
+at the exact line/effects phase across reload, but stores no future execution
+sequence or answer-derived signature. Reuse is limited to the same source,
+names, and options after cursor/phase bounds validation. Review rebuilds only
+the saved committed ledger. Finishing or replacing a round while its silent
+trace is still running invalidates that continuation, so it cannot resurrect
+the old exercise.
 
 **order-the-lines** (Parsons, expansion ladder §R2) is the fifth kind: the
 KB emits the lines in CANONICAL order and buildKBSession draws the deal

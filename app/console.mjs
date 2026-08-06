@@ -49,10 +49,27 @@ export function createConsole({ root, onInput, onInterrupt, maxInputLineBytes = 
   let chunks = []; // { stream: "stdout"|"stderr"|"sys", text }
   let scrubbed = false; // true while showing a reconstructed (≤ step) view
   let atLineStart = true; // last written store chunk ended in a newline
+  // xterm parses write() calls asynchronously. A synchronous reset alone can
+  // therefore be followed by output that was queued before the reset. Keep
+  // the store authoritative while that queue drains, then replay only the
+  // current generation's view. A later reset makes older callbacks no-ops.
+  let resetGeneration = 0;
+  let resetPending = false;
+  let pendingRender = null;
+
+  function renderOrDefer(render) {
+    if (resetPending) { pendingRender = render; return; }
+    render();
+  }
+
+  function writeLive(text) {
+    if (!resetPending) term.write(text);
+  }
 
   function writeStyled(stream, text) {
+    if (resetPending) return;
     const [pre, post] = SGR[stream] ?? SGR.stdout;
-    term.write(pre + text + post);
+    writeLive(pre + text + post);
   }
 
   function append(stream, text) {
@@ -68,8 +85,10 @@ export function createConsole({ root, onInput, onInterrupt, maxInputLineBytes = 
   }
 
   function replay(list) {
-    term.reset();
-    for (const c of list) writeStyled(c.stream, c.text);
+    renderOrDefer(() => {
+      term.reset();
+      for (const c of list) writeStyled(c.stream, c.text);
+    });
   }
 
   // Reconstructed view for step scrubbing: program output (and system
@@ -77,17 +96,19 @@ export function createConsole({ root, onInput, onInterrupt, maxInputLineBytes = 
   function showUpTo(steps, index) {
     scrubbed = index < steps.length - 1;
     if (!scrubbed) { replay(chunks); return; }
-    term.reset();
-    if (index < 0) { // synthetic "before the program runs" position
-      writeStyled("sys", "⟨before the program runs — no output yet⟩\n");
-      return;
-    }
-    writeStyled("sys", `⟨output up to step ${index + 1} — move the slider to the end to return to live view⟩\n`);
-    for (let j = 0; j <= index && j < steps.length; j++) {
-      const o = steps[j].output;
-      if (o?.stdout_delta) writeStyled("stdout", o.stdout_delta);
-      if (o?.stderr_delta) writeStyled("stderr", o.stderr_delta);
-    }
+    renderOrDefer(() => {
+      term.reset();
+      if (index < 0) { // synthetic "before the program runs" position
+        writeStyled("sys", "⟨before the program runs - no output yet⟩\n");
+        return;
+      }
+      writeStyled("sys", `⟨output up to step ${index + 1} - move the slider to the end to return to live view⟩\n`);
+      for (let j = 0; j <= index && j < steps.length; j++) {
+        const o = steps[j].output;
+        if (o?.stdout_delta) writeStyled("stdout", o.stdout_delta);
+        if (o?.stderr_delta) writeStyled("stderr", o.stderr_delta);
+      }
+    });
   }
 
   // ---- inline input discipline (engine echo disabled in live mode) -------
@@ -98,13 +119,13 @@ export function createConsole({ root, onInput, onInterrupt, maxInputLineBytes = 
   let histPos = -1; // -1 = editing a fresh line
 
   function eraseCurrentLine() {
-    term.write("\b \b".repeat(lineBuf.length));
+    writeLive("\b \b".repeat(lineBuf.length));
   }
 
   function setLine(text) {
     eraseCurrentLine();
     lineBuf = text;
-    term.write(lineBuf);
+    writeLive(lineBuf);
   }
 
   function submit() {
@@ -124,7 +145,7 @@ export function createConsole({ root, onInput, onInterrupt, maxInputLineBytes = 
       system(`input rejected: ${err.message ?? err}`);
       waiting = true; // engine is still waiting; let the user retry
       lineBuf = line;
-      term.write(line);
+      writeLive(line);
     }
   }
 
@@ -133,7 +154,7 @@ export function createConsole({ root, onInput, onInterrupt, maxInputLineBytes = 
     if (!waiting) return;
     if (data === "\r") { submit(); return; }
     if (data === "\x7f" || data === "\b") { // Backspace (end-of-line editing)
-      if (lineBuf) { lineBuf = lineBuf.slice(0, -1); term.write("\b \b"); }
+      if (lineBuf) { lineBuf = lineBuf.slice(0, -1); writeLive("\b \b"); }
       return;
     }
     if (data === "\x04") { // Ctrl+D: EOF has no representation in the wire contract
@@ -163,7 +184,7 @@ export function createConsole({ root, onInput, onInterrupt, maxInputLineBytes = 
       return;
     }
     lineBuf = candidate;
-    term.write(text); // local echo
+    writeLive(text); // local echo
   });
 
   // Stage gate (console-input capability): when non-interactive, input()
@@ -193,8 +214,29 @@ export function createConsole({ root, onInput, onInterrupt, maxInputLineBytes = 
     reset() {
       chunks = [];
       scrubbed = false;
-      hideInput();
+      waiting = false;
+      lineBuf = "";
+      histPos = -1;
+      atLineStart = true;
+      const generation = ++resetGeneration;
+      resetPending = true;
+      pendingRender = () => replay(chunks);
       term.reset();
+      return new Promise((resolve) => {
+        // The empty write is ordered after every old queued write. Once it is
+        // parsed, reset away those stale pixels and replay chunks accumulated
+        // since this reset. Newer reset generations own their own callback.
+        term.write("", () => {
+          if (generation !== resetGeneration) { resolve(false); return; }
+          term.reset();
+          resetPending = false;
+          const render = pendingRender;
+          pendingRender = null;
+          render?.();
+          if (waiting && lineBuf) term.write(lineBuf);
+          resolve(true);
+        });
+      });
     },
     append,
     system,

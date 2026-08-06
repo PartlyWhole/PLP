@@ -410,16 +410,17 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met 
         prompt: "Someone types the answers shown. What does the whole console show?",
       };
     } else if (ex.form === "trace-table") {
-      // Walk the trace: the student fills what each watched name holds at
-      // every step where it changes; the real trace is the answer key (the
-      // row/blank structure derives at runtime — kb stays trace-agnostic).
+      // The authoring form stays stable, but practice now walks the real raw
+      // execution progressively: predict one next line, then that line's
+      // watched effects. Explicit guided `trace-table` asks remain available
+      // through the tutor for backwards compatibility.
       steps.push({ loadCode: prog.code });
       ask = {
-        kind: "trace-table",
+        kind: "trace-simulation",
         form: ex.form, shape: prog.shape,
         concept: ex.focus, template: ex.id,
-        probeNames: prog.probeNames, maxBlanks: prog.maxBlanks,
-        prompt: "Walk it line by line — what does each name hold after each step?",
+        probeNames: prog.probeNames,
+        prompt: "Build the trace yourself - which line runs next, and what does it change?",
       };
     } else if (ex.form === "predict-state") {
       steps.push({ loadCode: prog.code });

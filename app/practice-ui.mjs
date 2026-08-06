@@ -866,6 +866,70 @@ export function createPracticeUI({ layout, getCode }) {
     return wrap;
   }
 
+  function buildTraceReview(trace) {
+    const list = document.createElement("ol");
+    list.className = "trace-sim-ledger trace-sim-review";
+    for (const entry of trace?.committed ?? []) {
+      const row = document.createElement("li");
+      row.className = "trace-sim-ledger-row";
+      if (entry.revealed) row.classList.add("revealed");
+      const head = document.createElement("div");
+      head.className = "trace-sim-ledger-head";
+      const title = document.createElement("strong");
+      title.textContent = entry.next?.kind === "end"
+        ? "Program ends"
+        : `Line ${entry.next?.line}${entry.next?.function !== "<module>" ? ` in ${entry.next?.function}()` : ""}`;
+      head.appendChild(title);
+      if (entry.revealed) {
+        const badge = document.createElement("span");
+        badge.className = "trace-sim-revealed";
+        badge.textContent = "revealed";
+        head.appendChild(badge);
+      } else if (entry.corrected) {
+        const badge = document.createElement("span");
+        badge.className = "trace-sim-corrected";
+        badge.textContent = "solved after retry";
+        head.appendChild(badge);
+      }
+      row.appendChild(head);
+      if (entry.next?.kind === "line") {
+        const code = document.createElement("code");
+        code.className = "trace-sim-code";
+        code.textContent = entry.next.codeText;
+        row.appendChild(code);
+      }
+      const facts = document.createElement("ul");
+      facts.className = "trace-sim-facts";
+      const add = (text) => {
+        const fact = document.createElement("li");
+        fact.textContent = text;
+        facts.appendChild(fact);
+      };
+      for (const [name, value] of Object.entries(entry.effects?.bindings?.changed ?? {})) {
+        const at = entry.effects?.attribution?.[name];
+        add(at?.kind === "caller-resume"
+          ? `resume line ${at.line}: ${name} = ${value}`
+          : `${name} = ${value}`);
+      }
+      for (const name of entry.effects?.bindings?.gone ?? []) add(`${name} is gone`);
+      if (Object.hasOwn(entry.effects ?? {}, "returnValue")) add(`returns ${entry.effects.returnValue}`);
+      if (entry.effects?.output?.writes) add(`prints ${JSON.stringify(entry.effects.output.text)}`);
+      for (const transition of entry.effects?.transitions ?? []) {
+        if (transition.kind === "call") add(`calls ${transition.function}()`);
+      }
+      if (entry.effects && !facts.children.length) add("no watched value or output changes");
+      if (facts.children.length) row.appendChild(facts);
+      list.appendChild(row);
+    }
+    if (!list.children.length) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "No trace steps were completed.";
+      return empty;
+    }
+    return list;
+  }
+
   function buildReviewCard(desc) {
     const el = document.createElement("div");
     el.className = "pr-question pr-review";
@@ -881,6 +945,9 @@ export function createPracticeUI({ layout, getCode }) {
     if (desc.code) {
       const block = mountProgram(el, desc.code);
       if (desc.stdinScript?.length) block.insertAdjacentElement("afterend", buildStdinBlock(desc.stdinScript));
+    }
+    if (desc.kind === "trace-simulation" && desc.trace) {
+      el.appendChild(buildTraceReview(desc.trace));
     }
     // The table lives in a slot so a retry can swap it out (blank attempt)
     // and back (graded view) without touching the rest of the card.

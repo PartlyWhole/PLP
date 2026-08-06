@@ -314,6 +314,52 @@ export function canonicalizeContainers(s) {
   }).join("\n");
 }
 
+// State containers are values rather than printed transcripts. For simple
+// top-level dict and set displays only, entry order is irrelevant. Lists,
+// tuples, nested structure, and quoted-string contents retain their order.
+function canonicalizeStateContainer(s) {
+  const normalized = canonicalizeContainers(s).trim();
+  if (!normalized.startsWith("{") || !normalized.endsWith("}")) return normalized;
+  const inner = normalized.slice(1, -1);
+  if (!inner) return normalized;
+
+  const parts = [];
+  let start = 0;
+  let depth = 0;
+  let quote = null;
+  let escaped = false;
+  const topLevelColons = [];
+  for (let i = 0; i < inner.length; i++) {
+    const c = inner[i];
+    if (escaped) { escaped = false; continue; }
+    if (c === "\\" && quote) { escaped = true; continue; }
+    if (quote) { if (c === quote) quote = null; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if ("[({".includes(c)) { depth += 1; continue; }
+    if ("])}".includes(c)) { depth -= 1; if (depth < 0) return normalized; continue; }
+    if (depth === 0 && c === ":") topLevelColons.push(i);
+    if (depth === 0 && c === ",") {
+      parts.push(inner.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  if (quote || depth !== 0) return normalized;
+  parts.push(inner.slice(start).trim());
+  if (parts.some((part) => !part)) return normalized;
+
+  // A simple dict has exactly one top-level colon per entry; a simple set has
+  // none. Mixed/ambiguous brace displays fall back to the ordinary canonical
+  // spelling instead of accepting more than we understand.
+  if (topLevelColons.length !== 0 && topLevelColons.length !== parts.length) return normalized;
+  return `{${parts.sort().join(",")}}`;
+}
+
+function equivalentStateValue(got, want) {
+  return normalizeAnswer(got) === normalizeAnswer(want)
+    || canonicalizeContainers(got) === canonicalizeContainers(want)
+    || canonicalizeStateContainer(got) === canonicalizeStateContainer(want);
+}
+
 function predictOutputQuestion(ctx, opts = {}) {
   const P = ctx.positions;
   if (!P?.length) return null;
@@ -385,6 +431,258 @@ function predictStateQuestion(ctx, opts = {}) {
     grade(answer) {
       const correct = normalizeAnswer(answer?.text) === normalizeAnswer(expected);
       return { correct, expected: { text: expected } };
+    },
+  };
+}
+
+// ---- progressive trace simulation ----------------------------------------
+// `linePositions()` is the memory model's produced-state projection, but it
+// is intentionally coarser than a Python execution trace: consecutive events
+// on the same physical line collapse into one position, and a function `call`
+// event contributes a header-shaped position even though the `def` statement
+// is not executed again. A trace simulation needs the learner to predict every
+// actual source-line occurrence, so control flow comes from raw `line` records
+// while each occurrence's produced state still lands on the aligned memory
+// position boundary. Repeated raw lines inside one group use the next raw line
+// snapshot, preserving one-line loop iterations that line mode collapses.
+function traceSimulationQuestion(ctx, opts = {}) {
+  const names = [...new Set(opts.names ?? [])];
+  const steps = ctx.steps ?? [];
+  const positions = ctx.positions ?? [];
+  const maxEvents = opts.maxEvents ?? 24;
+  if (!names.length || !steps.length || opts.frames === true) return null;
+
+  // V1 covers completed programs and ordinary, non-nested user calls. A
+  // nested/suspended expression needs evaluation-event pedagogy, not a false
+  // claim that all of its effects belong to one simple source-line step.
+  const last = steps[steps.length - 1];
+  if (last?.event !== "return" || last.location?.function !== "<module>") return null;
+  if (steps.some((s) => (s.stack ?? []).filter((f) => f.function !== "<module>").length > 1)) return null;
+
+  const groups = [];
+  const groupAt = [];
+  for (let i = 0; i < steps.length; i++) {
+    const loc = steps[i].location;
+    if (!loc) return null;
+    const prev = groups[groups.length - 1];
+    if (!prev || prev.line !== loc.line || prev.function !== loc.function || prev.module !== loc.module) {
+      groups.push({ start: i, line: loc.line, function: loc.function, module: loc.module, indices: [] });
+    }
+    const gi = groups.length - 1;
+    groups[gi].indices.push(i);
+    groupAt[i] = gi;
+  }
+  if (groups.length !== positions.length) return null;
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i], p = positions[i];
+    if (!p || g.line !== p.line || g.function !== p.function || g.module !== p.module) return null;
+    // A non-module return in a return-only group means a source line was
+    // suspended across nested calls. It is outside the V1 attribution model.
+    if (g.function !== "<module>"
+      && g.indices.some((j) => steps[j].event === "return")
+      && !g.indices.some((j) => steps[j].event === "line")) return null;
+  }
+
+  const rawLines = steps.map((s, i) => ({ s, i })).filter(({ s }) => s.event === "line");
+  if (rawLines.length < 2 || rawLines.length > maxEvents) return null;
+  const sourceLines = String(ctx.source ?? "").replace(/\n$/, "").split("\n")
+    .map((text, i) => ({ line: i + 1, text, selectable: text.trim() !== "" }));
+  const onlyWatchedGlobals = (snap) => Object.fromEntries(names.map((name) => {
+    const found = snap.entries.find((e) => e.scope === "globals" && e.name === name);
+    return [name, found?.value ?? null];
+  }));
+  const outputBetween = (from, to) => {
+    let out = "";
+    for (let i = from + 1; i <= to && i < steps.length; i++) {
+      out += steps[i].output?.stdout_delta ?? "";
+      out += steps[i].output?.stderr_delta ?? "";
+    }
+    return out;
+  };
+  const valueFromEvent = (step) => {
+    const encoded = step.event_data?.kind === "value" ? step.event_data.value : null;
+    if (!encoded) return null;
+    return textValue(encoded, new Map((step.heap ?? []).map((n) => [n.uid, n])));
+  };
+
+  // Match each callee return to the source-line occurrence that initiated it.
+  // This is used only for the explanatory caller-resume attribution; grading
+  // still rests on the trace snapshots.
+  const calls = [];
+  const callInfo = new Map();
+  const returnInfo = new Map();
+  let lastLine = null;
+  for (let i = 0; i < steps.length; i++) {
+    const s = steps[i];
+    if (s.event === "line") lastLine = { rawIndex: i, line: s.location.line, function: s.location.function };
+    if (s.event === "call" && s.location.function !== "<module>") {
+      const info = {
+        kind: "call", rawIndex: i, function: s.location.function,
+        callerRawIndex: lastLine?.rawIndex ?? null,
+        callerLine: lastLine?.line ?? null,
+        callerFunction: lastLine?.function ?? null,
+      };
+      calls.push(info);
+      callInfo.set(i, info);
+    }
+    if (s.event === "return" && s.location.function !== "<module>") {
+      const at = calls.findLastIndex((c) => c.function === s.location.function);
+      const call = at >= 0 ? calls.splice(at, 1)[0] : null;
+      returnInfo.set(i, {
+        kind: "return", rawIndex: i, function: s.location.function,
+        value: valueFromEvent(s), call,
+      });
+    }
+  }
+
+  const events = rawLines.map(({ s, i: rawIndex }, ordinal) => {
+    const gi = groupAt[rawIndex];
+    const nextRawLine = rawLines[ordinal + 1]?.i;
+    const afterStateIndex = nextRawLine != null && groupAt[nextRawLine] === gi
+      ? nextRawLine
+      : positions[gi].stateIndex;
+    const before = onlyWatchedGlobals(snapshotAt(steps, rawIndex));
+    const after = onlyWatchedGlobals(snapshotAt(steps, afterStateIndex));
+    const changed = {};
+    const gone = [];
+    for (const name of names) {
+      if (before[name] !== after[name]) {
+        if (after[name] == null) gone.push(name);
+        else changed[name] = after[name];
+      }
+    }
+    const crossed = [];
+    for (let j = rawIndex + 1; j <= afterStateIndex; j++) {
+      if (callInfo.has(j)) crossed.push(callInfo.get(j));
+      if (returnInfo.has(j)) crossed.push(returnInfo.get(j));
+    }
+    const returned = crossed.find((t) => t.kind === "return") ?? null;
+    const attribution = {};
+    if (returned?.call) for (const name of Object.keys(changed)) {
+      attribution[name] = {
+        kind: "caller-resume",
+        line: returned.call.callerLine,
+        function: returned.call.callerFunction,
+        sourceRawIndex: returned.call.callerRawIndex,
+      };
+    }
+    const output = outputBetween(rawIndex, afterStateIndex);
+    return {
+      id: `e${ordinal}`,
+      ordinal,
+      line: s.location.line,
+      function: s.location.function,
+      module: s.location.module,
+      codeText: sourceLines[s.location.line - 1]?.text ?? "",
+      rawIndex,
+      positionIndex: gi,
+      afterStateIndex,
+      before,
+      after,
+      effects: {
+        bindings: { changed, gone, attribution },
+        output: { writes: output !== "", text: output },
+        ...(returned && /^\s*return(?:\s|$)/.test(sourceLines[s.location.line - 1]?.text ?? "")
+          ? { returnValue: returned.value ?? "None" }
+          : {}),
+        transitions: crossed.map((t) => t.kind === "call"
+          ? { kind: "call", function: t.function, callerLine: t.callerLine }
+          : {
+            kind: "return", function: t.function, value: t.value,
+            callerLine: t.call?.callerLine ?? null,
+            callerFunction: t.call?.callerFunction ?? null,
+          }),
+      },
+    };
+  });
+  // The V1 effects editor can express changed values but deliberately has no
+  // magic-token UI for a watched global becoming unbound. Fail closed instead
+  // of generating an answer the learner cannot enter; a later version can add
+  // an explicit "name is gone" affordance alongside predict-state's chip.
+  if (events.some((event) => event.effects.bindings.gone.length)) return null;
+
+  const expectedEffects = (event) => ({
+    bindings: {
+      changed: { ...event.effects.bindings.changed },
+      gone: [...event.effects.bindings.gone],
+    },
+    output: event.effects.output.writes
+      ? { writes: true, text: event.effects.output.text }
+      : { writes: false },
+    ...(Object.hasOwn(event.effects, "returnValue") ? { returnValue: event.effects.returnValue } : {}),
+  });
+  const effectsGrade = (event, answer = {}) => {
+    const want = expectedEffects(event);
+    const gotChanged = answer.bindings?.changed ?? {};
+    const wantNames = Object.keys(want.bindings.changed).sort();
+    const gotNames = Object.keys(gotChanged).sort();
+    const changedSet = JSON.stringify(gotNames) === JSON.stringify(wantNames);
+    const changedValues = changedSet && wantNames.every((name) =>
+      equivalentStateValue(gotChanged[name], want.bindings.changed[name]));
+    const gotGone = [...(answer.bindings?.gone ?? [])].sort();
+    const wantGone = [...want.bindings.gone].sort();
+    const gone = JSON.stringify(gotGone) === JSON.stringify(wantGone);
+    const outputKind = Boolean(answer.output?.writes) === want.output.writes;
+    const outputText = !want.output.writes
+      || normalizeOutput(answer.output?.text) === normalizeOutput(want.output.text);
+    const returnValue = !Object.hasOwn(want, "returnValue")
+      || equivalentStateValue(answer.returnValue, want.returnValue);
+    const perField = { changedSet, changedValues, gone, outputKind, outputText, returnValue };
+    return { correct: Object.values(perField).every(Boolean), perField, expected: want };
+  };
+  const terminalBefore = events[events.length - 1].after;
+  return {
+    kind: "trace-simulation",
+    version: 1,
+    prompt: "Build the trace yourself: choose the next line, then record what that line changes.",
+    names,
+    sourceLines,
+    stepCount: events.length + 1,
+    step(cursor) {
+      const event = events[cursor];
+      return {
+        cursor, total: events.length + 1,
+        id: event?.id ?? "end",
+        before: event?.before ?? terminalBefore,
+        terminal: !event,
+      };
+    },
+    effectPrompt(cursor) {
+      const event = events[cursor];
+      if (!event) return null;
+      return {
+        id: event.id, line: event.line, function: event.function,
+        codeText: event.codeText, before: event.before,
+        hasReturn: Object.hasOwn(event.effects, "returnValue"),
+      };
+    },
+    gradeNext(cursor, answer = {}) {
+      const event = events[cursor];
+      const correct = event
+        ? answer.kind === "line" && Number(answer.line) === event.line
+        : answer.kind === "end";
+      return {
+        correct,
+        expected: event
+          ? { kind: "line", line: event.line, function: event.function, codeText: event.codeText }
+          : { kind: "end" },
+      };
+    },
+    gradeEffects(cursor, answer) {
+      const event = events[cursor];
+      return event ? effectsGrade(event, answer) : { correct: false, expected: null };
+    },
+    revealNext(cursor) {
+      return this.gradeNext(cursor, {}).expected;
+    },
+    revealEffects(cursor) {
+      const event = events[cursor];
+      if (!event) return null;
+      return {
+        ...expectedEffects(event),
+        attribution: { ...event.effects.bindings.attribution },
+        transitions: event.effects.transitions.map((t) => ({ ...t })),
+      };
     },
   };
 }
@@ -507,8 +805,7 @@ function traceTableQuestion(ctx, opts = {}) {
   // (and the K-10 contract holds every trace-table exercise to ≥2 on
   // every seed, so this is a runtime safety net, not a routine path).
   if (blanks.length < 2) return null;
-  const eq = (got, want) => normalizeAnswer(got) === normalizeAnswer(want)
-    || canonicalizeContainers(got) === canonicalizeContainers(want);
+  const eq = equivalentStateValue;
   return {
     kind: "trace-table",
     prompt: "Walk the program step by step: fill in what each name holds after each line runs.",
@@ -679,6 +976,11 @@ export const questionGenerators = {
     label: "Trace the table",
     needsTrace: true,
     generate: traceTableQuestion,
+  },
+  "trace-simulation": {
+    label: "Build the trace step by step",
+    needsTrace: true,
+    generate: traceSimulationQuestion,
   },
   "fill-one-blank": {
     // Graded by the tutor's async substitute-and-run path (design §5.2); this

@@ -39,6 +39,18 @@ test.describe("PLP emulator (X-series)", () => {
     await page.evaluate(() => window.plp.memory.goTo(0));
     await page.evaluate(() => window.plp.memory.goTo(window.plp.memory.stepCount() - 1));
     await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toBe(before);
+
+    // reset() can race xterm's asynchronous write queue. Output queued before
+    // reset must not repaint afterward, while output appended by a new run
+    // during the drain remains in the store and is replayed exactly once.
+    await page.evaluate(() => {
+      const consoleUI = window.plp.console;
+      consoleUI.append("stdout", "stale\n");
+      consoleUI.reset();
+      consoleUI.append("stdout", "current\n");
+    });
+    await expect.poll(() => page.evaluate(() => window.plp.console.buffer())).toBe("current");
+    expect(await page.evaluate(() => window.plp.console.text())).toBe("current\n");
   });
 
   test("X2: \\r overwrites render as a progress line, not accumulated lines", async ({ page }) => {

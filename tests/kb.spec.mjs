@@ -850,10 +850,13 @@ test.describe("PLP knowledge base (K-series)", () => {
             // blanks), every expected value single-line, every watched name
             // actually blanked at least once.
             const q = window.plp.questions.generateQuestion("trace-table", ctx, { names, maxBlanks });
+            const simulation = window.plp.questions.generateQuestion("trace-simulation", ctx, { names });
             const blanked = new Set((q?.blanks ?? []).map((b) => b.label.split(" · ").pop()));
             out.push({
               reason: summary?.terminal_reason,
               gradable: Boolean(q),
+              progressive: Boolean(simulation),
+              simulationSteps: simulation?.stepCount ?? 0,
               oneLine: (q?.blanks ?? []).every((b) => !String(b.expected).includes("\n")),
               tight: Boolean(q) && q.blanks.length >= 2 && q.blanks.length <= maxBlanks,
               allNamesBlanked: Boolean(q) && names.every((n) => blanked.has(n)),
@@ -919,6 +922,8 @@ test.describe("PLP knowledge base (K-series)", () => {
         if (r.tight !== undefined) {
           expect(r.tight, `${ex.id} program ${i}: trace-table must yield 2..maxBlanks blanks`).toBe(true);
           expect(r.allNamesBlanked, `${ex.id} program ${i}: every watched name must be blanked at least once`).toBe(true);
+          expect(r.progressive, `${ex.id} program ${i}: progressive trace must be buildable`).toBe(true);
+          expect(r.simulationSteps, `${ex.id} program ${i}: progressive trace includes lines plus Program ends`).toBeGreaterThan(1);
         }
         // The interpreter is the fill target's ground truth.
         expect(r.matchesTarget, `${ex.id} program ${i}: real output must equal the fill target`).toBe(true);
@@ -1136,6 +1141,25 @@ test.describe("PLP knowledge base (K-series)", () => {
     }
     expect(total).toBe(30);
     expect(core / total, `core fraction ${core}/${total}`).toBeGreaterThanOrEqual(0.6);
+  });
+
+  test("K-runtime: trace-table authoring forms compile to progressive trace-simulation asks", async () => {
+    const { buildKBSession } = await import("../app/kb-session.mjs");
+    const allMet = [...kb.concepts.keys()].filter((t) => !kb.structural.has(t));
+    const stats = Object.fromEntries(allMet.map((t) => [t, { seen: 3, missed: 1 }]));
+    const seen = [];
+    for (const topic of ["state", "logic", "loops", "lists", "strings", "structures", "functions"]) {
+      for (let seed = 1; seed <= 60; seed++) {
+        const lesson = buildKBSession(topic, { seed, count: 10, met: allMet, stats });
+        seen.push(...lesson.steps.filter((s) => s.ask?.form === "trace-table").map((s) => s.ask));
+        if (seen.some((ask) => ask.form === "trace-table")) break;
+      }
+    }
+    expect(seen.length, "at least one authored trace-table form should be dealt").toBeGreaterThan(0);
+    for (const ask of seen) {
+      expect(ask.kind, `${ask.template} should use the progressive runtime`).toBe("trace-simulation");
+      expect(ask.probeNames?.length, `${ask.template} keeps its authored watched names`).toBeGreaterThan(0);
+    }
   });
 
   test("K-chal: challenges and hard siblings are availability-FILTERED, never dealt cold, dealt when earned (R1)", async () => {
