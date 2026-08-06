@@ -860,6 +860,13 @@ input.tutor-lines-input {
   flex: 1 1 auto; min-height: 32px; height: 32px; width: auto;
   padding: var(--sp-1, 4px) var(--sp-2);
 }
+/* The "line N" gutter: the stack must READ as a list of output lines, so a
+   learner never has to be told what the boxes are (reported defect — the
+   box-per-line mechanic had no visual tell at all). */
+.tutor-lines-num {
+  flex: 0 0 auto; width: 3.2em; text-align: right; padding-right: var(--sp-2);
+  font-size: var(--fs-meta); color: var(--t-ink-faint); user-select: none;
+}
 .tutor-lines-del {
   flex: 0 0 auto; border: none; background: none; padding: 0 6px; line-height: 1;
   font-size: var(--fs-meta); color: var(--t-ink-dim); cursor: pointer;

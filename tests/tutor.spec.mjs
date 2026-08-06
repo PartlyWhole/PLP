@@ -2397,4 +2397,32 @@ test.describe("PLP tutor (T-series)", () => {
     expect(seed).toBeGreaterThanOrEqual(0);
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
+
+  test("multi-line answering explains itself: the hint persists and the boxes are labelled lines", async ({ page }) => {
+    await setup(page);
+    // A learner who has ALREADY met these forms — the flag that used to
+    // suppress the hint forever. Reported defect: "I don't know how to type
+    // in multi-line answers", with no cue left on screen.
+    await page.evaluate(() => {
+      localStorage.setItem("plp.practice.v1", JSON.stringify({ forms: {
+        "predict-output": true, "predict-output#lines": true,
+        "predict-exact-output": true, "predict-exact-output#lines": true,
+      } }));
+      localStorage.setItem("plp.kb.v1", JSON.stringify({ "0005": { seen: 24, missed: 0 } }));
+      localStorage.removeItem("plp.tutor.v1");
+    });
+    await page.evaluate(() => window.plp.tutor.startDrill("loops", { seed: 7, count: 1 }));
+    await page.waitForFunction(() => window.plp.tutor.state().waiting === "ask", null, { timeout: 30_000 });
+    // The hint is STILL there on a repeat visit — multi-line asks always carry it.
+    await expect(page.locator("#practice .pr-mechanics")).toContainText("one box per printed line");
+    // And the widget says what it is without needing the hint at all.
+    await expect(page.locator("#practice .tutor-lines-num").first()).toHaveText("line 1");
+    await expect(page.locator("#practice .tutor-lines-add")).toContainText("another line");
+    // Enter grows the list and the numbering follows.
+    await page.locator("#practice .tutor-lines-input").first().fill("20");
+    await page.locator("#practice .tutor-lines-input").first().press("Enter");
+    await expect(page.locator("#practice .tutor-lines-num")).toHaveText(["line 1", "line 2"]);
+    // (no checkErrors here: it validates the TRACE record stream, and this
+    // test inspects the card's chrome without ever running a program.)
+  });
 });

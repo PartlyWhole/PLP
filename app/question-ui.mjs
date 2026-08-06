@@ -126,7 +126,16 @@ export function createLinesInput({
       input.setAttribute("aria-label", `output line ${i + 1}`);
       const del = input.parentElement.querySelector(".tutor-lines-del");
       if (del) del.hidden = i === 0; // ✕ on every box after the first
+      const num = input.parentElement.querySelector(".tutor-lines-num");
+      if (num) num.textContent = `line ${i + 1}`;
+      // Only the LAST box advertises Enter — that is the box the gesture
+      // acts on, and repeating it on every row would be noise.
+      input.placeholder = i === list.length - 1 && list.length === 1
+        ? (placeholder || "the first line it prints…")
+        : i === list.length - 1 ? "…and this line" : "";
     });
+    const last = list[list.length - 1];
+    if (last) last.title = "press Enter to start the next line";
   };
 
   function removeRow(input) {
@@ -139,6 +148,14 @@ export function createLinesInput({
   function makeRow(value = "", after = null) {
     const row = document.createElement("div");
     row.className = "tutor-lines-row";
+    // A visible "line N" gutter: the widget must read as a LIST OF LINES on
+    // sight. Reported defect — a learner who does not already know the
+    // box-per-line mechanic sees only an input and has no way to guess that
+    // Enter builds the next one.
+    const num = document.createElement("span");
+    num.className = "tutor-lines-num";
+    num.setAttribute("aria-hidden", "true");
+    row.appendChild(num);
     const input = document.createElement("input");
     input.type = "text";
     input.className = "tutor-output-input tutor-output-line tutor-lines-input";

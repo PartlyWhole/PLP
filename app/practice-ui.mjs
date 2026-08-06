@@ -251,14 +251,19 @@ export function createPracticeUI({ layout, getCode }) {
     "spot-the-difference": "one box per printed line — Enter starts the next line, then press Check",
   };
   function mechanicsLineFor(form, multiline = false) {
+    // Multi-line asks ALWAYS carry their hint. Everything else is once-ever.
+    // Reported defect: a learner who has no idea how to enter several lines
+    // gets no cue at all once the flag is set — and the box-per-line mechanic
+    // has no visual tell, unlike "type here and press Enter". The line is one
+    // short sentence and these asks are rare, so it never becomes noise.
+    if (multiline) return MECHANICS_LINES[form] ?? MECHANICS[form] ?? null;
     let seen;
     try { seen = JSON.parse(localStorage.getItem("plp.practice.v1")) ?? {}; } catch { seen = {}; }
     seen.forms ??= {};
-    const key = multiline ? `${form}#lines` : form;
-    if (!form || seen.forms[key]) return null;
-    const text = (multiline ? MECHANICS_LINES[form] : null) ?? MECHANICS[form] ?? null;
+    if (!form || seen.forms[form]) return null;
+    const text = MECHANICS[form] ?? null;
     if (!text) return null;
-    seen.forms[key] = true;
+    seen.forms[form] = true;
     try { localStorage.setItem("plp.practice.v1", JSON.stringify(seen)); } catch { /* ephemeral */ }
     return text;
   }
