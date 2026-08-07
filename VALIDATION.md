@@ -186,12 +186,17 @@ driver included. Each row asserts a way a run can end still releases it.
 
 ## Knowledge base (K-series = `tests/kb.spec.mjs`)
 
-`design/knowledge-base-design.md` through full breadth and app wiring: all
-68 concepts (4 structural / 47 core / 17 edge — the §2.4 budget exactly),
-69 exercises across all four §5.2 forms, the footprint analyzer over the
+`design/knowledge-base-design.md` through full breadth, app wiring, and
+the expansion plan (`design/exercise-expansion-plan.md`): 87 loaded
+concepts (4 structural / 60 core / 23 edge — §3's 68 plus the errors,
+functions, and io expansions), 227 exercises across ten forms (every
+concept ≥2 exercises spanning ≥2 tiers; 17 challenges, 11 hard
+siblings; computed misconception fields on every applicable shape per
+the audit-baseline skip register), the footprint analyzer over the
 complete §4.1 grammar (branches, loops, comparisons, booleans, strings,
-dicts, tuples, slices, conversions, methods), interpreter oracles, and the
-generated reference. Invariant numbers = design §9.
+dicts, tuples, slices, conversions, methods, def/call/return frames,
+input, raise detection), interpreter oracles, and the generated
+reference. Invariant numbers = design §9.
 
 | # | Feature | Best evidence | Coverage |
 |---|---|---|---|
@@ -201,7 +206,7 @@ generated reference. Invariant numbers = design §9.
 | K4 | Static contract: `assumed ⊆ ancestors(focus)`, `focus ∉ assumed`, structural tags never listed, `contrast ∈ assumed` (inv 5) | closure computation + set inclusion per exercise | K-4 |
 | K5 | One-new-thing contract on every generated program: `footprint ⊆ assumed ∪ {focus} ∪ Structural`; analyzer total; declared shapes/variants reachable (inv 6, 7) | 40 seeds per exercise (`fnv1a32(id) ^ k`), analyzer on each (all executed sources for multi-program forms); excess tags fail with evidence lines | K-5, anchored by K-5a (design §10.2 hand-computed footprints reproduced exactly, incl. the `b = b + [x]` contrast and the latent-alias warning) |
 | K6 | Determinism: same (exercise, seed) → identical program; selection pure over the met set (inv 16) | double-generate deep-equal across two `loadKB()` instances | K-6 |
-| K7 | Every non-structural concept has ≥1 intro exercise (inv 12) | join exercises→focus over concepts — all 64 non-structural covered | K-7 |
+| K7 | Every non-structural concept has ≥1 intro exercise (inv 12) | join exercises→focus over concepts — all 83 non-structural covered | K-7 |
 | K8 | Dynamic contract + cold start: frontier boots at `print-text`, the E1–E7 chain reaches `names-share-list`, the diamond (both `name-from-name` AND `append-mutates`) gates aliasing, nothing offerable assumes an unmet concept | pure walk over `frontier`/`offerable` asserting the §10.3 unlock sequence | K-8 |
 | K9 | kb/ RNG cannot drift from the app's (`kb/` imports nothing from `app/` by contract) | mulberry32(42) pinned 5-value stream asserted against both copies | K-rng (Node) + K-10 preamble (browser) |
 | K10 | Every exercise generates clean, gradable programs under real execution; one output line unless flagged `multiline` (inv 10) | 5 stratified seeds per exercise (first occurrence of each shape/variant): trace → `completed`, predict-output buildable, line-count check, `checkErrors()` empty | K-10 |

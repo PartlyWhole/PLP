@@ -1166,8 +1166,12 @@ test.describe("PLP knowledge base (K-series)", () => {
     const { buildKBSession } = await import("../app/kb-session.mjs");
     const challengeIds = new Set(kb.exercises.filter((e) => e.role === "challenge").map((e) => e.id));
     const hardIds = new Set(kb.exercises.filter((e) => e.difficulty === "hard").map((e) => e.id));
-    expect(challengeIds.size).toBe(8);
-    expect(hardIds.size).toBe(5);
+    // Census refreshed with the expansion plan's Phase-4 wave (8→17
+    // challenges incl. continue-total-hard, 5→11 hard siblings) — a fixture
+    // refresh, not a weakened assertion; the behavioral gates below are the
+    // real contract.
+    expect(challengeIds.size).toBe(17);
+    expect(hardIds.size).toBe(11);
 
     // (a) Empty-met compiles NEVER deal challenges or hard siblings — the
     // fixture-stability proof: the filtered pool is the pre-R1 pool.

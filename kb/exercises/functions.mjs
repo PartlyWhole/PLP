@@ -22,6 +22,7 @@
 
 import { mulberry32, int, pick } from "../rng.mjs";
 import { words, strNames, listNames } from "../pools.mjs";
+import { orderPair } from "../contrast.mjs";
 
 // Function names (no collision with kb/pools.mjs `names`, which supply the
 // variables — a program must never spell a function and a variable alike).
@@ -41,6 +42,11 @@ function threeOf(rng, pool) {
   const [a, b] = twoOf(rng, pool);
   const rest = pool.filter((w) => w !== a && w !== b);
   return [a, b, pick(rng, rest)];
+}
+function fourOf(rng, pool) {
+  const [a, b, c] = threeOf(rng, pool);
+  const rest = pool.filter((w) => w !== a && w !== b && w !== c);
+  return [a, b, c, pick(rng, rest)];
 }
 
 export default [
@@ -171,6 +177,7 @@ export default [
           // is an ordinary print instead.
           contrastCode: `${def}print("${outside}")\n`,
           shape: "call-vs-plain-print", variant: "plain",
+          misconception: inside, // "the def ran the body" — B predicted to look like A
           variantCard: `Only line 3 changed. \`${f}()\` runs the stored body, so A prints `
             + `\`${inside}\`. In B nothing ever calls \`${f}\` — the body just sits there — `
             + `so the only output is \`${outside}\`.`,
@@ -264,6 +271,7 @@ export default [
           },
           targetOutput: target,
           shape, variant: "plain",
+          misconception: shape === "pick-first" ? n2 : n1, // the OTHER name — its value is not the target
           variantCard: `The call hands \`${f}\` one value. \`${wanted}\` holds \`${target}\`, `
             + `so \`${f}(${wanted})\` binds \`word\` to \`${target}\` and the body prints it.`,
         };
@@ -393,7 +401,12 @@ export default [
         const v = int(rng, 2, 9);
         const body = `def ${f}():\n    return ${v}\n`;
         if (shape === "number-minus-call") {
-          const big = v + int(rng, 2, 9);
+          // G1 regime: truth is big − v = d, misconception is v — so d must
+          // never equal v. One draw over 2..8, skip-mapped past v, keeps the
+          // rng budget identical while guaranteeing d ≠ v on every seed.
+          const d0 = int(rng, 2, 8);
+          const d = d0 >= v ? d0 + 1 : d0;
+          const big = v + d;
           return {
             code: `${body}print(${big} - ${f}())\n`,
             shape, variant: "plain",
@@ -520,6 +533,7 @@ export default [
           // B (predicted): the body PRINTS instead — the caller gets None.
           contrastCode: `def ${f}():\n    print(${a} + ${b})\n${nm} = ${f}()\nprint(${nm})\n`,
           shape: "return-vs-print-body", variant: "plain",
+          misconception: String(a + b), // print treated as return — B predicted to look like A
           variantCard: `Only line 2 changed. Returning hands ${a + b} back, so A prints it `
             + `once. Printing inside the body shows ${a + b} during the call but hands back `
             + `nothing — so B prints ${a + b} and then \`None\`.`,
@@ -847,6 +861,7 @@ export default [
     assumed: ["0005", "0006", "0027", "0028", "002D"],
     role: "review",
     form: "predict-state",
+    multiline: true, // in-call print + after-call print (sibling local-vanishes precedent)
     generator: {
       shapes: ["probe-outer-after-shadow", "probe-outer-after-two-calls"],
       variants: ["plain"],
@@ -953,10 +968,303 @@ export default [
           // B (predicted): the body points the PARAMETER at a brand-new list.
           contrastCode: `def ${f}(${param}):\n    ${param} = [${a}, ${b}, ${v}]\n${tail}`,
           shape: "append-vs-rebuild", variant: "plain",
+          misconception: `[${a}, ${b}, ${v}]`, // "any change inside shows outside" — B predicted to look like A
           variantCard: `Only line 2 changed. \`.append\` changes the list \`${nm}\` names, `
             + `so A prints [${a}, ${b}, ${v}]. In B the assignment only re-points `
             + `\`${param}\` at a NEW list — \`${nm}\` still names the old one, so B prints `
             + `[${a}, ${b}].`,
+        };
+      },
+    },
+  },
+
+  // --- review wave (2026-08): five review-tier siblings ------------------
+
+  {
+    // Review sibling of def-then-done, same closure (assumed = ["0005"]).
+    // 0028 call-runs-body is a CHILD of 0027, not an ancestor, so NO CALL may
+    // appear anywhere — the whole point is a stored body that never runs.
+    // G1 regime: the truth is always exactly the two module-level prints
+    // ("w2\nw3" in program order); the misconception is the transcript WITH
+    // the body's print(s) folded in at the def's spot. fourOf keeps the body
+    // words distinct from the module words (E7/G3), and the transcripts also
+    // differ in line count, so misconception ≠ truth on every seed.
+    // rng budget is fixed across shapes: shape, fourOf (4 draws), fnName.
+    id: "def-quiet",
+    topic: "functions",
+    focus: "0027", // def-defines-not-runs
+    assumed: ["0005"],
+    role: "review",
+    form: "predict-exact-output",
+    multiline: true, // two module prints are the witness that the def between/above them is silent
+    generator: {
+      shapes: ["def-above", "def-between", "two-line-body"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["def-above", "def-between", "two-line-body"]);
+        const [w1, w2, w3, w4] = fourOf(rng, words);
+        const f = pick(rng, fnNames);
+        if (shape === "def-between") {
+          return {
+            code: `print("${w2}")\ndef ${f}():\n    print("${w1}")\nprint("${w3}")\n`,
+            shape, variant: "plain",
+            misconception: `${w2}\n${w1}\n${w3}`, // the def "ran" where it stands
+            variantCard: `The def in the middle only STORES its body — execution goes `
+              + `straight from \`${w2}\` to \`${w3}\`. Nothing calls \`${f}\`, so `
+              + `\`${w1}\` never appears.`,
+          };
+        }
+        if (shape === "two-line-body") {
+          return {
+            code: `def ${f}():\n    print("${w1}")\n    print("${w4}")\nprint("${w2}")\nprint("${w3}")\n`,
+            shape, variant: "plain",
+            misconception: `${w1}\n${w4}\n${w2}\n${w3}`, // the two-line body "ran" first
+            variantCard: `A bigger body is still just a bigger recipe: \`${w1}\` and `
+              + `\`${w4}\` are stored, not shown. Only the two plain prints run — `
+              + `\`${w2}\`, then \`${w3}\`.`,
+          };
+        }
+        return {
+          code: `def ${f}():\n    print("${w1}")\nprint("${w2}")\nprint("${w3}")\n`,
+          shape, variant: "plain",
+          misconception: `${w1}\n${w2}\n${w3}`, // the def at the top "ran" first
+          variantCard: `\`def ${f}():\` writes the recipe down and moves on. Nobody calls `
+            + `\`${f}\`, so \`${w1}\` stays stored — the output is \`${w2}\`, then `
+            + `\`${w3}\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Review sibling of return-then-use graded as STATE: the program itself
+    // prints nothing; the probe asks what the module name holds after
+    // `nm = f()` (the K-series appends `print(nm)` before footprinting).
+    // ancestors(002A) has no 0029, so the function takes no parameters.
+    // G1 regime: the truth is a decimal numeral (a + b ≥ 4; a·k ≥ 4) and the
+    // misconception is the literal token `None` — lexically disjoint on every
+    // seed, no range work needed. b and k are both drawn every seed so the
+    // rng budget is identical across shapes (G7).
+    id: "return-state",
+    topic: "functions",
+    focus: "002A", // return-hands-back-value
+    assumed: ["0005", "0006", "0008", "0009", "0027", "0028"],
+    role: "review",
+    form: "predict-state",
+    generator: {
+      shapes: ["plus", "times"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["plus", "times"]);
+        const f = pick(rng, fnNames);
+        const nm = pick(rng, valNames);
+        const a = int(rng, 2, 9), b = int(rng, 2, 9), k = int(rng, 2, 4);
+        const expr = shape === "times" ? `${a} * ${k}` : `${a} + ${b}`;
+        const val = shape === "times" ? a * k : a + b;
+        return {
+          code: `def ${f}():\n    return ${expr}\n${nm} = ${f}()\n`,
+          probeName: nm,
+          shape, variant: "plain",
+          misconception: "None", // "calls don't hand anything back"
+          variantCard: `\`return ${expr}\` hands ${val} back to the caller, so the call `
+            + `expression \`${f}()\` BECAME ${val} and \`${nm}\` holds it.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Order-matters spot-the-difference (design §5.5): the SAME single
+    // concept in both programs, one line MOVED — so no `contrast` tag (the
+    // difference is timing, not a second node). A's body print sits AFTER
+    // the return and is dead; in B it moved above the return and runs.
+    // G1 regime: B always prints w1 and THEN the returned a + b — one line
+    // more than A on every seed, so A-output ≠ B-output structurally.
+    // K-mc law: the spot-diff misconception is aOutput exactly ("the print
+    // is dead wherever it sits").
+    id: "return-move-spot",
+    topic: "functions",
+    focus: "002C", // return-exits-function
+    assumed: ["0005", "0008", "0027", "0028", "002A"],
+    role: "review",
+    form: "spot-the-difference",
+    multiline: true, // B's answer is two lines: the revived print, then the returned value
+    generator: {
+      shapes: ["dead-print-moved"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const f = pick(rng, fnNames);
+        const w1 = pick(rng, words);
+        const a = int(rng, 2, 9), b = int(rng, 2, 9);
+        const { code, contrastCode } = orderPair(
+          [`def ${f}():`, `    return ${a} + ${b}`, `    print("${w1}")`, `print(${f}())`],
+          2, 1,
+        );
+        return {
+          code,
+          aOutput: String(a + b),
+          contrastCode,
+          shape: "dead-print-moved", variant: "plain",
+          misconception: String(a + b), // "the print is dead wherever it sits" (= aOutput)
+          variantCard: `Only the \`print("${w1}")\` moved. Below \`return\` it is dead — `
+            + `the call is already over, so A prints just ${a + b}. Above the return it `
+            + `runs first: B shows \`${w1}\`, then the returned ${a + b}.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Reverse-engineering 002F: the learner is SHOWN the printed target and
+    // fills the argument's first operand, so solving means running the
+    // machine's order — evaluate `A - b` first, then the body's `n * k`.
+    // G1/E5 regime: target = d·k with d = A − b and k ∈ 2..3. The blank token
+    // A must never equal the shown target as strings: A = d + b = d·k ⟺
+    // b = d·(k − 1), i.e. d = b when k = 2 and d = b/2 when k = 3 — excluded
+    // by a single skip-mapped draw over d (the call-slots-in pattern, G7:
+    // one rng call either way). The misconception is the A a learner solves
+    // for under "the body receives the raw text A − b" (n*k → A − b·k, the
+    // args-computed-first model): A' = (d + b)·k. Splicing A' in gives
+    // ((d + b)·k − b)·k = d·k ⟺ d = −b, impossible — so it never reproduces
+    // the target; and A' = A ⟺ k = 1, so it never restates the blank either.
+    id: "fill-arg-expression",
+    topic: "functions",
+    focus: "002F", // args-evaluated-first
+    assumed: ["0005", "0006", "0008", "0027", "0028", "0029"],
+    role: "review",
+    form: "fill-one-blank",
+    generator: {
+      shapes: ["solve-the-argument"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const f = pick(rng, fnNames);
+        const k = int(rng, 2, 3);
+        const b = int(rng, 2, 4);
+        // Forbidden d makes String(A) === targetOutput (see regime above).
+        const dBad = k === 2 ? b : (b % 2 === 0 ? b / 2 : null);
+        const d0 = int(rng, 2, 5);
+        const d = dBad !== null && dBad >= 2 && d0 >= dBad ? d0 + 1 : d0;
+        const wanted = String(d + b);
+        const template = `def ${f}(n):\n    print(n * ${k})\n${f}(\x00 - ${b})\n`;
+        const idx = template.indexOf("\x00");
+        const before = template.slice(0, idx);
+        return {
+          code: template.replace("\x00", wanted),
+          blank: {
+            line: before.split("\n").length,
+            col: idx - (before.lastIndexOf("\n") + 1),
+            len: wanted.length,
+            target: wanted,
+          },
+          targetOutput: String(d * k),
+          shape: "solve-the-argument", variant: "plain",
+          misconception: String((d + b) * k), // A solved under "n arrives as the raw A - b"
+          variantCard: `The call computes its argument FIRST: \`${d + b} - ${b}\` becomes `
+            + `${d}, and only that finished value reaches \`n\` — so the body prints `
+            + `${d} * ${k} = ${d * k}, the target.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Contrast against 002A (the parent, already assumed): one body line
+    // changed — `return a * k` versus the bare expression `a * k`, which
+    // computes the same number and throws it away. NOT multiline: each side
+    // prints exactly once (A the numeral, B the word None).
+    // G1 regime: the truth (B) is always the literal `None`; A's output
+    // a·k ≥ 4 is a decimal numeral — lexically disjoint on every seed.
+    // K-mc law: misconception === aOutput ("the computed value comes back
+    // by itself").
+    id: "no-return-spot",
+    topic: "functions",
+    focus: "002H", // none-when-no-return
+    assumed: ["0005", "0006", "0008", "0009", "0027", "0028", "002A"],
+    contrast: "002A", // return-hands-back-value — the parent, already assumed
+    misconceptionOf: "002A", // answering A's output = "the value comes back without return"
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["return-vs-bare"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const f = pick(rng, fnNames);
+        const nm = pick(rng, valNames);
+        const a = int(rng, 2, 9), k = int(rng, 2, 4);
+        const tail = `${nm} = ${f}()\nprint(${nm})\n`;
+        return {
+          // A (shown with its output): the body RETURNS the product.
+          code: `def ${f}():\n    return ${a} * ${k}\n${tail}`,
+          aOutput: String(a * k),
+          // B (predicted): the body computes the product and drops it.
+          contrastCode: `def ${f}():\n    ${a} * ${k}\n${tail}`,
+          shape: "return-vs-bare", variant: "plain",
+          misconception: String(a * k), // "the computed value comes back by itself" (= aOutput)
+          variantCard: `Only line 2 changed. \`return\` is what hands ${a * k} back — A `
+            + `prints it. B computed ${a} * ${k} = ${a * k} and threw it away: no `
+            + `return means the caller gets \`None\`, so \`${nm}\` holds \`None\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Hard sibling (R1.3, review + difficulty "hard"): the module name and
+    // the function's OWN name are spelled ALIKE, and both print — the
+    // hardness is holding two same-spelled bindings apart at once.
+    // param-shadow makes the shadow at the CALL (`def f(nm)` + `f("inner")`
+    // — legal because 0029 def-params-bind-args IS an ancestor of 002E);
+    // local-shadow makes it in the body (`nm = "inner"`). Either way the
+    // output is inner-then-outer: the call's binding hides the module one
+    // while the body runs, and the module binding survives untouched.
+    // NOTE: the analyzer's rule-shadow only fires on a body ASSIGNMENT, so
+    // the param-shadow shape footprints 0029 without 002E — focus salience
+    // (K-inv13) is carried by the local-shadow shape, and both shapes stay
+    // inside the closure.
+    // G1 regime + misconception formula (G2, rng-free): the wrong is the
+    // call's value "sticking" to the module name — `inner\ninner` — and the
+    // truth is `inner\nouter`; twoOf guarantees inner ≠ outer, so the
+    // second line discriminates on every seed.
+    id: "param-shadow-hard",
+    topic: "functions",
+    focus: "002E", // locals-shadow-globals
+    assumed: ["0005", "0006", "0027", "0028", "0029", "002D"],
+    role: "review",
+    difficulty: "hard",
+    form: "predict-exact-output",
+    multiline: true, // inside value THEN surviving outside value — both lines ARE the concept
+    generator: {
+      shapes: ["param-shadow", "local-shadow"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["param-shadow", "local-shadow"]);
+        const [outer, inner] = twoOf(rng, words);
+        const f = pick(rng, fnNames);
+        const nm = pick(rng, valNames);
+        if (shape === "param-shadow") {
+          return {
+            code: `${nm} = "${outer}"\ndef ${f}(${nm}):\n    print(${nm})\n${f}("${inner}")\nprint(${nm})\n`,
+            shape, variant: "plain",
+            misconception: `${inner}\n${inner}`, // the argument "stuck" to the module name
+            variantCard: `The parameter \`${nm}\` is the CALL's own name: \`${f}("${inner}")\` `
+              + `binds it to \`${inner}\` just for the body, so the first print shows `
+              + `\`${inner}\`. The module \`${nm}\` was never touched — the last line `
+              + `still prints \`${outer}\`.`,
+          };
+        }
+        return {
+          code: `${nm} = "${outer}"\ndef ${f}():\n    ${nm} = "${inner}"\n    print(${nm})\n${f}()\nprint(${nm})\n`,
+          shape: "local-shadow", variant: "plain",
+          misconception: `${inner}\n${inner}`, // the inner assignment mistaken for a rebind
+          variantCard: `The \`${nm}\` inside \`${f}\` is a separate, call-only name holding `
+            + `\`${inner}\` — it prints and vanishes with the call. The module \`${nm}\` `
+            + `still holds \`${outer}\`, so the last line prints \`${outer}\`.`,
         };
       },
     },

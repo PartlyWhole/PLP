@@ -41,6 +41,10 @@ export default [
     role: "review",
     form: "fill-one-blank",
     generator: {
+      // No designed misconception (G2): 0008's wrongAnswer is "an arithmetic
+      // slip (no reasoned misconception — the intro checks fluency)", and the
+      // only computable wrong TOKEN (the +/* mixup) produces the target at
+      // a = b = 2 (2 + 2 = 2 * 2) under these draws — no algebraic guarantee.
       shapes: ["fill-op"],
       variants: ["plus", "minus", "times"],
       generate(seed) {
@@ -81,6 +85,7 @@ export default [
         return {
           code, blank, targetOutput: String(v),
           shape: "fill-name", variant: "plain",
+          misconception: `"${name}"`, // quoted the name — prints the letters, never the digits
           variantCard: `The blank is the NAME, not the number. Bare \`${name}\` looks up the value `
             + `it holds — ${v} — and prints it. \`"${name}"\` with quotes would print the letters instead.`,
         };
@@ -108,6 +113,7 @@ export default [
         return {
           code, blank, targetOutput: String(r),
           shape: "fill-mod-op", variant: "plain",
+          misconception: "//", // the quotient operator — prints k, never the remainder r (k ≠ r by construction)
           variantCard: `Only \`%\` gives the remainder: \`${a} % ${b}\` is ${r} `
             + `(\`//\` would give the ${k} whole times instead).`,
         };
@@ -137,6 +143,7 @@ export default [
           code: `print(${a} // ${b})\n`,
           aOutput: String(k),
           contrastCode: `print(${a} % ${b})\n`,
+          misconception: String(k), // A's quotient — % confused with // (= aOutput; k ≠ r by construction)
           shape: "floordiv-vs-mod", variant: "plain",
           variantCard: `\`//\` gives the ${k} whole times \`${b}\` fits; \`%\` gives what is `
             + `LEFT OVER after those fits: ${r}.`,
@@ -164,6 +171,9 @@ export default [
         const shape = pick(rng, ["not", "and-false"]);
         if (shape === "and-false") {
           // Fill `True`; `True and False` still prints `False` — token ≠ target.
+          // No designed misconception here: BOTH plausible fills (`True`,
+          // `False`) print the target `False`, and the interpreter grades by
+          // output — no discriminating wrong token exists.
           const { code, blank } = blankFrom(`print(\x00 and False)\n`, "True");
           return {
             code, blank, targetOutput: "False",
@@ -177,6 +187,11 @@ export default [
         return {
           code, blank, targetOutput: out,
           shape, variant: "plain",
+          // No designed misconception: the only wrong token is the shown
+          // target itself ("False" for target False), and K-10's fill law
+          // requires the misconception string to differ from the graded
+          // answer — in a two-value bool space no third token exists (same
+          // bar as the and-false skip).
           variantCard: `\`not\` flips it: \`not ${want}\` is \`${out}\` — the fill is the opposite of what prints.`,
         };
       },
@@ -201,6 +216,7 @@ export default [
         return {
           code, blank, targetOutput: target,
           shape: "fill-stop", variant: "plain",
+          misconception: String(n - 1), // stop read as included — transcribed the last shown item
           variantCard: `The list ends at ${n - 1}, and the stop is NOT included — so the `
             + `stop must be ${n}.`,
         };
@@ -226,6 +242,7 @@ export default [
           code: `print(list(range(${b})))\n`,
           aOutput: `[${Array.from({ length: b }, (_, i) => i).join(", ")}]`,
           contrastCode: `print(list(range(${a}, ${b})))\n`,
+          misconception: `[${Array.from({ length: b }, (_, i) => i).join(", ")}]`, // "still starts at 0" (= aOutput; a ≥ 2)
           shape: "one-arg-vs-two", variant: "plain",
           variantCard: `With two arguments the count STARTS at ${a} instead of 0 — the stop `
             + `${b} is still left out: [${Array.from({ length: b - a }, (_, i) => a + i).join(", ")}].`,
@@ -256,6 +273,7 @@ export default [
           code: `print(list(range(${a}, ${b})))\n`,
           aOutput: `[${noStep.join(", ")}]`,
           contrastCode: `print(list(range(${a}, ${b}, ${s})))\n`,
+          misconception: `[${noStep.join(", ")}]`, // the step ignored — counts by 1 (= aOutput; s ≥ 2)
           shape: "two-args-vs-three", variant: "plain",
           variantCard: `The third argument is the STEP: counting by ${s} from ${a}, still `
             + `stopping before ${b}: [${withStep.join(", ")}].`,
@@ -285,6 +303,7 @@ export default [
           aOutput: `[${p}, ${q}, ${x}]`,
           // Program B (predicted): b = b + [x] builds a NEW list, so a is untouched.
           contrastCode: `a = [${p}, ${q}]\nb = a\nb = b + [${x}]\nprint(a)\n`,
+          misconception: `[${p}, ${q}, ${x}]`, // "+ [x] mutates the shared list like +=" (= aOutput)
           shape: "aug-vs-concat", variant: "plain",
           variantCard: `The only change is line 3. \`b += [${x}]\` changes the ONE shared list, `
             + `so \`a\` becomes [${p}, ${q}, ${x}]. But \`b = b + [${x}]\` builds a brand-new list `
@@ -335,6 +354,10 @@ export default [
         const rng = mulberry32(seed);
         const p = int(rng, 2, 9);
         const q = ((p - 2 + int(rng, 1, 7)) % 8) + 2; // in [2,9], ≠ p
+        // No designed misconception (G1): 000M's wrong model ("both names end
+        // up with the same value" — the sequential left-to-right read) gives
+        // a = q, which IS the truth for the probed name `a`; only probing `b`
+        // would discriminate it. No collision-free wrong exists for this probe.
         return {
           code: `a = ${p}\nb = ${q}\na, b = b, a\n`,
           probeName: "a",
@@ -365,6 +388,7 @@ export default [
           code: `s = "${word}"\nprint(s[${a}:${b}])\n`,
           aOutput: word.slice(a, b),
           contrastCode: `s = "${word}"\nprint(s[${a}:])\n`,
+          misconception: word.slice(a, b), // the open end read as stopping short, like A's slice (= aOutput)
           shape: "two-ends-vs-open", variant: "plain",
           variantCard: `Dropping the endpoint means "to the end": \`s[${a}:]\` runs from `
             + `position ${a} all the way out — \`${word.slice(a)}\`, not just the `
@@ -395,6 +419,7 @@ export default [
           code: `print("${w}" + "${w}")\n`,
           aOutput: w + w,
           contrastCode: `print("${w}" * ${n})\n`,
+          misconception: w + w, // "* just glues a pair like +" (= aOutput; n ≥ 3 copies in truth)
           shape: "concat-vs-repeat", variant: "plain",
           variantCard: `\`+\` glues the two copies you wrote; \`* ${n}\` repeats the text `
             + `${n} times by itself: \`${w.repeat(n)}\`.`,
@@ -422,6 +447,7 @@ export default [
           code: `d = {"${k}": ${v}}\nprint(d["${k}"])\n`,
           aOutput: String(v),
           contrastCode: `d = {"${k}": ${v}}\nprint(d.get("zz", ${alt}))\n`,
+          misconception: String(v), // .get read as still reaching the stored value (= aOutput; alt ≥ 10 > v)
           shape: "lookup-vs-get", variant: "plain",
           variantCard: `\`d["${k}"]\` fetches a key that exists. \`.get("zz", ${alt})\` asks `
             + `for a MISSING key — instead of an error it hands back the default: \`${alt}\`.`,
@@ -448,6 +474,7 @@ export default [
           code: `x = (${a}, ${b})\nprint(x)\n`,
           aOutput: `(${a}, ${b})`,
           contrastCode: `x = ${a},\nprint(x)\n`,
+          misconception: `(${a}, ${b})`, // "the moved comma changes nothing" (= aOutput; truth is the 1-tuple)
           shape: "pair-vs-trailing-comma", variant: "plain",
           variantCard: `The COMMA makes the tuple, not the parentheses: \`x = ${a},\` is a `
             + `one-item tuple and prints as \`(${a},)\` — comma included.`,
@@ -475,6 +502,7 @@ export default [
         return {
           code: `a = [${items.join(", ")}]\nb = a\nc = b\nc.append(${v})\nprint(${read})\n`,
           shape, variant: "plain",
+          misconception: `[${items.join(", ")}]`, // the unmutated list ("the chain copied it")
           variantCard: `\`b = a\` and \`c = b\` never copied anything — all three names hold `
             + `ONE list. Appending ${v} through \`c\` changed it, so \`${read}\` shows `
             + `[${[...items, v].join(", ")}] too.`,
@@ -503,6 +531,7 @@ export default [
           code: `if False:\n    print("${w1}")\nelif True:\n    print("${w2}")\nelse:\n    print("${w3}")\n`,
           aOutput: w2,
           contrastCode: `if True:\n    print("${w1}")\nelif True:\n    print("${w2}")\nelse:\n    print("${w3}")\n`,
+          misconception: w2, // the later true elif still runs (= aOutput; distinct word pools)
           shape: "elif-wins-vs-if-wins", variant: "plain",
           variantCard: `Now BOTH tests are true — but the chain stops at the FIRST true `
             + `one. Only \`${w1}\` prints; the true \`elif\` below is never even looked at.`,
@@ -534,6 +563,7 @@ export default [
           code: `print(${l} or ${r})\n`,
           aOutput: aOut,
           contrastCode: `print(${n} or 0)\n`,
+          misconception: aOut, // "or still hands back a bool" (= aOutput; truth is the digit n)
           shape: "bool-or-vs-value-or", variant: "plain",
           variantCard: `With plain \`True\`/\`False\`, \`or\` gives back \`True\`/\`False\`. But with plain `
             + `values it does not convert anything: \`${n}\` counts as true, so \`or\` hands back `
@@ -567,6 +597,10 @@ export default [
             code: `a = ${p}\nb = a\na = ${q}\n`,
             probeName: "a",
             shape, variant: "plain",
+            // 000C's own wrong model ("the copy follows a") predicts the TRUTH
+            // for `a` — the designed wrong here is the shape's meta-pattern
+            // answer: the first value, as if the rebind never landed (p ≠ q).
+            misconception: String(p),
             variantCard: `\`a\` was rebound to ${q}, so it now holds ${q}. The copy \`b\` kept the old ${p}.`,
           };
         }
@@ -574,6 +608,7 @@ export default [
           code: `a = ${p}\nb = a\na = ${q}\n`,
           probeName: "b",
           shape: "copy-rebind-probe-copy", variant: "plain",
+          misconception: String(q), // a's new value — the copy read as still linked to a (p ≠ q)
           variantCard: `\`b = a\` copied the value \`a\` held at that moment: ${p}. Rebinding `
             + `\`a\` to ${q} afterwards never touches \`b\` — it still holds ${p}.`,
         };
@@ -599,6 +634,7 @@ export default [
           code: `total = 0\nfor x in [${items.join(", ")}]:\n    total = total + x\n`,
           probeName: "total",
           shape: "sum-probe-total", variant: "plain",
+          misconception: String(items[items.length - 1]), // only the last value — "=" read as replacing, not accumulating (sum > last: items positive)
           variantCard: `The total updated once per pass: ${items.join(" + ")} = ${total}. `
             + `After the loop, that finished value is what \`total\` holds.`,
         };
@@ -625,6 +661,7 @@ export default [
           code: `print(${a} * ${b})\n`,
           aOutput: String(a * b),
           contrastCode: `print(${a} / ${b})\n`,
+          misconception: String(a * b), // "the changed operator changes nothing" (= aOutput; truth carries the .0)
           shape: "times-vs-div", variant: "plain",
           variantCard: `\`*\` on whole numbers gives a whole number — but \`/\` ALWAYS gives `
             + `a float, even dividing evenly: \`${(a / b).toFixed(1)}\`, with the .0.`,
@@ -796,6 +833,7 @@ export default [
         return {
           code, blank, targetOutput: word.slice(a, b),
           shape: "fill-stop-index", variant: "plain",
+          misconception: String(b - 1), // stop read as included — the last taken index transcribed
           variantCard: `The slice runs from ${a} up to but NOT including the stop. To land on `
             + `\`${word.slice(a, b)}\`, the stop must be ${b}.`,
         };
@@ -824,6 +862,7 @@ export default [
         return {
           code, blank, targetOutput: `[${seq.join(", ")}]`,
           shape: "fill-start-index", variant: "plain",
+          misconception: String(a - s), // start read as excluded like the stop — one step before the first item (s ≥ 2, so ≠ a)
           variantCard: `The list starts at ${a} and steps by ${s}, stopping before ${b} — so the start `
             + `argument must be ${a}: [${seq.join(", ")}].`,
         };
@@ -861,6 +900,7 @@ export default [
         return {
           code, blank, targetOutput: String(target),
           shape: "fill-op", variant: "plain",
+          misconception: "*", // the left-to-right grouping's fill — (a * b) * c; the do-while keeps its output off-target
           variantCard: `\`${b} * ${c}\` happens first (${b * c}), then \`+\` makes \`${a} + ${b * c}\` = ${target}. `
             + `Filling \`*\` would group as \`(${a} * ${b}) * ${c}\` = ${a * b * c} instead.`,
         };
@@ -1132,6 +1172,236 @@ export default [
           variantCard: `\`b = a\` gives the SAME list a second name, so \`${`b.append(${v})`}\` `
             + `shows through \`a\` too — that is why both lines print ${show(shared)}. `
             + `\`b = a[:]\` copies it, so \`a\` stays ${show(intendedA)} while \`b\` becomes ${show(intendedB)}.`,
+        };
+      },
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // Production-form expansion, wave 2: while loops, the range header, and
+  // the build/copy repairs. Same contracts as the block above — write-the-
+  // line carries the SCOPE RULE + `constantLine` (E10c); fix-the-bug adds
+  // buggyLine/wrongOutput with BOTH sides inside the closure (E10d).
+  {
+    id: "write-while-step",
+    topic: "loops",
+    focus: "001M", // while-repeats-while-true — WRITE the step that ends it
+    assumed: ["0005", "0006", "0008", "000A", "000B", "0015"],
+    role: "review",
+    form: "write-the-line",
+    multiline: true, // the countdown printed on every pass IS the concept (E4)
+    generator: {
+      // G1/scope-rule regime: p ∈ [2,4] passes and r ∈ [1,S] give
+      // N = (p−1)·S + r, so the canonical `n = n - S` prints p ≥ 2 numbers
+      // (N, N−S, …, r) before `done`, while the constant `n = 0` ends the
+      // loop after ONE pass (one number, then done) — the transcripts differ
+      // on every seed. The canonical line terminates by construction (n
+      // strictly drops by S ≥ 1); any OTHER learner line is bounded by the
+      // grader's runtime budget, which is why N stays single-digit small.
+      shapes: ["minus-one", "minus-step"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["minus-one", "minus-step"]);
+        const p = int(rng, 2, 4);       // passes the canonical line makes
+        const sRaw = int(rng, 2, 3);    // drawn for BOTH shapes — fixed rng budget (G7)
+        const S = shape === "minus-one" ? 1 : sRaw;
+        const r = int(rng, 1, S);       // the final printed value (always 1 when S = 1)
+        const N = (p - 1) * S + r;
+        const step = `n = n - ${S}`;
+        const { code, blank } = blankFrom(
+          `n = ${N}\nwhile n > 0:\n    print(n)\n    \x00\nprint("done")\n`,
+          step,
+        );
+        const values = Array.from({ length: p }, (_, k) => N - k * S);
+        return {
+          code, blank, targetOutput: [...values, "done"].join("\n"),
+          // The scope-rule refutation: `n = 0` kills the loop after its
+          // first pass, so only N and `done` print — never the p ≥ 2 passes.
+          constantLine: "n = 0",
+          shape, variant: "plain",
+          variantCard: `\`${step}\` runs once per pass, so \`n\` drops ${values.join(", ")} — `
+            + `and the moment \`n > 0\` fails, the loop ends and \`done\` prints. `
+            + `\`n = 0\` would end the loop after its FIRST pass, printing only ${N} before done.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "write-range-header",
+    topic: "loops",
+    focus: "001G", // range-start-stop — WRITE the whole for-header
+    assumed: ["0005", "0006", "001E", "001F"],
+    role: "review",
+    form: "write-the-line",
+    multiline: true, // the SET of printed numbers is exactly the concept (E4)
+    generator: {
+      // G1/scope-rule regime, loop-HEADER variant (the E10d precedent
+      // applied to write): a header slot cannot hold a constant at all, so
+      // the recorded conceptless shortcut is "count the lines you need" —
+      // `range(count)`. It starts at 0, and a ≥ 2 keeps every target's
+      // first line at ≥ 2, so the shortcut misses on every seed.
+      shapes: ["two-arg-header"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const a = int(rng, 2, 5);
+        const count = int(rng, 3, 5);
+        const b = a + count;
+        const header = `for i in range(${a}, ${b}):`;
+        const { code, blank } = blankFrom(`\x00\n    print(i)\n`, header);
+        const seq = Array.from({ length: count }, (_, k) => a + k);
+        return {
+          code, blank, targetOutput: seq.join("\n"),
+          constantLine: `for i in range(${count}):`,
+          shape: "two-arg-header", variant: "plain",
+          variantCard: `\`range(${a}, ${b})\` starts AT ${a} and stops BEFORE ${b}, so the loop `
+            + `walks ${seq.join(", ")}. \`range(${count})\` has the right NUMBER of lines `
+            + `but starts them at 0.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "fix-build-list",
+    topic: "loops",
+    focus: "001K", // loop-build-list — the append is what's broken
+    assumed: ["0005", "0006", "000D", "000G", "001E"],
+    role: "review",
+    form: "fix-the-bug",
+    multiline: true, // the list growing one item per pass IS the concept (E4)
+    generator: {
+      // The bug hard-codes the FIRST item where the loop variable belongs.
+      // (`xs.append(x + 1)`, the other classic, is OUT of closure here: the
+      // `+ 1` emits 0008 arith-on-ints, which is not an ancestor of 001K.)
+      // G1 regime: items[1] is drawn ≠ items[0] by offset, so the buggy
+      // transcript diverges from the intended one at pass 2 on every seed.
+      // Scope rule: the buggy line runs once per pass, and the constant
+      // `xs = [finished list]` prints the finished list on EVERY pass while
+      // the truth grows one item at a time — it can never match.
+      shapes: ["from-empty", "onto-start"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["from-empty", "onto-start"]);
+        const items = Array.from({ length: int(rng, 3, 4) }, () => int(rng, 2, 9));
+        items[1] = ((items[0] - 2 + int(rng, 1, 7)) % 8) + 2; // in [2,9], ≠ items[0] (G3)
+        const startList = shape === "onto-start" ? [int(rng, 10, 20)] : [];
+        const stuck = items[0];
+        const code = `xs = [${startList.join(", ")}]\nfor x in [${items.join(", ")}]:\n    xs.append(${stuck})\n    print(xs)\n`;
+        const show = (xs) => `[${xs.join(", ")}]`;
+        const intended = [], wrong = [];
+        const iAcc = [...startList], wAcc = [...startList];
+        for (const v of items) {
+          iAcc.push(v); intended.push(show(iAcc));
+          wAcc.push(stuck); wrong.push(show(wAcc));
+        }
+        return {
+          code, buggyLine: 3,
+          blank: blankAtLine(code, 3, "xs.append(x)"),
+          targetOutput: intended.join("\n"),
+          wrongOutput: wrong.join("\n"),
+          constantLine: `xs = ${intended[intended.length - 1]}`,
+          shape, variant: "plain",
+          variantCard: `The append runs once per item, so it has to add THIS item — the loop `
+            + `variable \`x\`: \`xs.append(x)\`. \`xs.append(${stuck})\` adds ${stuck} every pass `
+            + `no matter which item it is on, which is why pass 2 shows ${wrong[1]} `
+            + `instead of ${intended[1]}.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "fix-while-condition",
+    topic: "loops",
+    focus: "001M", // while-repeats-while-true — the guard is what's broken
+    assumed: ["0005", "0006", "0008", "000A", "000B", "0015"],
+    role: "review",
+    form: "fix-the-bug",
+    multiline: true, // the countdown printed on every pass IS the concept (E4)
+    generator: {
+      // G1 regime: N = (p−1)·S + 1 with p ∈ [2,4] makes N ≡ 1 (mod S), so
+      // the intended `while n > 0:` prints N, N−S, …, 1 and then done,
+      // while the buggy `while n > 1:` quits exactly one pass early — its
+      // transcript is the intended one minus the final `1` line, so
+      // wrongOutput ≠ targetOutput on every seed (and both loops terminate:
+      // n strictly drops by S ≥ 1 each pass). The conceptless answer in a
+      // loop-HEADER slot is the lazy retype of the buggy line itself; it
+      // reproduces wrongOutput, which the regime keeps off-target.
+      shapes: ["minus-one", "minus-step"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["minus-one", "minus-step"]);
+        const p = int(rng, 2, 4);       // passes the INTENDED loop makes
+        const sRaw = int(rng, 2, 3);    // drawn for BOTH shapes — fixed rng budget (G7)
+        const S = shape === "minus-one" ? 1 : sRaw;
+        const N = (p - 1) * S + 1;
+        const code = `n = ${N}\nwhile n > 1:\n    print(n)\n    n = n - ${S}\nprint("done")\n`;
+        const values = Array.from({ length: p }, (_, k) => N - k * S); // N … 1
+        return {
+          code, buggyLine: 2,
+          blank: blankAtLine(code, 2, "while n > 0:"),
+          targetOutput: [...values, "done"].join("\n"),
+          wrongOutput: [...values.slice(0, -1), "done"].join("\n"),
+          constantLine: "while n > 1:",
+          shape, variant: "plain",
+          variantCard: `\`while n > 0:\` keeps looping while \`n\` is still positive, so the `
+            + `final 1 prints too: ${values.join(", ")}, done. \`n > 1\` throws that last `
+            + `pass away — the loop quits the moment \`n\` reaches 1, printing only `
+            + `${values.slice(0, -1).join(", ")}.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "fix-shared-copy",
+    topic: "lists",
+    // 0024 slice-copies (like fix-alias above, and for the same reason: the
+    // FIXED program contains `b = a[:]`, and both sides must satisfy the
+    // closure). A deliberate sibling to fix-alias, narrower on purpose:
+    // every mutation goes through the COPY alone, and the recorded
+    // conceptless answer is the lazy retype `b = a` — NOT the enumerated
+    // finished list, because the E10d precedent treats `b = [p, q]` as a
+    // LEGITIMATE repair (enumerating the copy takes the same diagnosis, and
+    // the interpreter is the only answer key).
+    focus: "0024",
+    assumed: ["0005", "0006", "000D", "000G", "000H"],
+    role: "review",
+    form: "fix-the-bug",
+    multiline: true, // the two lists side by side ARE the observation (E4)
+    generator: {
+      // G1 regime: ≥ 1 append lands through `b`, so the buggy (shared) run
+      // shows the mutation in BOTH printed lines while the intended
+      // (copied) run keeps `a` at its literal — wrong ≠ target on every
+      // seed. Scope rule: line 2 feeds BOTH later prints (≥ 2 distinct
+      // observations); `b = a` retypes the bug and reproduces wrongOutput.
+      shapes: ["append-one", "append-two"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["append-one", "append-two"]);
+        const p = int(rng, 1, 5), q = int(rng, 6, 9);   // disjoint ranges: distinct (G3)
+        const x = int(rng, 10, 19), y = int(rng, 20, 29); // y drawn for BOTH shapes (G7)
+        const appended = shape === "append-two" ? [x, y] : [x];
+        const show = (xs) => `[${xs.join(", ")}]`;
+        const mutations = appended.map((v) => `b.append(${v})\n`).join("");
+        const code = `a = [${p}, ${q}]\nb = a\n${mutations}print(a)\nprint(b)\n`;
+        const grown = [p, q, ...appended];
+        return {
+          code, buggyLine: 2,
+          blank: blankAtLine(code, 2, "b = a[:]"),
+          targetOutput: `${show([p, q])}\n${show(grown)}`,
+          wrongOutput: `${show(grown)}\n${show(grown)}`,
+          constantLine: "b = a",
+          shape, variant: "plain",
+          variantCard: `\`b = a\` gives the ONE list a second name, so appending through \`b\` `
+            + `shows in \`a\` too — both lines print ${show(grown)}. \`b = a[:]\` makes a real `
+            + `copy: \`a\` stays ${show([p, q])} while \`b\` grows to ${show(grown)}.`,
         };
       },
     },

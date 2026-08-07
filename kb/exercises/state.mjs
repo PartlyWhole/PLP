@@ -27,6 +27,7 @@ export default [
         else text = `${pick(rng, words)} ${pick(rng, words)} ${pick(rng, words)}`;
         return {
           code: `print("${text}")\n`, shape, variant: "plain",
+          misconception: `"${text}"`, // the quotes kept in the output
           variantCard: `The quotes make text, so \`print\` shows exactly the letters between them: ${text} — no quotes.`,
         };
       },
@@ -55,6 +56,7 @@ export default [
         if (shape === "two-binds") {
           return {
             code: `${n1} = ${v}\n${n2} = ${w}\nprint(${n1})\n`, shape: "two-binds", variant: "plain",
+            misconception: n1, // the name's own letters, not the value it holds
             variantCard: `\`${n1}\` holds ${v} and \`${n2}\` holds ${w}. \`print(${n1})\` shows what \`${n1}\` holds: ${v} — not ${n2}'s ${w}.`,
           };
         }
@@ -62,6 +64,7 @@ export default [
         while (n1 === "x" && v === 4) v = int(rng, 2, 9);
         return {
           code: `${n1} = ${v}\nprint(${n1})\n`, shape: "bind-and-print", variant: "plain",
+          misconception: n1, // the name's own letters, not the value it holds
           variantCard: `\`${n1} = ${v}\` stores ${v} under the name \`${n1}\`, so \`print(${n1})\` looks it up and shows ${v}.`,
         };
       },
@@ -87,6 +90,7 @@ export default [
           return {
             code: `${name} = ${v}\nprint("${name}")\n`,
             shape, variant: "plain",
+            misconception: String(v), // the stored value despite the quotes
             variantCard: `The quotes make \`"${name}"\` a piece of text — just the `
               + `letters ${name}. The value ${v} is only reached through the bare `
               + `name, without quotes.`,
@@ -100,6 +104,7 @@ export default [
           return {
             code: `${name} = ${v}\n${other} = ${w}\nprint("${other}")\n`,
             shape, variant: "plain",
+            misconception: String(w), // the stored value despite the quotes
             variantCard: `The quotes make \`"${other}"\` a piece of text — the letters `
               + `${other} — no matter what value the name ${other} holds.`,
           };
@@ -107,6 +112,7 @@ export default [
         return {
           code: `${name} = ${v}\nprint(${name})\n`,
           shape, variant: "plain",
+          misconception: name, // the letters where the value was meant
           variantCard: `Bare \`${name}\` (no quotes) looks up the name ${name} and `
             + `prints the value it holds: ${v}. Quoted \`"${name}"\` would print `
             + `the letters ${name} instead.`,
@@ -133,6 +139,7 @@ export default [
         if (shape === "bind-three-terms") {
           return {
             code: `${name} = ${a} + ${b} + ${c}\nprint(${name})\n`, shape, variant: "plain",
+            misconception: `${a} + ${b} + ${c}`, // the expression itself, unevaluated
             variantCard: `The right side is worked out first: ${a} + ${b} + ${c} is ${a + b + c}. That result is stored in \`${name}\` and printed.`,
           };
         }
@@ -142,6 +149,7 @@ export default [
         const result = op === "+" ? a + b : a * b;
         return {
           code: `${name} = ${a} ${op} ${b}\nprint(${name})\n`, shape, variant: "plain",
+          misconception: `${a} ${op} ${b}`, // the expression itself, unevaluated
           variantCard: `The right side is worked out first: \`${a} ${op} ${b}\` is ${result}. That value is stored in \`${name}\`, so \`print(${name})\` shows ${result}.`,
         };
       },
@@ -171,6 +179,7 @@ export default [
           return {
             code: `${name} = ${a}\n${name} = ${b}\n${name} = ${c}\nprint(${name})\n`,
             shape, variant: "plain",
+            misconception: String(a), // the first value, as if never replaced
             variantCard: `Only the LAST assignment survives: \`${name}\` holds ${c}.`,
           };
         }
@@ -179,12 +188,14 @@ export default [
           return {
             code: `${name} = ${a}\n${other} = ${b}\n${name} = ${c}\nprint(${name})\n`,
             shape, variant: "plain",
+            misconception: String(a), // the first value, as if never replaced
             variantCard: `\`${other}\` is a different name — rebinding \`${name}\` to ${c} `
               + `replaces its ${a}; the print shows ${c}.`,
           };
         }
         return {
           code: `${name} = ${a}\n${name} = ${b}\nprint(${name})\n`, shape: "rebind", variant: "plain",
+          misconception: String(a), // the first value, as if never replaced
           variantCard: `The second line replaces the first: \`${name}\` no longer holds ${a}, it holds ${b}. So the print shows ${b}.`,
         };
       },
@@ -212,6 +223,7 @@ export default [
           return {
             code: `${name} = ${start}\n${name} = ${name} + ${step}\n${name} = ${name} + ${step2}\nprint(${name})\n`,
             shape, variant: "plain",
+            misconception: String(start + step), // one step short
             variantCard: `Each line reads the CURRENT value: ${start} → ${start + step} → `
               + `${start + step + step2}.`,
           };
@@ -220,6 +232,7 @@ export default [
         return {
           code: `${name} = ${start}\n${name} = ${name} ${op} ${step}\nprint(${name})\n`,
           shape, variant: "plain",
+          misconception: String(start), // the old value, as if the rebind never happened
           variantCard: `The right side uses the OLD value: \`${name} ${op} ${step}\` `
             + `is \`${start} ${op} ${step}\`, which is ${op === "+" ? start + step : start - step}. `
             + `Then that result replaces ${start} in \`${name}\`.`,
@@ -250,6 +263,7 @@ export default [
           return {
             code: `${n1} = ${a}\n${n2} = ${b}\nprint(${n1}, ${n2}, ${c})\n`,
             shape, variant: "plain",
+            misconception: `${a}${b}${c}`, // the values with no space between them
             variantCard: `Each comma puts ONE space between the pieces: \`${a} ${b} ${c}\`.`,
           };
         }
@@ -258,12 +272,14 @@ export default [
           return {
             code: `${n1} = ${a}\nprint("${w}", ${n1})\n`,
             shape, variant: "plain",
+            misconception: `${w}${a}`, // the pieces with no space between them
             variantCard: `The text and the value print on one line with a single space: \`${w} ${a}\`.`,
           };
         }
         return {
           code: `${n1} = ${a}\n${n2} = ${b}\nprint(${n1}, ${n2})\n`,
           shape: "two-names", variant: "plain",
+          misconception: `${a}${b}`, // the values with no space between them
           variantCard: `\`print(${n1}, ${n2})\` prints both values on one line with a `
             + `single space between them: \`${a} ${b}\` — not \`${a}${b}\`, not a comma.`,
         };
@@ -288,6 +304,7 @@ export default [
         return {
           code: `a = ${p}\nb = ${q}\na, b = b, a\nprint(b)\n`,
           shape: "swap-print-b", variant: "plain",
+          misconception: String(q), // one-at-a-time model: both names end at the old b
           variantCard: `The whole right side \`b, a\` is read first (the old ${q} and ${p}), `
             + `then stored into \`a\` and \`b\`. So \`b\` ends up with the old \`a\`: ${p}. `
             + `Doing it one step at a time would wrongly leave both at ${q}.`,
@@ -317,6 +334,7 @@ export default [
           return {
             code: `a = ${a}\nb = a\nc = b\nb = ${b}\nprint(c)\n`,
             shape, variant: "plain",
+            misconception: String(b), // c follows b's rebind
             variantCard: `\`c = b\` copied ${a} at that moment. Rebinding \`b\` later does not `
               + `touch \`c\` — it still holds ${a}.`,
           };
@@ -325,6 +343,7 @@ export default [
           return {
             code: `a = ${a}\nb = a\nb = ${b}\nprint(a)\n`,
             shape, variant: "plain",
+            misconception: String(b), // the copy links the names, so a follows b
             variantCard: `\`b = a\` copied the VALUE; the names stay separate. Rebinding `
               + `\`b\` to ${b} leaves \`a\` at ${a}.`,
           };
@@ -335,6 +354,7 @@ export default [
           return {
             code: `a = ${a}\nb = a\na = ${b}\nprint(a)\n`,
             shape, variant: "plain",
+            misconception: String(a), // the original value, as if the rebind never landed
             variantCard: `\`a\` was rebound to ${b}, so \`print(a)\` shows ${b}. The copy \`b\` `
               + `still holds the old ${a} — but you asked for \`a\`.`,
           };
@@ -343,6 +363,7 @@ export default [
           code: `a = ${a}\nb = a\na = ${b}\nprint(b)\n`,
           shape: "copy-then-rebind-source",
           variant: "plain",
+          misconception: String(b), // b follows a's rebind (a's new value)
           variantCard: `\`b = a\` copied the value a held at that moment: ${a}. `
             + `Rebinding \`a\` to ${b} afterwards does not touch \`b\` — it still `
             + `holds ${a}.`,
@@ -374,6 +395,7 @@ export default [
           return {
             code, aOutput: String(a), contrastCode,
             shape, variant: "plain",
+            misconception: String(a), // the moved print changes nothing (= aOutput)
             variantCard: `Only the \`print(x)\` moved. Read FIRST, \`x\` still holds ${a}. `
               + `Read LAST — after both re-binds — and it holds ${c}. The old values are gone.`,
           };
@@ -382,6 +404,7 @@ export default [
         return {
           code, aOutput: String(a), contrastCode,
           shape, variant: "plain",
+          misconception: String(a), // the moved print changes nothing (= aOutput)
           variantCard: `The only change is where \`print(x)\` sits. Print BEFORE the second `
             + `bind and you see ${a}; print AFTER it and you see ${b} — the ${a} is gone.`,
         };
@@ -408,6 +431,7 @@ export default [
           return {
             code, aOutput: String(p), contrastCode,
             shape, variant: "plain",
+            misconception: String(p), // when the copy runs makes no difference (= aOutput)
             variantCard: `\`b = a\` copies whatever \`a\` holds when it runs. Copy first and \`b\` `
               + `keeps ${p}; copy last — after \`a\` becomes ${r} — and \`b\` is ${r}.`,
           };
@@ -416,6 +440,7 @@ export default [
         return {
           code, aOutput: String(p), contrastCode,
           shape, variant: "plain",
+          misconception: String(p), // when the copy runs makes no difference (= aOutput)
           variantCard: `Only the \`b = a\` line moved. Copy BEFORE \`a = ${q}\` and \`b\` is ${p}; `
             + `copy AFTER it and \`b\` is ${q}. \`b = a\` freezes \`a\`'s value at that instant.`,
         };
@@ -443,6 +468,7 @@ export default [
           return {
             code, aOutput: String(s + d1 + d2 + d3), contrastCode,
             shape, variant: "plain",
+            misconception: String(s + d1 + d2 + d3), // the moved print changes nothing (= aOutput)
             variantCard: `Print at the END and \`x\` has taken every step: ${s + d1 + d2 + d3}. `
               + `Slide \`print(x)\` up after the first step and it shows the total SO FAR: ${s + d1}.`,
           };
@@ -452,6 +478,7 @@ export default [
         return {
           code, aOutput: String(s + d1 + d2), contrastCode,
           shape, variant: "plain",
+          misconception: String(s + d1 + d2), // the moved print changes nothing (= aOutput)
           variantCard: `Only \`print(x)\` moved. After both steps \`x\` is ${s + d1 + d2}; `
             + `read between the steps and it is only ${s + d1} — the second step hasn't happened yet.`,
         };
@@ -482,6 +509,7 @@ export default [
           // B: one at a time — a = b clobbers a before b = a reads it, so b ends up q.
           contrastCode: `${lead}a = ${p}\nb = ${q}\na = b\nb = a\nprint(b)\n`,
           shape, variant: "plain",
+          misconception: String(p), // the two-step version swaps just the same (= aOutput)
           variantCard: `\`a, b = b, a\` reads the OLD \`a\` and \`b\` together, so \`b\` becomes the `
             + `old \`a\`: ${p}. Doing it in two steps, \`a = b\` overwrites \`a\` with ${q} first, so `
             + `\`b = a\` then copies ${q} — both end at ${q}.`,
@@ -548,8 +576,151 @@ export default [
           aOutput: String(v),
           contrastCode: `${name} = ${v}\nprint("${name}")\n`,
           shape: "bare-vs-quoted", variant: "plain",
+          misconception: String(v), // the quotes change nothing — still the stored value (= aOutput)
           variantCard: `Bare \`${name}\` looks up the value it holds: ${v}. Quote it and \`"${name}"\` `
             + `is just the letters \`${name}\` — the quotes decide which you get.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Ramp (review, design §5.5 single-concept order variation): the SAME
+    // two values printed with the arguments reversed. No contrast tag —
+    // both programs are pure print-multi-args; only the argument order
+    // changed, and the output order follows it.
+    id: "print-args-order-spot",
+    topic: "state",
+    focus: "000J", // print-multi-args — arguments print in the order listed
+    assumed: ["0005", "0006"],
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["names-order", "direct-literals"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["names-order", "direct-literals"]);
+        const i1 = int(rng, 0, names.length - 1);
+        const i2 = (i1 + 1 + int(rng, 0, names.length - 2)) % names.length; // ≠ i1
+        const n1 = names[i1], n2 = names[i2];
+        // G1: p ≠ q by offset draw, so "p q" ≠ "q p" — reversing the
+        // arguments always changes the printed line.
+        const p = int(rng, 2, 9);
+        const q = ((p - 2 + int(rng, 1, 7)) % 8) + 2; // in [2,9], ≠ p
+        if (shape === "direct-literals") {
+          return {
+            code: `print(${p}, ${q})\n`,
+            aOutput: `${p} ${q}`,
+            contrastCode: `print(${q}, ${p})\n`,
+            shape, variant: "plain",
+            misconception: `${p} ${q}`, // argument order changes nothing (= aOutput)
+            variantCard: `\`print\` shows its arguments in the order you list them: `
+              + `\`print(${p}, ${q})\` gives \`${p} ${q}\`, and \`print(${q}, ${p})\` gives \`${q} ${p}\`.`,
+          };
+        }
+        const prefix = `${n1} = ${p}\n${n2} = ${q}\n`;
+        return {
+          code: `${prefix}print(${n1}, ${n2})\n`,
+          aOutput: `${p} ${q}`,
+          contrastCode: `${prefix}print(${n2}, ${n1})\n`,
+          shape: "names-order", variant: "plain",
+          misconception: `${p} ${q}`, // argument order changes nothing (= aOutput)
+          variantCard: `Only the argument order changed. \`print(${n1}, ${n2})\` shows ${p} then ${q}; `
+            + `\`print(${n2}, ${n1})\` shows ${q} then ${p} — the arguments print in the order listed.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Fill (review): the target output is shown; the learner recovers the
+    // missing LEFT OPERAND of the bound expression (a = target − b for the
+    // plus variant, a = target + b for minus) — reverse-engineering
+    // evaluate-before-bind.
+    // G1/E5 regime: b ≥ 2, so the blank token `a` never equals the shown
+    // target (a + b ≥ a + 2; a − b ≤ a − 2), and TRANSCRIBING the target
+    // into the blank always misses: (a ± b) ± b differs from a ± b by
+    // b ≠ 0.
+    // No designed misconception (G2): the natural wrong fill IS the shown
+    // target string itself, which K-10's mis ≠ real-output floor cannot
+    // record for a fill (the canonical program prints exactly that
+    // string); the regime above still guarantees the transcriber misses.
+    id: "fill-operand",
+    topic: "state",
+    focus: "0009", // evaluate-before-bind
+    assumed: ["0005", "0006", "0008"],
+    role: "review",
+    form: "fill-one-blank",
+    generator: {
+      shapes: ["fill-left-operand"],
+      variants: ["plus", "minus"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const variant = pick(rng, ["plus", "minus"]);
+        const name = pick(rng, names);
+        let a, b, op, result;
+        if (variant === "plus") { a = int(rng, 2, 9); b = int(rng, 2, 9); op = "+"; result = a + b; }
+        else { b = int(rng, 2, 9); a = b + int(rng, 1, 9); op = "-"; result = a - b; }
+        return {
+          code: `${name} = ${a} ${op} ${b}\nprint(${name})\n`,
+          blank: { line: 1, col: name.length + 3, len: String(a).length, target: String(a) },
+          targetOutput: String(result),
+          shape: "fill-left-operand", variant,
+          variantCard: `The right side is worked out before the bind: \`${a} ${op} ${b}\` is ${result}, `
+            + `so filling ${a} makes \`${name}\` hold ${result} — exactly the printed target.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Hard sibling (R1.3): a three-step accumulate chain where x feeds its
+    // own doubling — the hardness is holding the intermediate value. G1
+    // regime: the misconception is the ONE-STEP-SHORT value (the chain's
+    // state after its first accumulate), and every shape's final step adds
+    // a strictly positive amount (b ≥ 2, or a second doubling of a value
+    // ≥ 4), so misconception ≠ truth on every seed.
+    id: "double-then-add-hard",
+    topic: "state",
+    focus: "000B", // accumulate-rebind
+    assumed: ["0005", "0006", "0008", "0009", "000A"],
+    role: "review",
+    difficulty: "hard",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["double-then-add", "add-then-double", "double-twice"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["double-then-add", "add-then-double", "double-twice"]);
+        const name = pick(rng, names);
+        const a = int(rng, 2, 9);
+        const b = int(rng, 2, 9); // drawn on every shape (G7 fixed budget)
+        if (shape === "add-then-double") {
+          return {
+            code: `${name} = ${a}\n${name} = ${name} + ${b}\n${name} = ${name} + ${name}\nprint(${name})\n`,
+            shape, variant: "plain",
+            misconception: String(a + b), // one step short — the doubling ignored
+            variantCard: `Step by step: \`${name}\` starts at ${a}, the add makes it `
+              + `${a + b}, and then \`${name} + ${name}\` doubles THAT: ${2 * (a + b)}.`,
+          };
+        }
+        if (shape === "double-twice") {
+          return {
+            code: `${name} = ${a}\n${name} = ${name} + ${name}\n${name} = ${name} + ${name}\nprint(${name})\n`,
+            shape, variant: "plain",
+            misconception: String(2 * a), // one step short — the second doubling ignored
+            variantCard: `Each line reads the CURRENT value: ${a} doubles to ${2 * a}, `
+              + `and ${2 * a} doubles again to ${4 * a}.`,
+          };
+        }
+        return {
+          code: `${name} = ${a}\n${name} = ${name} + ${name}\n${name} = ${name} + ${b}\nprint(${name})\n`,
+          shape, variant: "plain",
+          misconception: String(2 * a), // one step short — the final add ignored
+          variantCard: `\`${name} + ${name}\` reads ${a} twice: ${2 * a}. The last line `
+            + `then adds ${b} to that: ${2 * a + b}.`,
         };
       },
     },

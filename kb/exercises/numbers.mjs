@@ -70,6 +70,7 @@ export default [
           const c = int(rng, 2, 3);
           return {
             code: `print(${a} // ${b} // ${c})\n`, shape, variant: "plain",
+            misconception: (a / b / c).toFixed(2), // a decimal answer, as if // were / (r ≠ 0, so never a whole number)
             variantCard: `Left to right: \`${a} // ${b}\` is ${k}, then \`${k} // ${c}\` is ${Math.floor(k / c)}.`,
           };
         }
@@ -82,11 +83,13 @@ export default [
           const step1 = Math.floor(aBig / b), step2 = Math.floor(step1 / c);
           return {
             code: `print(${aBig} // ${b} // ${c} // ${d})\n`, shape, variant: "plain",
+            misconception: (aBig / b / c / d).toFixed(2), // a decimal answer, as if // were /
             variantCard: `Left to right: \`${aBig} // ${b}\` is ${step1}, \`// ${c}\` is ${step2}, \`// ${d}\` is ${Math.floor(step2 / d)}.`,
           };
         }
         return {
           code: `print(${a} // ${b})\n`, shape, variant: "plain",
+          misconception: (a / b).toFixed(2), // a decimal answer, as if // were / (the card's own foil)
           variantCard: `\`//\` asks how many whole \`${b}\`s fit in \`${a}\` — that's ${k}. `
             + `The leftover ${r} is dropped, so the answer is \`${k}\`, not \`${(a / b).toFixed(2)}\`.`,
         };
@@ -112,6 +115,7 @@ export default [
         const a = b * k + r;
         return {
           code: `print(${a} % ${b})\n`, shape: "bare-mod", variant: "plain",
+          misconception: String(k), // the quotient instead of the remainder (k > r by construction)
           variantCard: `\`${b}\` fits into \`${a}\` ${k} whole times, using up ${b * k}; `
             + `\`${a} - ${b * k}\` is ${r} left over. So \`${a} % ${b}\` is \`${r}\`, `
             + `the remainder — not the ${k} whole times it fit.`,
@@ -139,6 +143,7 @@ export default [
         return {
           code: `print(-${m} % ${b})\n`,
           shape: "neg-dividend", variant: "plain",
+          misconception: `-${m % b}`, // took the sign of the left operand (truth is positive)
           variantCard: `In Python \`%\` takes the sign of the divisor \`${b}\` (positive), so `
             + `\`-${m} % ${b}\` is \`${out}\` — a positive number — not the \`-${m % b}\` you `
             + `might expect from the left operand's sign.`,
@@ -156,6 +161,10 @@ export default [
     generator: {
       // The operator makes the skeleton (different token, different result),
       // so each is its own shape.
+      // No designed misconception (G2): 0008's wrongAnswer is "an arithmetic
+      // slip (no reasoned misconception — the intro checks fluency)", and the
+      // only computable foil (an op mixup) collides with the truth at
+      // a = b = 2 (2 + 2 = 2 * 2) under these draws.
       shapes: ["add", "subtract", "multiply"],
       variants: ["plain"],
       generate(seed) {
@@ -256,6 +265,9 @@ export default [
             variantCard: `\`str(${n})\` is the text \`"${n}"\`, and \`"${d}" + "${n}"\` joins them into \`${d}${n}\` — not ${d + n}.`,
           };
         }
+        // No designed misconception here: 000T's wrong model ("adds the
+        // numbers") has no instantiation against a word — it predicts an
+        // error, not an output line.
         return {
           code: `print(str(${n}) + "${w}")\n`, shape, variant: "plain",
           variantCard: `\`str(${n})\` turns the number into the text \`"${n}"\`, joined to \`"${w}"\` gives \`${n}${w}\`.`,
@@ -281,15 +293,19 @@ export default [
         if (shape === "add-after") {
           return {
             code: `print(int("${d}") + ${n})\n`, shape, variant: "plain",
+            misconception: `${d}${n}`, // joined the text instead of adding (3 digits vs a ≤2-digit sum)
             variantCard: `\`int("${d}")\` is the number ${d}, and ${d} + ${n} is ${d + n} — not the text \`"${d}${n}"\`.`,
           };
         }
         if (shape === "add-before") {
           return {
             code: `print(${n} + int("${d}"))\n`, shape, variant: "plain",
+            misconception: `${n}${d}`, // joined the text instead of adding (3 digits vs a ≤2-digit sum)
             variantCard: `\`int("${d}")\` is the number ${d}, so ${n} + ${d} is ${n + d} — real addition, not joining text.`,
           };
         }
+        // No designed misconception here: the "stays text" model cannot
+        // subtract — it predicts an error, not an output line.
         return {
           code: `print(int("${d}") - ${n})\n`, shape, variant: "plain",
           variantCard: `\`int("${d}")\` is the number ${d}, so ${d} - ${n} is ${d - n}.`,
@@ -314,6 +330,7 @@ export default [
         return {
           code: `print(${a} + ${b})\n`,
           shape: "sum-tenths", variant: "plain",
+          misconception: (a + b).toFixed(1), // the short, exact-looking decimal (the pool guarantees a visible tail)
           variantCard: `\`${a} + ${b}\` cannot be stored exactly, so the result prints with a long tail instead of \`${(a + b).toFixed(1)}\`.`,
         };
       },
@@ -339,10 +356,24 @@ export default [
           // — no constant program.
           const x = pick(rng, ["True", "False"]), y = pick(rng, ["True", "False"]);
           const out = (x === "True" ? 1 : 0) + (y === "True" ? 1 : 0);
-          return { code: `print(${x} + ${y})\n`, shape, variant: "plain", variantCard: `\`${x}\` counts as ${x === "True" ? 1 : 0} and \`${y}\` as ${y === "True" ? 1 : 0}, so \`${x} + ${y}\` is ${out}.` };
+          return {
+            code: `print(${x} + ${y})\n`, shape, variant: "plain",
+            misconception: `${x}${y}`, // the words joined like TrueTrue — never a digit string
+            variantCard: `\`${x}\` counts as ${x === "True" ? 1 : 0} and \`${y}\` as ${y === "True" ? 1 : 0}, so \`${x} + ${y}\` is ${out}.`,
+          };
         }
-        if (shape === "true-plus-int") return { code: `print(True + ${n})\n`, shape, variant: "plain", variantCard: `\`True\` counts as 1, so \`True + ${n}\` is ${n + 1}.` };
-        return { code: `print(False + ${n})\n`, shape, variant: "plain", variantCard: `\`False\` counts as 0, so \`False + ${n}\` is ${n}.` };
+        if (shape === "true-plus-int") {
+          return {
+            code: `print(True + ${n})\n`, shape, variant: "plain",
+            misconception: `True${n}`, // the word joined to the digit, as if + glued them
+            variantCard: `\`True\` counts as 1, so \`True + ${n}\` is ${n + 1}.`,
+          };
+        }
+        return {
+          code: `print(False + ${n})\n`, shape, variant: "plain",
+          misconception: `False${n}`, // the word joined to the digit, as if + glued them
+          variantCard: `\`False\` counts as 0, so \`False + ${n}\` is ${n}.`,
+        };
       },
     },
   },
@@ -468,6 +499,194 @@ export default [
           shape: "divisor-change", variant: "plain",
           variantCard: `\`${a} // ${b}\` is ${Math.floor(a / b)} — how many whole \`${b}\`s fit. `
             + `Divide the same ${a} by ${c} instead and only ${Math.floor(a / c)} fit; the remainder is dropped either way.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Ramp (review): the SAME dividend magnitude, sign flipped — Python's
+    // `%` answers with the DIVISOR's sign, so -a % b is b − r, never the r
+    // the positive program showed. Contrast 000R: answering A's remainder
+    // for B is plain mod-remainder intuition applied where the sign rule
+    // fires.
+    id: "mod-sign-spot",
+    topic: "numbers",
+    focus: "000S", // mod-sign-of-divisor
+    assumed: ["0005", "000R"],
+    contrast: "000R",
+    misconceptionOf: "000R", // answering A's r = the sign changes nothing
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["sign-flip"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        // G1: b odd → b ≠ 2r for any r, and r ≥ 1 → r ≠ 0; so
+        // -a % b = b − r differs from a % b = r on every seed.
+        const b = pick(rng, [3, 5, 7, 9]);
+        const r = int(rng, 1, b - 1);
+        const k = int(rng, 2, 9);
+        const a = b * k + r;
+        return {
+          code: `print(${a} % ${b})\n`,
+          aOutput: String(r),
+          contrastCode: `print(-${a} % ${b})\n`,
+          shape: "sign-flip", variant: "plain",
+          misconception: String(r), // the sign changes nothing (= aOutput)
+          variantCard: `\`${a} % ${b}\` leaves ${r}. Flip the dividend's sign and Python still `
+            + `answers with the DIVISOR's sign (positive): \`-${a} % ${b}\` is ${b} - ${r} = ${b - r} — `
+            + `not ${r}, and not \`-${r}\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Review through a second form: str() results CONCATENATE — the latent
+    // binding (never printed) is the digit string "ab", not the sum.
+    // G1: a ≥ 2 → the joined digits "ab" read as 10a + b ≥ 21, while
+    // a + b ≤ 18 — the misconception can never collide with the truth.
+    id: "str-of-int-state",
+    topic: "numbers",
+    focus: "000T", // str-of-int
+    assumed: ["0005", "0006", "000Y"],
+    role: "review",
+    form: "predict-state",
+    generator: {
+      shapes: ["two-str-calls"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const nm = pick(rng, strNames);
+        const a = int(rng, 2, 9), b = int(rng, 2, 9);
+        return {
+          code: `${nm} = str(${a}) + str(${b})\n`,
+          probeName: nm,
+          shape: "two-str-calls", variant: "plain",
+          misconception: String(a + b), // did arithmetic instead of joining the texts
+          variantCard: `\`str(${a})\` and \`str(${b})\` are the TEXTS \`"${a}"\` and \`"${b}"\`, `
+            + `so \`+\` joins them: \`${nm}\` holds \`"${a}${b}"\`, not ${a + b}.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Ramp (review): one line, two readings — int("d") + k really adds;
+    // leave the digits quoted and + joins text instead. Contrast 000Y:
+    // answering A's sum for B = believing the quotes convert themselves.
+    id: "int-vs-concat-spot",
+    topic: "numbers",
+    focus: "000V", // int-of-str
+    assumed: ["0005", "0008", "000K", "000Y"],
+    contrast: "000Y",
+    misconceptionOf: "000K", // answering A's sum = quoted digits treated as numbers
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["convert-vs-concat"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        // G1: the joined digits "dk" read as 10·d + k, which equals d + k
+        // only when 9·d = 0 — impossible for a two-digit d, so A ≠ B on
+        // every seed.
+        const d = int(rng, 12, 60);
+        const k = int(rng, 1, 9);
+        return {
+          code: `print(int("${d}") + ${k})\n`,
+          aOutput: String(d + k),
+          contrastCode: `print("${d}" + "${k}")\n`,
+          shape: "convert-vs-concat", variant: "plain",
+          misconception: String(d + k), // the quotes convert themselves (= aOutput)
+          variantCard: `\`int("${d}")\` makes a real number, so A adds: ${d + k}. Without \`int\`, `
+            + `\`"${d}" + "${k}"\` stays text and \`+\` joins it: \`${d}${k}\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Ramp (review): one word changed — True + n vs False + n. bool IS an
+    // int: True counts 1, False counts 0, so the flip always moves the sum
+    // by exactly 1. Contrast 0016 (the parent: True/False as values).
+    // NOTE (closure): the pair stays literal — binding the bool to a name
+    // would footprint 0006 name-holds-value, which is NOT an ancestor of
+    // 000X in the frozen ledger.
+    // No designed misconception (G2): the K-mc law pins a spot-diff
+    // misconception to aOutput, and answering A's sum for B does not
+    // encode 000X's real wrong model ("+ glues the word to the digit").
+    id: "bool-arith-spot",
+    topic: "numbers",
+    focus: "000X", // bool-is-int
+    assumed: ["0005", "0008", "0016"],
+    contrast: "0016",
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["flip-lead-bool", "flip-trail-bool"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["flip-lead-bool", "flip-trail-bool"]);
+        // G1: True + n = n + 1 and False + n = n differ by exactly 1 on
+        // every seed — flipping the word always moves the sum.
+        const n = int(rng, 2, 9);
+        if (shape === "flip-trail-bool") {
+          return {
+            code: `print(${n} + True)\n`,
+            aOutput: String(n + 1),
+            contrastCode: `print(${n} + False)\n`,
+            shape, variant: "plain",
+            variantCard: `\`True\` counts as 1 and \`False\` as 0, so \`${n} + True\` is ${n + 1} `
+              + `while \`${n} + False\` stays ${n}.`,
+          };
+        }
+        return {
+          code: `print(True + ${n})\n`,
+          aOutput: String(n + 1),
+          contrastCode: `print(False + ${n})\n`,
+          shape: "flip-lead-bool", variant: "plain",
+          variantCard: `\`True\` counts as 1 and \`False\` as 0, so \`True + ${n}\` is ${n + 1} `
+            + `while \`False + ${n}\` is just ${n}.`,
+        };
+      },
+    },
+  },
+
+  {
+    // 000K's lane is Numbers (see digit-text): text that LOOKS numeric
+    // still concatenates. predict-state makes the digit string latent —
+    // the program never prints `s`. Operand strings are single DIGITS,
+    // never letters that could read as a bound name (analyzer row 2).
+    // G1: n ≥ 1 → the joined digits "nm" read as 10·n + m, which equals
+    // n + m only when 9·n = 0 — never; truth "nm" ≠ String(n + m).
+    id: "text-arith-state",
+    topic: "numbers",
+    focus: "000K", // str-literal-vs-number
+    assumed: ["0005", "0006", "000Y"],
+    role: "review",
+    form: "predict-state",
+    generator: {
+      shapes: ["two-names-concat"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        // Operand names drawn distinct from strNames minus the probe `s`.
+        const opPool = strNames.filter((x) => x !== "s");
+        const i1 = int(rng, 0, opPool.length - 1);
+        const i2 = (i1 + 1 + int(rng, 0, opPool.length - 2)) % opPool.length; // ≠ i1
+        const n1 = opPool[i1], n2 = opPool[i2];
+        const a = int(rng, 1, 9), b = int(rng, 1, 9);
+        return {
+          code: `${n1} = "${a}"\n${n2} = "${b}"\ns = ${n1} + ${n2}\n`,
+          probeName: "s",
+          shape: "two-names-concat", variant: "plain",
+          misconception: String(a + b), // added the digits instead of joining the texts
+          variantCard: `\`"${a}"\` and \`"${b}"\` are text, so \`${n1} + ${n2}\` joins them: `
+            + `\`s\` holds \`"${a}${b}"\`, not the number ${a + b}.`,
         };
       },
     },

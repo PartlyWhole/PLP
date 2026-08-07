@@ -27,3 +27,9 @@ export const lowWords = ["apple", "melon", "zebra", "grape"];
 
 // Dict key/value pools.
 export const dictKeys = ["a", "b", "cat", "sun", "red"];
+
+// Index-exercise words: 6 letters, ALL DISTINCT within each word (G6), so a
+// target character pins down exactly one position — the intended index (and
+// its negative twin) are the only fills that print it, and any off-by-one
+// really prints a different character.
+export const distinctWords = ["python", "garden", "silver", "orange", "planet"];

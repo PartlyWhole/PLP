@@ -9,7 +9,7 @@
 ## Overview
 
 - **87 concepts** — 4 structural / 60 core / 23 edge.
-- **176 exercises** across 8 topics.
+- **227 exercises** across 8 topics.
 - **Forms:** fill-one-blank, fix-the-bug, order-the-lines, predict-exact-output, predict-io, predict-state, predict-the-error, spot-the-difference, trace-table, write-the-line.
 
 ## Topics
@@ -308,7 +308,7 @@ print("…") writes the quoted characters, without the quotes, as one line.
 - Children: 0006, 0007, 0008, 000J, 0016, 0027
 - Lineage: 0001 ← 0004
 - Characteristic wrong answer: the text with its quotes kept
-- Exercises: hello-print
+- Exercises: hello-print, order-prints
 
 ### 0006 · name-holds-value — core
 
@@ -348,7 +348,7 @@ The right side is computed down to one value before the name stores it.
 - Children: 000B, 000M, 002A, 002F
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008
 - Characteristic wrong answer: the expression itself, unevaluated
-- Exercises: bind-computed
+- Exercises: bind-computed, fill-operand
 
 ### 000A · rebind-updates-name — core
 
@@ -368,7 +368,7 @@ x = x + 1 reads the old value, computes, then rebinds x to the result.
 - Children: 001J, 001M, 002K
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A
 - Characteristic wrong answer: the old value, or one step short
-- Exercises: accumulate-step, order-noncommutative-steps, read-between-steps, trace-rebind
+- Exercises: accumulate-step, double-then-add-hard, order-noncommutative-steps, read-between-steps, trace-rebind
 
 ### 000C · name-from-name — core
 
@@ -388,7 +388,7 @@ b = a gives b the value a holds now; rebinding a later does not change b.
 - Children: 000F, 000G, 001B, 001E, 001Z, 0021, 0022, 002M, 002Q
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006
 - Characteristic wrong answer: the items without brackets, or without the spaces after the commas
-- Exercises: list-shows-brackets
+- Exercises: list-shows-brackets, order-make-list
 
 ### 000E · index-from-zero — core
 
@@ -398,7 +398,7 @@ s[i] fetches one item by position, counting from 0.
 - Children: 000F, 0010, 0011, 001R, 0022, 002Q
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007
 - Characteristic wrong answer: the item at that position counting from 1
-- Exercises: index-char
+- Exercises: fill-index, index-char
 
 ### 000F · index-assign-mutates — core
 
@@ -438,7 +438,7 @@ print(a, b) writes both values on one line with a single space between them.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006
 - Characteristic wrong answer: the values with no space between them, or a printed comma
-- Exercises: print-two-values
+- Exercises: print-args-order-spot, print-two-values
 
 ### 000K · str-literal-vs-number — core
 
@@ -448,7 +448,7 @@ print(a, b) writes both values on one line with a single space between them.
 - Children: 000T, 000V, 002P
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000Y
 - Characteristic wrong answer: treats the digit text as a number to add
-- Exercises: digit-text
+- Exercises: digit-text, text-arith-state
 
 ### 000M · swap-right-side-first — edge
 
@@ -458,7 +458,7 @@ In a, b = b, a the whole right side is evaluated before either name rebinds — 
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000C
 - Characteristic wrong answer: both names end up with the same value
-- Exercises: swap-latent-state, swap-two, swap-vs-sequential
+- Exercises: chal-swap-parity, swap-latent-state, swap-two, swap-vs-sequential
 
 ### 000N · op-precedence — core
 
@@ -508,7 +508,7 @@ In a, b = b, a the whole right side is evaluated before either name rebinds — 
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0008 ← 000Q ← 000R
 - Characteristic wrong answer: -1, taking the sign of the left operand
-- Exercises: mod-neg
+- Exercises: mod-neg, mod-sign-spot
 
 ### 000T · str-of-int — core
 
@@ -518,7 +518,7 @@ str(3) makes the text "3" out of the number 3.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000K ← 000Y
 - Characteristic wrong answer: adds the numbers instead of joining text
-- Exercises: text-from-int
+- Exercises: str-of-int-state, text-from-int
 
 ### 000V · int-of-str — core
 
@@ -528,7 +528,7 @@ int("25") makes the number 25 out of digit text.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 0008 ← 000K ← 000Y
 - Characteristic wrong answer: joins the text instead of adding numbers
-- Exercises: int-from-text
+- Exercises: int-from-text, int-vs-concat-spot
 
 ### 000W · float-inexact — edge
 
@@ -548,7 +548,7 @@ True counts as 1 and False counts as 0 in arithmetic.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0008 ← 0016
 - Characteristic wrong answer: an error, or the words joined like TrueTrue
-- Exercises: bool-arithmetic
+- Exercises: bool-arith-spot, bool-arithmetic
 
 ### 000Y · str-concat — core
 
@@ -558,7 +558,7 @@ True counts as 1 and False counts as 0 in arithmetic.
 - Children: 000K, 000Z, 0013
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007
 - Characteristic wrong answer: an inserted space, or the two treated as numbers to add
-- Exercises: concat-text
+- Exercises: concat-state, concat-text
 
 ### 000Z · str-repeat — core
 
@@ -568,7 +568,7 @@ text * number repeats the text that many times.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 0008 ← 000Y
 - Characteristic wrong answer: multiplication of a number, or one copy only
-- Exercises: repeat-text, repeat-vs-concat
+- Exercises: chal-star-triangle, repeat-text, repeat-vs-concat
 
 ### 0010 · index-from-end — edge
 
@@ -578,7 +578,7 @@ Negative positions count from the end: s[-1] is the last character.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E
 - Characteristic wrong answer: an error, or a character off by one from the end
-- Exercises: index-negative
+- Exercises: chal-neg-index-concat, fill-neg-index, index-negative
 
 ### 0011 · slice-half-open — core
 
@@ -618,7 +618,7 @@ Text compares character by character by code point — all capitals come before 
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 0008 ← 0015 ← 0016
 - Characteristic wrong answer: compares by dictionary order, ignoring case
-- Exercises: text-compare
+- Exercises: case-compare-spot, text-compare
 
 ### 0015 · compare-ops — core
 
@@ -628,7 +628,7 @@ Text compares character by character by code point — all capitals come before 
 - Children: 0014, 0017, 001D, 001M
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0008 ← 0016
 - Characteristic wrong answer: the comparison read backwards
-- Exercises: compare-values
+- Exercises: compare-values, fill-compare-op
 
 ### 0016 · bool-values — core
 
@@ -658,7 +658,7 @@ else runs exactly when the if test was False — one branch runs, never both.
 - Children: 0019, 002K
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0008 ← 0015 ← 0016 ← 0017
 - Characteristic wrong answer: both branches' output
-- Exercises: if-else-one-branch
+- Exercises: else-review, if-else-one-branch
 
 ### 0019 · elif-first-true-wins — core
 
@@ -668,7 +668,7 @@ In an if/elif/… chain, tests run top to bottom and only the first true branch 
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0008 ← 0015 ← 0016 ← 0017 ← 0018
 - Characteristic wrong answer: a later true branch also runs
-- Exercises: elif-chain, first-true-wins-contrast
+- Exercises: elif-chain, elif-ladder-hard, first-true-wins-contrast
 
 ### 001A · bool-ops — core
 
@@ -688,7 +688,7 @@ A test can be any value: 0, "", and [] count as false; everything else counts as
 - Children: 001C
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 000D ← 0015 ← 0016 ← 0017
 - Characteristic wrong answer: expects an error, or treats a non-empty value as false
-- Exercises: empty-is-falsy
+- Exercises: empty-is-falsy, empty-vs-full-spot
 
 ### 001C · and-or-return-operand — edge
 
@@ -708,7 +708,7 @@ a < b < c means a < b and b < c — not a comparison of a result with c.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0008 ← 0015 ← 0016 ← 001A
 - Characteristic wrong answer: grouped left-to-right, comparing a True/False with c
-- Exercises: chain-compare
+- Exercises: chain-compare, chain-vs-grouped-spot
 
 ### 001E · loop-for-visits-each — core
 
@@ -738,7 +738,7 @@ range(a, b) counts from a up to but not including b.
 - Children: 001H
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D ← 001E ← 001F
 - Characteristic wrong answer: includes b, or counts b−a+1 numbers
-- Exercises: fix-off-by-one, range-start, range-start-contrast
+- Exercises: fix-off-by-one, range-start, range-start-contrast, write-range-header
 
 ### 001H · range-step — core
 
@@ -758,7 +758,7 @@ A running total updates once per loop pass; its final value is there after the l
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000B ← 000D ← 001E
 - Characteristic wrong answer: an off-by-one total, or only the last value
-- Exercises: accumulate-then-read, fix-accumulator, loop-total, loop-total-latent, order-loop-total, trace-sum, write-loop-step
+- Exercises: accumulate-then-read, chal-filtered-total, fix-accumulator, loop-total, loop-total-latent, order-loop-total, trace-sum, two-accumulators-hard, write-loop-step
 
 ### 001K · loop-build-list — core
 
@@ -768,7 +768,7 @@ Appending once per pass grows a list one item per pass.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D ← 000G ← 001E
 - Characteristic wrong answer: the wrong length, or items in the wrong order
-- Exercises: chal-filter-build, loop-collect, trace-build-list, write-build-append
+- Exercises: chal-filter-build, fix-build-list, loop-collect, trace-build-list, write-build-append
 
 ### 001M · while-repeats-while-true — core
 
@@ -778,7 +778,7 @@ while re-tests before every pass and stops the moment the test is False.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000B ← 0015 ← 0016
 - Characteristic wrong answer: one pass too many or one too few
-- Exercises: chal-while-grows-string, trace-while, trace-while-two-names-hard, while-counts-down
+- Exercises: chal-while-grows-string, fix-while-condition, order-while-setup, trace-while, trace-while-two-names-hard, while-counts-down, write-while-step
 
 ### 001N · break-exits — core
 
@@ -798,7 +798,7 @@ continue skips the rest of this pass and goes on to the next one.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 000D ← 0015 ← 0016 ← 0017 ← 001E
 - Characteristic wrong answer: the loop exits instead of continuing
-- Exercises: continue-order, continue-skips-one
+- Exercises: continue-order, continue-skips-one, continue-total-hard
 
 ### 001R · dict-lookup-by-key — core
 
@@ -818,7 +818,7 @@ d[k] = v stores v under k — adding the key if it is new, replacing it if it ex
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E ← 001R
 - Characteristic wrong answer: the old value survives, or a new key is rejected
-- Exercises: chal-dict-under-branch, dict-store, dict-store-latent, store-order, trace-dict-build
+- Exercises: chal-dict-under-branch, dict-overwrite-chain-hard, dict-store, dict-store-latent, order-store-read, store-order, trace-dict-build
 
 ### 001T · dict-get-default — core
 
@@ -828,7 +828,7 @@ d.get(k, alt) fetches like d[k] but hands back alt when the key is missing.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E ← 001R
 - Characteristic wrong answer: alt even when the key is present
-- Exercises: dict-get, get-vs-lookup
+- Exercises: chal-word-count, dict-get, get-vs-lookup
 
 ### 001V · in-dict-checks-keys — edge
 
@@ -838,7 +838,7 @@ k in d asks about keys only — values are invisible to in.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E ← 0016 ← 001R
 - Characteristic wrong answer: True for a value that is stored but not a key
-- Exercises: in-checks-keys
+- Exercises: in-checks-keys, in-dict-value-spot
 
 ### 001W · tuple-pack-print — core
 
@@ -848,7 +848,7 @@ k in d asks about keys only — values are invisible to in.
 - Children: 001X, 001Y
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006
 - Characteristic wrong answer: printed without the parentheses
-- Exercises: tuple-pack
+- Exercises: order-pack-tuple, tuple-pack
 
 ### 001X · tuple-unpack — core
 
@@ -928,7 +928,7 @@ a[:] builds a real copy — mutating the copy leaves the original alone.
 - Children: 0025
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000A ← 000C ← 000D ← 000E ← 000G ← 000H ← 0011
 - Characteristic wrong answer: the original shows the change too
-- Exercises: copy-latent-state, copy-timing, fix-alias, slice-makes-copy
+- Exercises: copy-latent-state, copy-timing, fix-alias, fix-shared-copy, slice-makes-copy
 
 ### 0025 · copy-is-shallow — edge
 
@@ -948,7 +948,7 @@ input(…) stops the program until the outside world types a line; the typed tex
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006
 - Characteristic wrong answer: the program runs on without waiting, or the value appears from nowhere
-- Exercises: greet-and-echo, two-questions
+- Exercises: chal-input-number, greet-and-echo, prompt-then-work, two-inputs, two-questions
 
 ### 0027 · def-defines-not-runs — core
 
@@ -958,7 +958,7 @@ def stores the recipe under a name; its body does not run yet.
 - Children: 0028
 - Lineage: 0001 ← 0004 ← 0005
 - Characteristic wrong answer: the body's output appearing at def time
-- Exercises: def-then-done
+- Exercises: def-quiet, def-then-done
 
 ### 0028 · call-runs-body — core
 
@@ -988,7 +988,7 @@ return hands one value back to the caller; the call expression becomes that valu
 - Children: 002B, 002C, 002G
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 0027 ← 0028
 - Characteristic wrong answer: the value printing by itself, or nothing coming back
-- Exercises: return-then-use
+- Exercises: return-state, return-then-use
 
 ### 002B · return-vs-print — core
 
@@ -1008,7 +1008,7 @@ return leaves the function immediately; lines after it do not run.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 0027 ← 0028 ← 002A
 - Characteristic wrong answer: the lines after return also running
-- Exercises: early-exit
+- Exercises: early-exit, return-move-spot
 
 ### 002D · local-scope-inside — core
 
@@ -1028,7 +1028,7 @@ A name bound inside a function hides the outer name of the same spelling; the ou
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0027 ← 0028 ← 0029 ← 002D
 - Characteristic wrong answer: the outer name changed by the inner assignment
-- Exercises: shadow-state, shadow-untouched
+- Exercises: param-shadow-hard, shadow-state, shadow-untouched
 
 ### 002F · args-evaluated-first — core
 
@@ -1038,7 +1038,7 @@ Arguments are computed down to values before the call starts.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 0027 ← 0028 ← 0029
 - Characteristic wrong answer: the expression arriving unevaluated
-- Exercises: args-computed-first
+- Exercises: args-computed-first, fill-arg-expression
 
 ### 002G · call-in-expression — core
 
@@ -1048,7 +1048,7 @@ A call is an expression: its returned value takes part in the surrounding calcul
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 0027 ← 0028 ← 002A
 - Characteristic wrong answer: the call's value ignored by the surrounding math
-- Exercises: call-slots-in, two-calls-chain
+- Exercises: call-slots-in, chal-call-total, two-calls-chain
 
 ### 002H · none-when-no-return — edge
 
@@ -1058,7 +1058,7 @@ Falling off the end of a function (or a bare return) hands back None.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 0027 ← 0028 ← 002A ← 002B
 - Characteristic wrong answer: the last computed value coming back by itself
-- Exercises: nothing-comes-back
+- Exercises: no-return-spot, nothing-comes-back
 
 ### 002J · mutable-arg-shared — edge
 
@@ -1088,7 +1088,7 @@ A branch can rebind a name — what the name ends up holding depends on which br
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 000D ← 0016
 - Characteristic wrong answer: the item's position, or an error
-- Exercises: in-list, in-list-spot
+- Exercises: chal-in-after-append, in-list, in-list-spot
 
 ### 002N · errors-are-information — core
 
@@ -1098,7 +1098,7 @@ When a line cannot run, Python stops there and tells you the kind of error and t
 - Children: 002P, 002Q, 002R
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006
 - Characteristic wrong answer: the program prints the earlier lines and keeps going
-- Exercises: err-name-unbound
+- Exercises: err-after-output, err-name-unbound
 
 ### 002P · type-error-str-int — edge
 
@@ -1108,7 +1108,7 @@ Adding a string and a number is a TypeError — Python will not guess which one 
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000K ← 000Y ← 002N
 - Characteristic wrong answer: the number is turned into text and glued on
-- Exercises: err-str-plus-int
+- Exercises: err-mix-after-print, err-str-plus-int
 
 ### 002Q · index-error-out-of-range — edge
 
@@ -1118,7 +1118,7 @@ Asking a list for a position it does not have is an IndexError.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000D ← 000E ← 002N
 - Characteristic wrong answer: the last item, or an empty value
-- Exercises: err-index-range
+- Exercises: err-index-computed, err-index-range
 
 ### 002R · key-error-missing — edge
 
@@ -1128,7 +1128,7 @@ Looking up a key a dict does not have is a KeyError.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0007 ← 000E ← 001R ← 002N
 - Characteristic wrong answer: an empty value, or zero
-- Exercises: err-key-missing
+- Exercises: err-key-after-store, err-key-missing
 
 ## Exercises
 
@@ -1469,6 +1469,32 @@ prints:
 False
 ```
 
+### bool-arith-spot — focus 000X (bool-is-int)
+
+- Form: `spot-the-difference` · Role: review · Topic: numbers
+- Assumed: 0005, 0008, 0016
+- Contrast: 0016
+- Shapes: flip-lead-bool, flip-trail-bool · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+print(True + 9)
+```
+prints:
+```
+10
+```
+
+Program B (predicted):
+```py
+print(False + 9)
+```
+prints:
+```
+9
+```
+
 ### bool-arithmetic — focus 000X (bool-is-int)
 
 - Form: `predict-exact-output` · Role: intro · Topic: numbers
@@ -1700,6 +1726,32 @@ prints:
 drumfish
 ```
 
+### case-compare-spot — focus 0014 (str-compare-code-points)
+
+- Form: `spot-the-difference` · Role: review · Topic: strings
+- Assumed: 0005, 0006, 0015, 0016
+- Contrast: 0015
+- Shapes: literal-pair, named-pair · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+print("Sun" < "apple")
+```
+prints:
+```
+True
+```
+
+Program B (predicted):
+```py
+print("apple" < "Sun")
+```
+prints:
+```
+False
+```
+
 ### chain-compare — focus 001D (chained-compare)
 
 - Form: `predict-exact-output` · Role: intro · Topic: logic
@@ -1709,6 +1761,32 @@ drumfish
 
 ```py
 print(2 < 4 < 5)
+```
+prints:
+```
+True
+```
+
+### chain-vs-grouped-spot — focus 001D (chained-compare)
+
+- Form: `spot-the-difference` · Role: review · Topic: logic
+- Assumed: 0005, 0015, 0016, 001A
+- Contrast: 001A
+- Shapes: grouped-vs-chained · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+print(3 < 3 < 3)
+```
+prints:
+```
+False
+```
+
+Program B (predicted):
+```py
+print((3 < 3) < 3)
 ```
 prints:
 ```
@@ -1754,6 +1832,26 @@ prints:
 [5, 27, 54]
 ```
 
+### chal-call-total — focus 002G (call-in-expression)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: functions
+- Assumed: 0005, 0006, 0008, 0009, 000A, 000B, 001E, 001F, 001J, 0027, 0028, 002A
+- Shapes: sum-of-calls, seeded-by-call · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def f():
+    return 8
+total = f()
+for i in range(2):
+    total = total + f()
+print(total)
+```
+prints:
+```
+24
+```
+
 ### chal-dict-under-branch — focus 001S (dict-key-assign)
 
 - Form: `predict-state` · Role: challenge · Topic: structures
@@ -1793,6 +1891,25 @@ prints:
 [3, 1]
 ```
 
+### chal-filtered-total — focus 001J (loop-accumulate)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: loops
+- Assumed: 0005, 0006, 0008, 000A, 000B, 000D, 0015, 0017, 001E, 002K
+- Shapes: keep-big, keep-small · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+total = 0
+for x in [3, 9, 2, 7]:
+    if x > 6:
+        total = total + x
+print(total)
+```
+prints:
+```
+16
+```
+
 ### chal-grid-total — focus 0022 (nested-lists)
 
 - Form: `predict-exact-output` · Role: challenge · Topic: lists
@@ -1812,6 +1929,57 @@ prints:
 4
 ```
 
+### chal-in-after-append — focus 002M (in-checks-membership)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: lists
+- Assumed: 0005, 0006, 000D, 000G, 0016
+- Shapes: hit-by-append, miss-outright · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+nums = [9, 4]
+nums.append(13)
+print(14 in nums)
+```
+prints:
+```
+False
+```
+
+### chal-input-number — focus 0026 (input-pauses-for-value)
+
+- Form: `predict-io` · Role: challenge · Topic: state
+- Assumed: 0005, 0006, 0008, 0009, 000V
+- Shapes: plus-constant, plus-itself · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+n = int(input("Give a number: "))
+print(n + n)
+```
+someone types: `3`
+the program emits (prompts + output, without the typed lines):
+```
+Give a number: 6
+```
+
+### chal-neg-index-concat — focus 0010 (index-from-end)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: strings
+- Assumed: 0005, 0006, 000E, 000Y
+- Shapes: index-joined, index-into-name · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+s = "garden" + "orange"
+t = s[-1]
+print(t)
+```
+prints:
+```
+e
+```
+
 ### chal-slice-of-concat — focus 0011 (slice-half-open)
 
 - Form: `predict-exact-output` · Role: challenge · Topic: strings
@@ -1826,6 +1994,24 @@ print(s[2:5])
 prints:
 ```
 tja
+```
+
+### chal-star-triangle — focus 000Z (str-repeat)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: strings
+- Assumed: 0005, 0006, 000A, 000N, 000Y, 001E, 001F, 001G
+- Shapes: append-run, prepend-run · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+s = ""
+for i in range(1, 4):
+    s = s + "#" * i
+print(s)
+```
+prints:
+```
+######
 ```
 
 ### chal-sum-of-built-list — focus 001Z (aggregate-builtins)
@@ -1846,6 +2032,25 @@ prints:
 3
 ```
 
+### chal-swap-parity — focus 000M (swap-right-side-first)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: state
+- Assumed: 0005, 0006, 001E, 001F
+- Shapes: read-first, read-second · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+a = 9
+b = 7
+for i in range(2):
+    a, b = b, a
+print(b)
+```
+prints:
+```
+7
+```
+
 ### chal-while-grows-string — focus 001M (while-repeats-while-true)
 
 - Form: `predict-exact-output` · Role: challenge · Topic: loops
@@ -1864,6 +2069,24 @@ print(s)
 prints:
 ```
 drum***
+```
+
+### chal-word-count — focus 001T (dict-get-default)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: structures
+- Assumed: 0005, 0006, 0008, 000D, 001E, 001R, 001S
+- Shapes: lookup-final, get-final · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+d = {}
+for w in ["a", "red", "a"]:
+    d[w] = d.get(w, 0) + 1
+print(d.get("a", 0))
+```
+prints:
+```
+2
 ```
 
 ### compare-values — focus 0015 (compare-ops)
@@ -1896,6 +2119,21 @@ print(b)
 prints:
 ```
 [1, 8, 45]
+```
+
+### concat-state — focus 000Y (str-concat)
+
+- Form: `predict-state` · Role: review · Topic: strings
+- Assumed: 0005, 0006
+- Shapes: direct, via-names, three-parts · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+s = "star" + "fish"
+```
+After it runs, `s` holds:
+```
+starfish
 ```
 
 ### concat-text — focus 000Y (str-concat)
@@ -1990,6 +2228,26 @@ for x in [5, 8]:
 prints:
 ```
 8
+```
+
+### continue-total-hard — focus 001P (continue-skips)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: loops
+- Assumed: 0005, 0006, 0008, 000A, 000B, 000D, 0015, 0017, 001E, 001J
+- Shapes: skip-one-sum · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+total = 0
+for x in [8, 7, 4, 3]:
+    if x == 4:
+        continue
+    total = total + x
+print(total)
+```
+prints:
+```
+18
 ```
 
 ### copy-latent-state — focus 0024 (slice-copies)
@@ -2111,6 +2369,25 @@ prints:
 [3, 7, 18, 97]
 ```
 
+### def-quiet — focus 0027 (def-defines-not-runs)
+
+- Form: `predict-exact-output` · Role: review · Topic: functions
+- Assumed: 0005
+- Shapes: def-above, def-between, two-line-body · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def greet():
+    print("cat")
+print("sun")
+print("tree")
+```
+prints:
+```
+sun
+tree
+```
+
 ### def-then-done — focus 0027 (def-defines-not-runs)
 
 - Form: `predict-exact-output` · Role: intro · Topic: functions
@@ -2158,6 +2435,24 @@ print(d["sun"])
 prints:
 ```
 1
+```
+
+### dict-overwrite-chain-hard — focus 001S (dict-key-assign)
+
+- Form: `predict-exact-output` · Role: review · Topic: structures
+- Assumed: 0005, 0006, 001R
+- Shapes: overwrite-chain · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+d = {"b": 6}
+d["sun"] = 34
+d["b"] = 9
+print(d)
+```
+prints:
+```
+{'b': 9, 'sun': 34}
 ```
 
 ### dict-store — focus 001S (dict-key-assign)
@@ -2251,6 +2546,24 @@ prints:
 7.0
 ```
 
+### double-then-add-hard — focus 000B (accumulate-rebind)
+
+- Form: `predict-exact-output` · Role: review · Topic: state
+- Assumed: 0005, 0006, 0008, 0009, 000A
+- Shapes: double-then-add, add-then-double, double-twice · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+x = 7
+x = x + 5
+x = x + x
+print(x)
+```
+prints:
+```
+24
+```
+
 ### early-exit — focus 002C (return-exits-function)
 
 - Form: `predict-exact-output` · Role: intro · Topic: functions
@@ -2290,6 +2603,46 @@ prints:
 moon
 ```
 
+### elif-ladder-hard — focus 0019 (elif-first-true-wins)
+
+- Form: `predict-exact-output` · Role: review · Topic: logic
+- Assumed: 0005, 0008, 0015, 0017, 0018
+- Shapes: first-wins, second-wins, third-wins · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+if 5 + 4 > 8:
+    print("frog")
+elif 5 + 4 > 6:
+    print("tree")
+elif 5 + 4 > 3:
+    print("blue")
+else:
+    print("star")
+```
+prints:
+```
+frog
+```
+
+### else-review — focus 0018 (else-otherwise)
+
+- Form: `predict-exact-output` · Role: review · Topic: logic
+- Assumed: 0005, 0008, 0015, 0016, 0017
+- Shapes: sum-greater, sum-smaller, sum-equal · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+if 3 + 1 > 3:
+    print("cat")
+else:
+    print("tree")
+```
+prints:
+```
+cat
+```
+
 ### empty-is-falsy — focus 001B (truthiness-empty-falsy)
 
 - Form: `predict-exact-output` · Role: intro · Topic: logic
@@ -2307,6 +2660,64 @@ prints:
 blue
 ```
 
+### empty-vs-full-spot — focus 001B (truthiness-empty-falsy)
+
+- Form: `spot-the-difference` · Role: review · Topic: logic
+- Assumed: 0005, 0006, 000D, 0017
+- Shapes: empty-to-full · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+xs = []
+if xs:
+    print("moon")
+print("frog")
+```
+prints:
+```
+frog
+```
+
+Program B (predicted):
+```py
+xs = [7]
+if xs:
+    print("moon")
+print("frog")
+```
+prints:
+```
+moon
+frog
+```
+
+### err-after-output — focus 002N (errors-are-information)
+
+- Form: `predict-the-error` · Role: review · Topic: state
+- Assumed: 0005, 0006
+- Shapes: printed-then-unbound, printed-value-then-typo · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+print("drum")
+print(points)
+```
+stops with: `NameError (line 2)`
+
+### err-index-computed — focus 002Q (index-error-out-of-range)
+
+- Form: `predict-the-error` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D, 000E, 002N
+- Shapes: read-last-then-overrun, off-the-end-direct · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+xs = [65, 75]
+print(xs[3])
+```
+stops with: `IndexError (line 2)`
+
 ### err-index-range — focus 002Q (index-error-out-of-range)
 
 - Form: `predict-the-error` · Role: intro · Topic: lists
@@ -2320,6 +2731,20 @@ print(xs[4])
 ```
 stops with: `IndexError (line 2)`
 
+### err-key-after-store — focus 002R (key-error-missing)
+
+- Form: `predict-the-error` · Role: review · Topic: structures
+- Assumed: 0005, 0006, 001R, 002N
+- Shapes: value-not-a-key, near-miss-key · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+counts = {"sun": 7, "fish": 3}
+print(counts["fish"])
+print(counts[3])
+```
+stops with: `KeyError (line 3)`
+
 ### err-key-missing — focus 002R (key-error-missing)
 
 - Form: `predict-the-error` · Role: intro · Topic: structures
@@ -2332,6 +2757,20 @@ counts = {"fish": 7, "frog": 6}
 print(counts["fihs"])
 ```
 stops with: `KeyError (line 2)`
+
+### err-mix-after-print — focus 002P (type-error-str-int)
+
+- Form: `predict-the-error` · Role: review · Topic: strings
+- Assumed: 0005, 0006, 000K, 002N
+- Shapes: echo-then-mix, mix-before-print · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+count = 4
+msg = "garden" + count
+print(msg)
+```
+stops with: `TypeError (line 2)`
 
 ### err-name-unbound — focus 002N (errors-are-information)
 
@@ -2406,6 +2845,24 @@ prints the target:
 2
 ```
 
+### fill-arg-expression — focus 002F (args-evaluated-first)
+
+- Form: `fill-one-blank` · Role: review · Topic: functions
+- Assumed: 0005, 0006, 0008, 0027, 0028, 0029
+- Shapes: solve-the-argument · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended token `7`:
+```py
+def greet(n):
+    print(n * 2)
+greet(7 - 4)
+```
+prints the target:
+```
+6
+```
+
 ### fill-arith-op — focus 0008 (arith-on-ints)
 
 - Form: `fill-one-blank` · Role: review · Topic: numbers
@@ -2438,6 +2895,22 @@ prints the target:
 False
 ```
 
+### fill-compare-op — focus 0015 (compare-ops)
+
+- Form: `fill-one-blank` · Role: review · Topic: logic
+- Assumed: 0005, 0016
+- Shapes: less, greater · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended token `>`:
+```py
+print(5 > 4)
+```
+prints the target:
+```
+True
+```
+
 ### fill-dict-key — focus 001R (dict-lookup-by-key)
 
 - Form: `fill-one-blank` · Role: review · Topic: structures
@@ -2455,6 +2928,23 @@ prints the target:
 3
 ```
 
+### fill-index — focus 000E (index-from-zero)
+
+- Form: `fill-one-blank` · Role: review · Topic: strings
+- Assumed: 0005, 0006
+- Shapes: fill-position · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended token `3`:
+```py
+w = "garden"
+print(w[3])
+```
+prints the target:
+```
+d
+```
+
 ### fill-mod — focus 000R (mod-remainder)
 
 - Form: `fill-one-blank` · Role: review · Topic: numbers
@@ -2469,6 +2959,40 @@ print(44 % 7)
 prints the target:
 ```
 2
+```
+
+### fill-neg-index — focus 0010 (index-from-end)
+
+- Form: `fill-one-blank` · Role: review · Topic: strings
+- Assumed: 0005, 0006, 000E
+- Shapes: fill-last · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended token `-1`:
+```py
+w = "orange"
+print(w[-1])
+```
+prints the target:
+```
+e
+```
+
+### fill-operand — focus 0009 (evaluate-before-bind)
+
+- Form: `fill-one-blank` · Role: review · Topic: state
+- Assumed: 0005, 0006, 0008
+- Shapes: fill-left-operand · Variants: plus, minus
+- Sample (provenance: seed k=0):
+
+Filled with the intended token `12`:
+```py
+x = 12 - 4
+print(x)
+```
+prints the target:
+```
+8
 ```
 
 ### fill-precedence-op — focus 000N (op-precedence)
@@ -2662,6 +3186,43 @@ prints the intended output:
 [7, 3, 1, 17]
 ```
 
+### fix-build-list — focus 001K (loop-build-list)
+
+- Form: `fix-the-bug` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 000D, 000G, 001E
+- Shapes: from-empty, onto-start · Variants: plain
+- Sample (provenance: seed k=0):
+
+The buggy program (runs clean, prints the wrong thing):
+```py
+xs = []
+for x in [9, 5, 4, 8]:
+    xs.append(9)
+    print(xs)
+```
+really prints:
+```
+[9]
+[9, 9]
+[9, 9, 9]
+[9, 9, 9, 9]
+```
+
+The intended fix — line 3 becomes `xs.append(x)`:
+```py
+xs = []
+for x in [9, 5, 4, 8]:
+    xs.append(x)
+    print(xs)
+```
+prints the intended output:
+```
+[9]
+[9, 5]
+[9, 5, 4]
+[9, 5, 4, 8]
+```
+
 ### fix-off-by-one — focus 001G (range-start-stop)
 
 - Form: `fix-the-bug` · Role: review · Topic: loops
@@ -2694,6 +3255,81 @@ prints the intended output:
 6
 7
 8
+```
+
+### fix-shared-copy — focus 0024 (slice-copies)
+
+- Form: `fix-the-bug` · Role: review · Topic: lists
+- Assumed: 0005, 0006, 000D, 000G, 000H
+- Shapes: append-one, append-two · Variants: plain
+- Sample (provenance: seed k=0):
+
+The buggy program (runs clean, prints the wrong thing):
+```py
+a = [2, 8]
+b = a
+b.append(19)
+b.append(29)
+print(a)
+print(b)
+```
+really prints:
+```
+[2, 8, 19, 29]
+[2, 8, 19, 29]
+```
+
+The intended fix — line 2 becomes `b = a[:]`:
+```py
+a = [2, 8]
+b = a[:]
+b.append(19)
+b.append(29)
+print(a)
+print(b)
+```
+prints the intended output:
+```
+[2, 8]
+[2, 8, 19, 29]
+```
+
+### fix-while-condition — focus 001M (while-repeats-while-true)
+
+- Form: `fix-the-bug` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 000A, 000B, 0015
+- Shapes: minus-one, minus-step · Variants: plain
+- Sample (provenance: seed k=0):
+
+The buggy program (runs clean, prints the wrong thing):
+```py
+n = 5
+while n > 1:
+    print(n)
+    n = n - 2
+print("done")
+```
+really prints:
+```
+5
+3
+done
+```
+
+The intended fix — line 2 becomes `while n > 0:`:
+```py
+n = 5
+while n > 0:
+    print(n)
+    n = n - 2
+print("done")
+```
+prints the intended output:
+```
+5
+3
+1
+done
 ```
 
 ### float-tail — focus 000W (float-inexact)
@@ -2915,6 +3551,34 @@ prints:
 False
 ```
 
+### in-dict-value-spot — focus 001V (in-dict-checks-keys)
+
+- Form: `spot-the-difference` · Role: review · Topic: structures
+- Assumed: 0005, 0006, 0016, 001R
+- Contrast: 001R
+- Shapes: key-vs-value · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+d = {"cat": 3, "a": 10}
+print("cat" in d)
+```
+prints:
+```
+True
+```
+
+Program B (predicted):
+```py
+d = {"cat": 3, "a": 10}
+print(3 in d)
+```
+prints:
+```
+False
+```
+
 ### in-list — focus 002M (in-checks-membership)
 
 - Form: `predict-exact-output` · Role: intro · Topic: lists
@@ -3003,6 +3667,32 @@ print(int("48") - 5)
 prints:
 ```
 43
+```
+
+### int-vs-concat-spot — focus 000V (int-of-str)
+
+- Form: `spot-the-difference` · Role: review · Topic: numbers
+- Assumed: 0005, 0008, 000K, 000Y
+- Contrast: 000Y
+- Shapes: convert-vs-concat · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+print(int("49") + 1)
+```
+prints:
+```
+50
+```
+
+Program B (predicted):
+```py
+print("49" + "1")
+```
+prints:
+```
+491
 ```
 
 ### list-shows-brackets — focus 000D (list-literal)
@@ -3144,6 +3834,32 @@ prints:
 2
 ```
 
+### mod-sign-spot — focus 000S (mod-sign-of-divisor)
+
+- Form: `spot-the-difference` · Role: review · Topic: numbers
+- Assumed: 0005, 000R
+- Contrast: 000R
+- Shapes: sign-flip · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+print(29 % 7)
+```
+prints:
+```
+1
+```
+
+Program B (predicted):
+```py
+print(-29 % 7)
+```
+prints:
+```
+6
+```
+
 ### mod-vs-floordiv — focus 000R (mod-remainder)
 
 - Form: `spot-the-difference` · Role: review · Topic: numbers
@@ -3211,6 +3927,38 @@ print(g[0][1])
 prints:
 ```
 3
+```
+
+### no-return-spot — focus 002H (none-when-no-return)
+
+- Form: `spot-the-difference` · Role: review · Topic: functions
+- Assumed: 0005, 0006, 0008, 0009, 0027, 0028, 002A
+- Contrast: 002A
+- Shapes: return-vs-bare · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+def cheer():
+    return 3 * 3
+score = cheer()
+print(score)
+```
+prints:
+```
+9
+```
+
+Program B (predicted):
+```py
+def cheer():
+    3 * 3
+score = cheer()
+print(score)
+```
+prints:
+```
+None
 ```
 
 ### nothing-comes-back — focus 002H (none-when-no-return)
@@ -3313,6 +4061,24 @@ prints:
 12
 ```
 
+### order-make-list — focus 000D (list-literal)
+
+- Form: `order-the-lines` · Role: review · Topic: lists
+- Assumed: 0005, 0006
+- Shapes: bind-build-print · Variants: plain
+- Sample (provenance: seed k=0):
+
+Lines (canonical order):
+```py
+score = 9
+nums = [score, 10]
+print(nums)
+```
+prints:
+```
+[9, 10]
+```
+
 ### order-noncommutative-steps — focus 000B (accumulate-rebind)
 
 - Form: `order-the-lines` · Role: review · Topic: state
@@ -3330,6 +4096,44 @@ print(score)
 prints:
 ```
 8
+```
+
+### order-pack-tuple — focus 001W (tuple-pack-print)
+
+- Form: `order-the-lines` · Role: review · Topic: structures
+- Assumed: 0005, 0006
+- Shapes: bind-pack-print · Variants: plain
+- Sample (provenance: seed k=0):
+
+Lines (canonical order):
+```py
+count = 5
+t = (count, 10)
+print(t)
+```
+prints:
+```
+(5, 10)
+```
+
+### order-prints — focus 0005 (print-text)
+
+- Form: `order-the-lines` · Role: review · Topic: state
+- Assumed: — (structural only)
+- Shapes: three-prints · Variants: plain
+- Sample (provenance: seed k=0):
+
+Lines (canonical order):
+```py
+print("hi")
+print("star")
+print("sun")
+```
+prints:
+```
+hi
+star
+sun
 ```
 
 ### order-rebind-last-wins — focus 000A (rebind-updates-name)
@@ -3350,6 +4154,47 @@ prints:
 9
 ```
 
+### order-store-read — focus 001S (dict-key-assign)
+
+- Form: `order-the-lines` · Role: review · Topic: structures
+- Assumed: 0005, 0006, 001R
+- Shapes: create-store-read · Variants: plain
+- Sample (provenance: seed k=0):
+
+Lines (canonical order):
+```py
+d = {"cat": 9}
+d["b"] = 32
+print(d["b"])
+```
+prints:
+```
+32
+```
+
+### order-while-setup — focus 001M (while-repeats-while-true)
+
+- Form: `order-the-lines` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 000A, 000B, 0015
+- Shapes: setup-loop-after · Variants: plain
+- Sample (provenance: seed k=0):
+
+Lines (canonical order):
+```py
+n = 6
+while n > 0:
+    print(n)
+    n = n - 2
+print("done")
+```
+prints:
+```
+6
+4
+2
+done
+```
+
 ### param-gets-value — focus 0029 (def-params-bind-args)
 
 - Form: `predict-exact-output` · Role: intro · Topic: functions
@@ -3365,6 +4210,27 @@ cheer("sun", "frog")
 prints:
 ```
 frog
+```
+
+### param-shadow-hard — focus 002E (locals-shadow-globals)
+
+- Form: `predict-exact-output` · Role: review · Topic: functions
+- Assumed: 0005, 0006, 0027, 0028, 0029, 002D
+- Shapes: param-shadow, local-shadow · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+count = "star"
+def shout():
+    count = "sun"
+    print(count)
+shout()
+print(count)
+```
+prints:
+```
+sun
+star
 ```
 
 ### pick-the-argument — focus 0029 (def-params-bind-args)
@@ -3481,6 +4347,35 @@ prints:
 -25
 ```
 
+### print-args-order-spot — focus 000J (print-multi-args)
+
+- Form: `spot-the-difference` · Role: review · Topic: state
+- Assumed: 0005, 0006
+- Shapes: names-order, direct-literals · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+n = 3
+count = 5
+print(n, count)
+```
+prints:
+```
+3 5
+```
+
+Program B (predicted):
+```py
+n = 3
+count = 5
+print(count, n)
+```
+prints:
+```
+5 3
+```
+
 ### print-in-vs-after — focus 001E (loop-for-visits-each)
 
 - Form: `spot-the-difference` · Role: review · Topic: loops
@@ -3533,6 +4428,27 @@ print(n, count)
 prints:
 ```
 2 8
+```
+
+### prompt-then-work — focus 0026 (input-pauses-for-value)
+
+- Form: `predict-io` · Role: review · Topic: state
+- Assumed: 0005, 0006
+- Shapes: twice-then-done, done-then-echo · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+word = input("Your name? ")
+print(word)
+print(word)
+print("fish")
+```
+someone types: `sun`
+the program emits (prompts + output, without the typed lines):
+```
+Your name? sun
+sun
+fish
 ```
 
 ### quoted-or-name — focus 0007 (quoted-vs-name)
@@ -3814,6 +4730,38 @@ prints:
 hihihi
 ```
 
+### return-move-spot — focus 002C (return-exits-function)
+
+- Form: `spot-the-difference` · Role: review · Topic: functions
+- Assumed: 0005, 0008, 0027, 0028, 002A
+- Shapes: dead-print-moved · Variants: plain
+- Sample (provenance: seed k=0):
+
+Program A (shown with its output):
+```py
+def shout():
+    return 3 + 8
+    print("cat")
+print(shout())
+```
+prints:
+```
+11
+```
+
+Program B (predicted):
+```py
+def shout():
+    print("cat")
+    return 3 + 8
+print(shout())
+```
+prints:
+```
+cat
+11
+```
+
 ### return-or-print — focus 002B (return-vs-print)
 
 - Form: `spot-the-difference` · Role: review · Topic: functions
@@ -3845,6 +4793,23 @@ prints:
 ```
 10
 None
+```
+
+### return-state — focus 002A (return-hands-back-value)
+
+- Form: `predict-state` · Role: review · Topic: functions
+- Assumed: 0005, 0006, 0008, 0009, 0027, 0028
+- Shapes: plus, times · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+def shout():
+    return 6 + 3
+score = shout()
+```
+After it runs, `score` holds:
+```
+9
 ```
 
 ### return-then-use — focus 002A (return-hands-back-value)
@@ -4156,6 +5121,21 @@ prints:
 {'b': 35}
 ```
 
+### str-of-int-state — focus 000T (str-of-int)
+
+- Form: `predict-state` · Role: review · Topic: numbers
+- Assumed: 0005, 0006, 000Y
+- Shapes: two-str-calls · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+msg = str(4) + str(5)
+```
+After it runs, `msg` holds:
+```
+45
+```
+
 ### swap-latent-state — focus 000M (swap-right-side-first)
 
 - Form: `predict-state` · Role: review · Topic: state
@@ -4223,6 +5203,23 @@ print(b)
 prints:
 ```
 6
+```
+
+### text-arith-state — focus 000K (str-literal-vs-number)
+
+- Form: `predict-state` · Role: review · Topic: numbers
+- Assumed: 0005, 0006, 000Y
+- Shapes: two-names-concat · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+msg = "8"
+word = "5"
+s = msg + word
+```
+After it runs, `s` holds:
+```
+85
 ```
 
 ### text-compare — focus 0014 (str-compare-code-points)
@@ -4551,6 +5548,26 @@ prints:
 7
 ```
 
+### two-accumulators-hard — focus 001J (loop-accumulate)
+
+- Form: `predict-exact-output` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 000A, 000B, 000D, 001E
+- Shapes: sum-minus-count · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+total = 0
+count = 0
+for x in [4, 5, 7, 9]:
+    total = total + x
+    count = count + 1
+print(total - count)
+```
+prints:
+```
+21
+```
+
 ### two-calls-chain — focus 002G (call-in-expression)
 
 - Form: `trace-table` · Role: review · Topic: functions
@@ -4570,6 +5587,26 @@ Step-table walkthrough over `n`, `score` (blanks derive from the live trace); th
 24
 12
 24
+```
+
+### two-inputs — focus 0026 (input-pauses-for-value)
+
+- Form: `predict-io` · Role: review · Topic: state
+- Assumed: 0005, 0006
+- Shapes: print-reversed, print-in-order, echo-between · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+w = input("Type something: ")
+print(w)
+word = input("Your name? ")
+print(word)
+```
+someone types: `blue`, then `star`
+the program emits (prompts + output, without the typed lines):
+```
+Type something: blue
+Your name? star
 ```
 
 ### two-questions — focus 0026 (input-pauses-for-value)
@@ -4678,6 +5715,50 @@ prints the target:
 14
 20
 26
+```
+
+### write-range-header — focus 001G (range-start-stop)
+
+- Form: `write-the-line` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 001E, 001F
+- Shapes: two-arg-header · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended line `for i in range(2, 6):`:
+```py
+for i in range(2, 6):
+    print(i)
+```
+prints the target:
+```
+2
+3
+4
+5
+```
+
+### write-while-step — focus 001M (while-repeats-while-true)
+
+- Form: `write-the-line` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 000A, 000B, 0015
+- Shapes: minus-one, minus-step · Variants: plain
+- Sample (provenance: seed k=0):
+
+Filled with the intended line `n = n - 1`:
+```py
+n = 4
+while n > 0:
+    print(n)
+    n = n - 1
+print("done")
+```
+prints the target:
+```
+4
+3
+2
+1
+done
 ```
 
 ## Waivers

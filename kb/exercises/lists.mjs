@@ -37,6 +37,7 @@ export default [
           const items = Array.from({ length: 2 }, () => int(rng, 1, 9));
           return {
             code: `print([${items.join(", ")}])\n`, shape, variant: "plain",
+            misconception: items.join(", "), // "the brackets vanish when printed"
             variantCard: `A list prints with square brackets and commas, exactly as written: [${items.join(", ")}].`,
           };
         }
@@ -45,6 +46,7 @@ export default [
         return {
           code: `${name} = [${items.join(", ")}]\nprint(${name})\n`,
           shape, variant: "plain",
+          misconception: items.join(", "), // "the brackets vanish when printed"
           variantCard: `\`${name}\` holds the list, so \`print(${name})\` shows it with its square brackets: [${items.join(", ")}].`,
         };
       },
@@ -75,6 +77,7 @@ export default [
           return {
             code: `${name} = [${items.join(", ")}]\n${name}[0] = ${v}\n${name}[1] = ${w}\nprint(${name})\n`,
             shape, variant: "plain",
+            misconception: `[${items.join(", ")}]`, // "the old list, unchanged"
             variantCard: `Each store changes one slot of the SAME list: [${v}, ${w}].`,
           };
         }
@@ -83,12 +86,14 @@ export default [
           return {
             code: `${name} = [${items.join(", ")}]\n${name}[${i}] = ${v}\nprint(${name}[${other}])\n`,
             shape, variant: "plain",
+            misconception: String(v), // "the write landed on the slot being read"
             variantCard: `Only slot ${i} changed; slot ${other} still holds ${items[other]}.`,
           };
         }
         return {
           code: `${name} = [${items.join(", ")}]\n${name}[${i}] = ${v}\nprint(${name})\n`,
           shape: "set-slot", variant: "plain",
+          misconception: `[${items.join(", ")}]`, // "the old list, unchanged"
           variantCard: `\`${name}[${i}] = ${v}\` changes slot ${i} of the existing `
             + `list — the other slot keeps its value. The list is now `
             + `[${after.join(", ")}].`,
@@ -118,6 +123,7 @@ export default [
           return {
             code: `${name} = [${items.join(", ")}]\n${name}.append(${v})\n${name}.append(${w})\nprint(${name})\n`,
             shape, variant: "plain",
+            misconception: `[${items.join(", ")}]`, // "the list without the appended items"
             variantCard: `Each append adds one item at the end, in order: [${[...items, v, w].join(", ")}].`,
           };
         }
@@ -125,12 +131,14 @@ export default [
           return {
             code: `${name} = []\n${name}.append(${v})\nprint(${name})\n`,
             shape, variant: "plain",
+            misconception: "[]", // "the list without the appended item"
             variantCard: `Appending to an empty list gives a one-item list: [${v}].`,
           };
         }
         return {
           code: `${name} = [${items.join(", ")}]\n${name}.append(${v})\nprint(${name})\n`,
           shape: "append-then-print", variant: "plain",
+          misconception: `[${items.join(", ")}]`, // "the list without the appended item"
           variantCard: `\`append(${v})\` adds ${v} to the end of the same list, so it becomes [${[...items, v].join(", ")}].`,
         };
       },
@@ -195,6 +203,8 @@ export default [
           code: `a = [${items.join(", ")}]\nb = a + [${v}]\nprint(${read})\n`,
           shape, variant: "plain",
           // print-original's designed wrong: "the + changed a too".
+          // (print-new / concat-two-names carry no misconception: that
+          // same belief predicts the TRUE output for those prints.)
           ...(shape === "print-original" ? { misconception: `[${[...items, v].join(", ")}]` } : {}),
           variantCard: `\`a + [${v}]\` built a brand-new list for \`b\`; \`a\` was `
             + `not touched. So \`${read}\` holds [${result.join(", ")}].`,
@@ -247,6 +257,10 @@ export default [
         return {
           code: `print(${shape}([${items.join(", ")}]))\n`,
           shape, variant: shape,
+          // Only len has an algebraically safe wrong (n−1 ≠ n, "count from
+          // 0"). sum/max/min confusables can collide with the truth on
+          // all-equal or all-ones draws, so they carry no misconception.
+          ...(shape === "len" ? { misconception: String(items.length - 1) } : {}),
           variantCard: `\`${shape}\` of [${items.join(", ")}] is `
             + `${shape === "len" ? items.length : shape === "sum" ? items.reduce((a, b) => a + b, 0) : shape === "max" ? Math.max(...items) : Math.min(...items)}.`,
         };
@@ -306,9 +320,13 @@ export default [
         if (shape === "whole-row") {
           return {
             code: `g = ${lit}\nprint(g[${r}])\n`, shape, variant: "plain",
+            misconception: String(grid[r][r]), // read one cell instead of the row
             variantCard: `One subscript picks the WHOLE row: \`g[${r}]\` is [${grid[r].join(", ")}].`,
           };
         }
+        // name-grid / bare-grid carry no misconception: the swapped read
+        // grid[c][r] equals the truth whenever r === c (or the two cells
+        // happen to match), and the draws cannot change here (G7).
         if (shape === "name-grid") return { code: `g = ${lit}\nprint(g[${r}][${c}])\n`, shape, variant: "plain", variantCard: card };
         return { code: `print(${lit}[${r}][${c}])\n`, shape, variant: "plain", variantCard: card };
       },
@@ -466,6 +484,7 @@ export default [
           return {
             code, aOutput, contrastCode,
             shape, variant: "plain",
+            misconception: aOutput, // same as A — "the appends haven't happened by the print"
             variantCard: `Only \`print(${nm})\` moved. Print FIRST and the list is still \`${aOutput}\`; `
               + `print after both appends and it has grown to \`[${p}, ${q}, ${v}, ${w}]\`.`,
           };
@@ -475,6 +494,7 @@ export default [
         return {
           code, aOutput, contrastCode,
           shape, variant: "plain",
+          misconception: aOutput, // same as A — "the append hasn't happened by the print"
           variantCard: `The append changes the SAME list. Print before it and you see \`${aOutput}\`; `
             + `print after and you see \`[${p}, ${q}, ${v}]\`.`,
         };
@@ -508,6 +528,7 @@ export default [
           return {
             code, aOutput: `[${v1}, ${base}]`, contrastCode,
             shape, variant: "plain",
+            misconception: `[${v1}, ${base}]`, // same as A — "the later write doesn't reach the print"
             variantCard: `Only \`print(${nm})\` moved. Read between the two writes and slot 0 is ${v1}; `
               + `read after both and slot 0 is ${v2} — the last write to a slot wins.`,
           };
@@ -517,6 +538,7 @@ export default [
         return {
           code, aOutput: `[${v2}, ${base}]`, contrastCode,
           shape, variant: "plain",
+          misconception: `[${v2}, ${base}]`, // same as A — "swapping the writes changes nothing"
           variantCard: `Both lines write slot 0; the SECOND one wins. As written slot 0 ends at ${v2}; `
             + `swap the two writes and it ends at ${v1} instead.`,
         };
@@ -545,6 +567,7 @@ export default [
           return {
             code, aOutput, contrastCode,
             shape, variant: "plain",
+            misconception: aOutput, // same as A — "the copy is the same whenever it runs"
             variantCard: `\`b = a[:]\` copies the list exactly as it is at that moment. Copy first and \`b\` `
               + `stays \`${aOutput}\`; copy after both appends and \`b\` is \`[${p}, ${q}, ${v}, ${w}]\`.`,
           };
@@ -554,6 +577,7 @@ export default [
         return {
           code, aOutput, contrastCode,
           shape, variant: "plain",
+          misconception: aOutput, // same as A — "the copy is the same whenever it runs"
           variantCard: `Only the \`b = a[:]\` copy moved. Copy BEFORE the append and \`b\` is \`${aOutput}\`; `
             + `copy AFTER and \`b\` is \`[${p}, ${q}, ${v}]\` — the copy freezes the list as it stood.`,
         };
@@ -618,6 +642,7 @@ export default [
           // Program B (predicted): append adds the whole list as ONE nested item.
           contrastCode: `${nm} = [${p}, ${q}]\n${nm}.append([${x}, ${y}])\nprint(${nm})\n`,
           shape: "extend-then-append", variant: "plain",
+          misconception: `[${p}, ${q}, ${x}, ${y}]`, // same as A — "append flattens like extend"
           variantCard: `The only change is the method. \`extend([${x}, ${y}])\` folds each item in — `
             + `[${p}, ${q}, ${x}, ${y}]. \`append([${x}, ${y}])\` adds the whole list as ONE item — `
             + `[${p}, ${q}, [${x}, ${y}]].`,
@@ -654,6 +679,7 @@ export default [
           // Program B (predicted): row 0, position 1 — a different cell.
           contrastCode: `g = ${lit}\nprint(g[0][1])\n`,
           shape: "row-col-swap", variant: "plain",
+          misconception: String(g10), // same as A — "swapped subscripts read the same cell"
           variantCard: `\`g[1][0]\` is row 1 then position 0 — that's ${g10}. Swap the subscripts to `
             + `\`g[0][1]\` and you pick row 0 position 1 instead — ${g01}. Row comes first.`,
         };
@@ -684,6 +710,9 @@ export default [
           return {
             code: `word = "${word}"\nprint("${ch}" in word)\n`,
             shape, variant: "plain",
+            // "in answers the position" — printable only when the character
+            // is present; an absent probe has no position to name.
+            ...(hit ? { misconception: String(word.indexOf(ch)) } : {}),
             variantCard: `\`in\` works on text too: is \`"${ch}"\` one of the characters of \`"${word}"\`? ${hit ? "Yes — `True`." : "No — `False`."}`,
           };
         }
@@ -694,6 +723,7 @@ export default [
           return {
             code: `xs = [${items.join(", ")}]\nprint(${target} in xs)\n`,
             shape, variant: "plain",
+            misconception: String(items.indexOf(target)), // "in answers the position"
             variantCard: `${target} IS one of the items, so \`in\` answers \`True\` — it never says where.`,
           };
         }
@@ -701,6 +731,9 @@ export default [
         // items (do/while) — so a "big number ⇒ not there" shortcut fails.
         let miss = int(rng, 1, 9);
         while (items.includes(miss)) miss = int(rng, 1, 9);
+        // not-found carries no misconception: the concept's wrong answer
+        // ("the position, or an error") has no printable line for an
+        // absent probe.
         return {
           code: `xs = [${items.join(", ")}]\nprint(${miss} in xs)\n`,
           shape: "not-found", variant: "plain",
@@ -740,6 +773,10 @@ export default [
         return {
           code, blank, targetOutput: String(vals[fn]),
           shape: fn, variant: "plain",
+          // The confusable twin builtin (count↔total, wrong end of the
+          // range); the uniqueness redraw guarantees every other builtin
+          // misses the target.
+          misconception: { len: "sum", sum: "len", max: "min", min: "max" }[fn],
           variantCard: `Only \`${fn}\` of [${items.join(", ")}] gives ${vals[fn]} — len is ${vals.len}, `
             + `sum ${vals.sum}, max ${vals.max}, min ${vals.min}.`,
         };
@@ -778,6 +815,7 @@ export default [
           aOutput: aOut,
           contrastCode: `xs = [${items.join(", ")}]\nprint(${probed} in xs)\n`,
           shape, variant: "plain",
+          misconception: aOut, // same as A — membership misjudged for the same-band probe
           variantCard: `\`${hit}\` is one of the items, so \`${hit} in xs\` is \`True\`; \`${miss}\` is not, so `
             + `\`${miss} in xs\` is \`False\`. Same band, different membership.`,
         };
@@ -810,6 +848,7 @@ export default [
           aOutput: `[${items.join(", ")}]`,
           contrastCode: `a = [${items.join(", ")}]\nb = a + [${v}]\nprint(b)\n`,
           shape: "original-vs-new", variant: "plain",
+          misconception: `[${items.join(", ")}]`, // same as A — "b is just another name for the unchanged a"
           variantCard: `\`a + [${v}]\` builds a brand-new list for \`b\`, leaving \`a\` as [${items.join(", ")}]. `
             + `Print \`b\` instead and you see the new list: [${[...items, v].join(", ")}].`,
         };

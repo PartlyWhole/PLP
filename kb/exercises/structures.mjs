@@ -38,6 +38,7 @@ export default [
         if (shape === "one-pair") {
           return {
             code: `d = {"${k1}": ${v1}}\nprint(d["${k1}"])\n`, shape, variant: "plain",
+            misconception: k1, // "the lookup echoes the key back"
             variantCard: `\`d["${k1}"]\` looks up the key \`"${k1}"\` and returns its value: ${v1}.`,
           };
         }
@@ -45,6 +46,7 @@ export default [
         const lookupVal = shape === "two-pair-first" ? v1 : v2;
         return {
           code: `d = {"${k1}": ${v1}, "${k2}": ${v2}}\nprint(d["${lookup}"])\n`, shape, variant: "plain",
+          misconception: lookup, // "the lookup echoes the key back"
           variantCard: `\`d["${lookup}"]\` looks up \`"${lookup}"\`, which maps to ${lookupVal}.`,
         };
       },
@@ -70,6 +72,7 @@ export default [
           return {
             code: `d = {"${k1}": ${v1}}\nd["${k2}"] = ${v2}\nd["${k1}"] = ${v3}\nprint(d)\n`,
             shape, variant: "plain",
+            misconception: `{'${k1}': ${v1}, '${k2}': ${v2}}`, // "the old value survives the replace"
             variantCard: `The first store adds \`"${k2}"\`; the second replaces \`"${k1}"\`'s value with ${v3}.`,
           };
         }
@@ -79,6 +82,9 @@ export default [
         return {
           code: `d = {"${k1}": ${v1}}\nd["${key}"] = ${v2}\nprint(d)\n`,
           shape, variant: "plain",
+          // The dict as it stood before the store — "a new key is
+          // rejected" (add-new) / "the old value survives" (replace).
+          misconception: `{'${k1}': ${v1}}`,
           variantCard: shape === "add-new"
             ? `\`"${key}"\` is new, so it is added: \`{'${k1}': ${v1}, '${key}': ${v2}}\`.`
             : `\`"${key}"\` already exists, so its value is replaced: \`{'${k1}': ${v2}}\`.`,
@@ -103,6 +109,8 @@ export default [
         if (shape === "assign-get") {
           const [k1, k2] = twoKeys(rng);
           const v1 = int(rng, 1, 9), alt = int(rng, 10, 20);
+          // No misconception: the key is missing, so the concept's wrong
+          // answer ("alt even when the key is present") IS the truth here.
           return {
             code: `d = {"${k1}": ${v1}}\nv = d.get("${k2}", ${alt})\nprint(v)\n`,
             shape, variant: "plain",
@@ -115,6 +123,9 @@ export default [
         return {
           code: `d = {"${k1}": ${v1}}\nprint(d.get("${key}", ${alt}))\n`,
           shape, variant: "plain",
+          // "the default always wins" — only present-key can get it wrong;
+          // for missing-key the default IS the answer.
+          ...(shape === "present-key" ? { misconception: String(alt) } : {}),
           variantCard: shape === "present-key"
             ? `\`"${key}"\` is present, so \`get\` returns its value ${v1}, not the default.`
             : `\`"${key}"\` is missing, so \`get\` returns the default ${alt}.`,
@@ -141,10 +152,13 @@ export default [
         if (shape === "key-present") {
           return {
             code: `d = {"${k1}": ${v1}}\nprint("${k1}" in d)\n`, shape, variant: "plain",
+            misconception: "False", // "in checks the values — the key isn't one of them"
             variantCard: `\`in\` checks the KEYS. \`"${k1}"\` is a key of \`d\`, so the answer is \`True\`.`,
           };
         }
         if (shape === "key-absent") {
+          // No misconception: the value-checking belief also answers
+          // `False` for an absent key, which is the truth.
           return {
             code: `d = {"${k1}": ${v1}}\nprint("${k2}" in d)\n`, shape, variant: "plain",
             variantCard: `\`in\` checks the KEYS. \`"${k2}"\` is not a key of \`d\`, so the answer is \`False\`.`,
@@ -153,6 +167,7 @@ export default [
         return {
           code: `d = {"${k1}": ${v1}}\nprint(${v1} in d)\n`,
           shape, variant: "plain",
+          misconception: "True", // "in finds stored values too"
           variantCard: `\`${v1}\` is a value, not a key, so \`in\` does not find it: \`False\`.`,
         };
       },
@@ -176,17 +191,20 @@ export default [
         if (shape === "two-items") {
           return {
             code: `t = (${a}, ${b})\nprint(t)\n`, shape, variant: "plain",
+            misconception: `${a}, ${b}`, // "printed without the parentheses"
             variantCard: `A tuple prints inside round brackets: \`(${a}, ${b})\`.`,
           };
         }
         if (shape === "three-items") {
           return {
             code: `t = (${a}, ${b}, ${c})\nprint(t)\n`, shape, variant: "plain",
+            misconception: `${a}, ${b}, ${c}`, // "printed without the parentheses"
             variantCard: `A tuple prints inside round brackets, in order: \`(${a}, ${b}, ${c})\`.`,
           };
         }
         return {
           code: `print((${a}, ${b}))\n`, shape, variant: "plain",
+          misconception: `${a}, ${b}`, // "printed without the parentheses"
           variantCard: `The pair prints as a tuple, in round brackets: \`(${a}, ${b})\`.`,
         };
       },
@@ -213,6 +231,7 @@ export default [
           return {
             code: `x, y, z = (${a}, ${b}, ${c})\nprint(${read})\n`,
             shape, variant: "plain",
+            misconception: `(${a}, ${b}, ${c})`, // "every name gets the whole tuple"
             variantCard: `Three items spread into three names in order; \`${read}\` gets ${val}.`,
           };
         }
@@ -221,6 +240,7 @@ export default [
         return {
           code: `x, y = (${a}, ${b})\nprint(${read})\n`,
           shape, variant: "plain",
+          misconception: `(${a}, ${b})`, // "both names get the whole tuple"
           variantCard: `\`x\` gets the first item (${a}), \`y\` the second (${b}). This prints ${read === "x" ? a : b}.`,
         };
       },
@@ -243,6 +263,7 @@ export default [
         return {
           code: `x = ${a},\nprint(x)\n`,
           shape: "trailing-comma", variant: "plain",
+          misconception: String(a), // "just the number — the comma is ignored"
           variantCard: `The trailing comma makes \`x\` a one-item tuple, so it prints as \`(${a},)\`.`,
         };
       },
@@ -274,6 +295,7 @@ export default [
           return {
             code, aOutput: `{'${k}': ${v1}}`, contrastCode,
             shape, variant: "plain",
+            misconception: `{'${k}': ${v1}}`, // same as A — "the later store doesn't reach the print"
             variantCard: `Only \`print(d)\` moved. Read between the two stores and \`"${k}"\` maps to ${v1}; `
               + `read after both and it maps to ${v2} — the last store to a key wins.`,
           };
@@ -283,6 +305,7 @@ export default [
         return {
           code, aOutput: `{'${k}': ${v2}}`, contrastCode,
           shape, variant: "plain",
+          misconception: `{'${k}': ${v2}}`, // same as A — "swapping the stores changes nothing"
           variantCard: `Both lines store under \`"${k}"\`; the SECOND wins. As written \`"${k}"\` ends at ${v2}; `
             + `swap the two stores and it ends at ${v1}.`,
         };
@@ -348,6 +371,11 @@ export default [
         return {
           code, blank, targetOutput: String(val),
           shape: "fill-key", variant: "plain",
+          // "look it up by position" — the target value's slot number is
+          // never a key (KeyError), so it can never print the target; and
+          // the token can never restate the target (val ≥ 1 at position 0,
+          // val ≥ 10 at position 1).
+          misconception: String(first ? 0 : 1),
           variantCard: `\`d["${key}"]\` looks up \`"${key}"\`, which maps to ${val}. The other key maps to ${other}.`,
         };
       },
@@ -374,8 +402,88 @@ export default [
           aOutput: String(a),
           contrastCode: `t = (${a}, ${b})\nprint(t)\n`,
           shape: "unpack-vs-pack", variant: "plain",
+          misconception: String(a), // same as A — "packing spreads too, so t gets the first item"
           variantCard: `Unpacking spreads the pair into names: \`x\` gets ${a}. Packing keeps it whole: `
             + `\`t\` is the tuple \`(${a}, ${b})\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Review spot-the-difference: same dict, only the PROBE on the last line
+    // changes — a key in A, a stored value in B. Contrast 001R: the learner
+    // has looked values up by key; here `in` refuses to see them.
+    // G1 regime: keys are strings (dictKeys pool) and values are ints —
+    // disjoint by TYPE, so `v1 in d` is False on every seed while A's key
+    // probe is True; the "in sees the stored values too" belief answers True
+    // for B, never colliding with the truth (E6 by construction).
+    // Misconception formula: aOutput ("True") — the K-mc spot-diff rule.
+    id: "in-dict-value-spot",
+    topic: "structures",
+    focus: "001V", // in-dict-checks-keys — `in` looks at keys, never values
+    assumed: ["0005", "0006", "0016", "001R"],
+    contrast: "001R", // dict-lookup-by-key — values are reached THROUGH keys
+    role: "review",
+    form: "spot-the-difference",
+    generator: {
+      shapes: ["key-vs-value"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const [k1, k2] = twoKeys(rng);
+        const v1 = int(rng, 1, 9);
+        const v2 = v1 + int(rng, 1, 9); // offset draw — the values always differ (G3)
+        // One source of truth for the shared dict line (G9): only the probe
+        // on the last line differs between A and B.
+        const dictLine = `d = {"${k1}": ${v1}, "${k2}": ${v2}}`;
+        return {
+          code: `${dictLine}\nprint("${k1}" in d)\n`,
+          aOutput: "True",
+          contrastCode: `${dictLine}\nprint(${v1} in d)\n`,
+          shape: "key-vs-value", variant: "plain",
+          misconception: "True", // same as A — "in sees the stored values too"
+          variantCard: `Only the probe changed. \`"${k1}"\` is a KEY, so A prints \`True\` — `
+            + `but \`in\` never looks at the values, so \`${v1} in d\` is \`False\` even `
+            + `though ${v1} is stored under \`"${k1}"\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Hard sibling (R1.3): three stores, two keys — the middle store adds a
+    // NEW key, the last one REPLACES the first key's value, and the print
+    // shows the WHOLE dict. The hardness is display exactness: insertion
+    // order keeps the first key FIRST even though its value was written
+    // last. Availability-gated on met(001S) at selection.
+    // G1 regime: v3 = v1 + offset with offset ≥ 1 (G3), so the overwritten
+    // value always differs from the original — the "overwrite was rejected"
+    // reading {'k1': v1, 'k2': v2} never equals the truth {'k1': v3, 'k2': v2}.
+    // Misconception formula: `{'${k1}': ${v1}, '${k2}': ${v2}}`.
+    id: "dict-overwrite-chain-hard",
+    topic: "structures",
+    focus: "001S", // dict-key-assign
+    assumed: ["0005", "0006", "001R"],
+    role: "review",
+    difficulty: "hard",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["overwrite-chain"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const [k1, k2] = twoKeys(rng); // distinct keys from dictKeys (G3)
+        const v1 = int(rng, 1, 9);
+        const v2 = int(rng, 10, 40);
+        const v3 = v1 + int(rng, 1, 9); // offset draw — v3 ≠ v1 on every seed (G1)
+        return {
+          code: `d = {"${k1}": ${v1}}\nd["${k2}"] = ${v2}\nd["${k1}"] = ${v3}\nprint(d)\n`,
+          shape: "overwrite-chain", variant: "plain",
+          misconception: `{'${k1}': ${v1}, '${k2}': ${v2}}`, // "the overwrite was rejected"
+          variantCard: `\`"${k2}"\` is new, so it lands at the END; \`d["${k1}"] = ${v3}\` `
+            + `replaces the value under \`"${k1}"\` but keeps its first-inserted place — `
+            + `the dict prints \`{'${k1}': ${v3}, '${k2}': ${v2}}\`, \`${k1}\` still first.`,
         };
       },
     },

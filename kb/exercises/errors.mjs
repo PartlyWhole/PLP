@@ -114,13 +114,17 @@ export default [
               + `\`label + str(count)\` would join them.`,
           };
         }
+        // E10b: this shape crashes on line 2 (the sibling shape crashes on
+        // line 3), so the raising LINE is a real decision, not a meta-pattern.
+        // The number is inline, so only `label` needs a bind.
+        const mix = variant === "str-first" ? `label + ${n}` : `${n} + label`;
         return {
-          code: `count = ${n}\nlabel = "${text}"\nmsg = ${sum}\nprint(msg)\n`,
-          expectedError: { type: "TypeError", line: 3 },
+          code: `label = "${text}"\nmsg = ${mix}\nprint(msg)\n`,
+          expectedError: { type: "TypeError", line: 2 },
           shape, variant,
-          variantCard: `The \`+\` on line 3 mixes the text \`${text}\` with the number `
+          variantCard: `The \`+\` on line 2 mixes the text \`${text}\` with the number `
             + `${n}, so it never gets as far as storing \`msg\` — that line raises a `
-            + `\`TypeError\` and line 4 never runs. Nothing is printed.`,
+            + `\`TypeError\` and line 3 never runs. Nothing is printed.`,
         };
       },
     },
@@ -212,6 +216,200 @@ export default [
           variantCard: `Line 2 finds \`${present[1]}\` and prints ${vals[1]}. Line 3 asks for `
             + `\`${missing}\`, which \`counts\` never had, so that is where it stops with a `
             + `\`KeyError\`. \`counts.get("${missing}", 0)\` is how you ask without stopping.`,
+        };
+      },
+    },
+  },
+
+  // Review sibling of err-name-unbound. The NEW fact under test: an error is
+  // a STOP, not an undo — every line above the bad one already ran, and its
+  // output is already real. G1 regime: the raise is fixed by construction
+  // (an unbound/typo name is read on a known line), and the raising line
+  // differs across the two shapes (2 vs 3), per E10b. No misconception:
+  // predict-the-error is graded by the real terminal exception.
+  {
+    id: "err-after-output",
+    topic: "state",
+    focus: "002N",
+    assumed: ["0005", "0006"],
+    role: "review",
+    form: "predict-the-error",
+    generator: {
+      shapes: ["printed-then-unbound", "printed-value-then-typo"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["printed-then-unbound", "printed-value-then-typo"]);
+        const name = pick(rng, longNames);
+        const v = int(rng, 2, 20);
+        const label = pick(rng, words);
+        const typo = pick(rng, nearMisses(name));
+        if (shape === "printed-then-unbound") {
+          return {
+            code: `print("${label}")\nprint(${name})\n`,
+            expectedError: { type: "NameError", line: 2 },
+            shape, variant: "plain",
+            variantCard: `Line 1 finished before anything went wrong, so \`${label}\` is `
+              + `really on the screen. Only then does line 2 ask for \`${name}\` — a name `
+              + `no line ever bound — and that is where it stops with a \`NameError\`. `
+              + `An error cancels the lines BELOW it, never the output already printed.`,
+          };
+        }
+        return {
+          code: `${name} = ${v}\nprint(${name})\nprint(${typo})\n`,
+          expectedError: { type: "NameError", line: 3 },
+          shape, variant: "plain",
+          variantCard: `Lines 1 and 2 both ran: \`${name}\` became ${v}, so ${v} is `
+            + `printed. Line 3 then asks for \`${typo}\` — a different name from `
+            + `\`${name}\`, and one nothing ever bound — so it stops there with a `
+            + `\`NameError\`. The ${v} on the screen already happened; the error only `
+            + `stops what comes after.`,
+        };
+      },
+    },
+  },
+
+  // Review sibling of err-str-plus-int: the mix can sit BEFORE or AFTER a
+  // successful print, so "did anything get printed first?" is part of the
+  // prediction. G1 regime: str + int raises by construction; the raising
+  // line differs across shapes (3 vs 2), per E10b. No misconception.
+  {
+    id: "err-mix-after-print",
+    topic: "strings",
+    focus: "002P",
+    assumed: ["0005", "0006", "000K", "002N"],
+    role: "review",
+    form: "predict-the-error",
+    generator: {
+      shapes: ["echo-then-mix", "mix-before-print"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["echo-then-mix", "mix-before-print"]);
+        const n = int(rng, 2, 9);
+        const text = pick(rng, longWords);
+        if (shape === "echo-then-mix") {
+          return {
+            code: `label = "${text}"\nprint(label)\nprint(label + ${n})\n`,
+            expectedError: { type: "TypeError", line: 3 },
+            shape, variant: "plain",
+            variantCard: `Line 2 works — \`label\` holds the text \`${text}\`, and printing `
+              + `it is fine, so \`${text}\` really appears. Line 3 tries \`label + ${n}\`, `
+              + `text plus a number, and \`+\` refuses to guess: that line stops with a `
+              + `\`TypeError\`. The \`${text}\` already printed stays printed.`,
+          };
+        }
+        return {
+          code: `count = ${n}\nmsg = "${text}" + count\nprint(msg)\n`,
+          expectedError: { type: "TypeError", line: 2 },
+          shape, variant: "plain",
+          variantCard: `Line 2 has to work out \`"${text}" + count\` before it can store `
+            + `\`msg\` — and that is text plus the number ${n}, so it stops right there `
+            + `with a \`TypeError\`. Line 3 never runs: nothing is printed at all. `
+            + `\`"${text}" + str(count)\` would join them.`,
+        };
+      },
+    },
+  },
+
+  // Review sibling of err-index-range: the boundary read (the LAST position)
+  // succeeds first, so the learner has to separate "reads that fit" from the
+  // one past the end. G1 regime: `bad` is drawn ≥ len by construction, so
+  // the overrun always raises; the raising line differs across shapes
+  // (3 vs 2), per E10b. No misconception. (An index held in a NAME is not
+  // raise-analyzable — kb/analyzer tracks only literal indexes — and a bind
+  // from a subscript emits 0009 evaluate-before-bind, outside this closure,
+  // so both reads are direct literal subscripts.)
+  {
+    id: "err-index-computed",
+    topic: "lists",
+    focus: "002Q",
+    assumed: ["0005", "0006", "000D", "000E", "002N"],
+    role: "review",
+    form: "predict-the-error",
+    generator: {
+      shapes: ["read-last-then-overrun", "off-the-end-direct"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["read-last-then-overrun", "off-the-end-direct"]);
+        // Values end in 5 so no item can be mistaken for a position.
+        const start = int(rng, 1, 9) * 10 + 5;
+        const past = int(rng, 0, 1);
+        if (shape === "read-last-then-overrun") {
+          const items = [start, start + 10, start + 20];
+          const bad = 3 + past;
+          return {
+            code: `xs = [${items.join(", ")}]\nprint(xs[2])\nprint(xs[${bad}])\n`,
+            expectedError: { type: "IndexError", line: 3 },
+            shape, variant: "plain",
+            variantCard: `\`xs\` holds 3 items, positions 0 to 2 — so line 2 is fine: `
+              + `\`xs[2]\` is ${items[2]}, the very last one, and it is printed. Line 3 `
+              + `asks for position ${bad}, which a 3-item list does not have, so that is `
+              + `where it stops with an \`IndexError\`. The ${items[2]} already printed `
+              + `is real.`,
+          };
+        }
+        const items = [start, start + 10];
+        const bad = 2 + past;
+        return {
+          code: `xs = [${items.join(", ")}]\nprint(xs[${bad}])\n`,
+          expectedError: { type: "IndexError", line: 2 },
+          shape, variant: "plain",
+          variantCard: `Two items means two positions: 0 and 1 — \`xs[1]\` is `
+            + `${items[1]}, the last one. \`xs[${bad}]\` asks for a position past the `
+            + `end, so line 2 stops with an \`IndexError\` and nothing is printed.`,
+        };
+      },
+    },
+  },
+
+  // Review sibling of err-key-missing: what a dict lookup takes is a KEY.
+  // The value-not-a-key shape stores a number and then asks for it as if
+  // storing it had minted a key — keys are strings here, so an int subscript
+  // is absent by construction. The near-miss shape uses keyPool's guarantee
+  // (swapLast of a pool key is never itself in the pool). G1 regime: the
+  // asked-for key is absent on every seed; the raising line differs across
+  // shapes (3 vs 2), per E10b. No misconception.
+  {
+    id: "err-key-after-store",
+    topic: "structures",
+    focus: "002R",
+    assumed: ["0005", "0006", "001R", "002N"],
+    role: "review",
+    form: "predict-the-error",
+    generator: {
+      shapes: ["value-not-a-key", "near-miss-key"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["value-not-a-key", "near-miss-key"]);
+        const start = int(rng, 0, 4);
+        const k1 = keyPool[start];
+        const k2 = keyPool[start + 1];
+        const v1 = int(rng, 2, 9);
+        // Distinct by offset (G3): the two stored values never collide.
+        const v2 = 2 + ((v1 - 2 + 1 + int(rng, 0, 6)) % 8);
+        if (shape === "value-not-a-key") {
+          return {
+            code: `counts = {"${k1}": ${v1}, "${k2}": ${v2}}\nprint(counts["${k2}"])\nprint(counts[${v2}])\n`,
+            expectedError: { type: "KeyError", line: 3 },
+            shape, variant: "plain",
+            variantCard: `Line 2 is fine: \`${k2}\` is a key, so its value ${v2} is `
+              + `printed. Line 3 then asks for \`${v2}\` itself — but storing ${v2} made `
+              + `it a VALUE, not a key. \`counts\` has only the keys \`${k1}\` and `
+              + `\`${k2}\`, so line 3 stops with a \`KeyError\`.`,
+          };
+        }
+        const typo = swapLast(k1);
+        return {
+          code: `counts = {"${k1}": ${v1}}\nprint(counts["${typo}"])\n`,
+          expectedError: { type: "KeyError", line: 2 },
+          shape, variant: "plain",
+          variantCard: `\`${typo}\` and \`${k1}\` look alike, but a dict does not guess: `
+            + `the only key \`counts\` holds is \`${k1}\`. Line 2 asks for \`${typo}\`, `
+            + `which was never stored, so it stops there with a \`KeyError\` — and `
+            + `nothing is printed first.`,
         };
       },
     },
