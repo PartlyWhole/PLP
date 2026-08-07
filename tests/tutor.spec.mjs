@@ -1876,17 +1876,21 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
-  async function seedTraceSimulationRound(page) {
-    await page.evaluate(() => {
+  async function seedTraceSimulationRound(page, {
+    code = "n = 0\nprint(n)\n",
+    probeNames = ["n"],
+    id = "trace-sim-inline",
+  } = {}) {
+    await page.evaluate(({ code, probeNames, id }) => {
       localStorage.removeItem("plp.kb.met.v1");
       localStorage.removeItem("plp.kb.v1");
       const lesson = {
-        id: "trace-sim-inline",
+        id,
         title: "Build the trace",
         steps: [
-          { loadCode: "n = 0\nprint(n)\n" },
+          { loadCode: code },
           { ask: {
-            kind: "trace-simulation", form: "trace-table", probeNames: ["n"],
+            kind: "trace-simulation", form: "trace-table", probeNames,
             concept: "0009", template: "trace-sim-inline-template",
           } },
           { pause: true },
@@ -1897,11 +1901,11 @@ test.describe("PLP tutor (T-series)", () => {
         lessonId: lesson.id, drillLesson: lesson, resumeIndex: 0, cards: [],
       }));
       location.reload();
-    });
+    }, { code, probeNames, id });
   }
 
-  async function startTraceSimulationRound(page) {
-    await seedTraceSimulationRound(page);
+  async function startTraceSimulationRound(page, options) {
+    await seedTraceSimulationRound(page, options);
     await page.waitForFunction(() => window.plp?.tutor.state().waiting === "ask", null, { timeout: 30_000 });
     await page.evaluate(() => {
       if (!document.body.classList.contains("practice")) window.plp.tutor.toggleSurface();
@@ -1914,6 +1918,10 @@ test.describe("PLP tutor (T-series)", () => {
     await startTraceSimulationRound(page);
     await expect(page.locator("#practice .trace-sim-phase")).toHaveAttribute("data-phase", "next-line");
     await expect(page.locator("#practice .trace-sim-ledger-row")).toHaveCount(0);
+    await expect(page.locator("#practice .pr-question")).toHaveClass(/pr-trace-question/);
+    await expect(page.locator("#practice .trace-sim-program")).toBeVisible();
+    await expect(page.locator("#practice .trace-sim-current")).toBeVisible();
+    await expect(page.locator("#practice .trace-sim-history")).toHaveAttribute("hidden", "");
     // The silent answer-key trace is concealed before any escape to Code can
     // expose it. The pure question retains its immutable derived timeline.
     await page.waitForFunction(() => window.plp.console.buffer().trim() === "");
@@ -1941,7 +1949,14 @@ test.describe("PLP tutor (T-series)", () => {
 
     // Program end and source lines are one accessible pressed-button group.
     const lineOne = page.locator("#practice .trace-sim-line[data-line='1']");
+    const lineTwo = page.locator("#practice .trace-sim-line[data-line='2']");
     const programEnd = page.locator("#practice .trace-sim-end");
+    await lineOne.evaluate((el) => { el.dataset.stableNode = "original"; });
+    await lineOne.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(lineTwo).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(lineOne).toBeFocused();
     await expect(lineOne).toHaveAttribute("aria-pressed", "false");
     await expect(programEnd).toHaveAttribute("aria-pressed", "false");
     await programEnd.click();
@@ -1949,7 +1964,7 @@ test.describe("PLP tutor (T-series)", () => {
     await lineOne.click();
     await expect(lineOne).toHaveAttribute("aria-pressed", "true");
     await expect(programEnd).toHaveAttribute("aria-pressed", "false");
-    await expect(page.locator("#practice .trace-sim-phase button.picked")).toHaveCount(1);
+    await expect(page.locator("#practice .trace-sim-source button.picked")).toHaveCount(1);
 
     // Wrong next-line pick: first miss is remembered, but no correct line or
     // future row appears. A correct retry advances only to this line's effects.
@@ -1958,6 +1973,28 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#practice .trace-sim-ledger-row")).toHaveCount(0);
     await page.evaluate(() => window.plp.tutor.submit({ kind: "line", line: 1 }));
     await expect(page.locator("#practice .trace-sim-phase")).toHaveAttribute("data-phase", "effects");
+    await expect(lineOne).toHaveAttribute("data-stable-node", "original");
+    await expect(lineOne).toHaveClass(/picked/);
+
+    // The effect editor makes "nothing changed" an affirmative choice. An
+    // untouched editor is incomplete, not an implicit no-effect answer.
+    const effectRow = page.locator("#practice .trace-sim-effect-row").first();
+    const changeToggle = effectRow.locator(".trace-sim-name-toggle");
+    const changeInput = effectRow.locator(".tutor-output-input");
+    const noEffect = page.locator("#practice .trace-sim-no-effect");
+    await expect(effectRow.locator(".trace-sim-effect-before")).toContainText("unbound");
+    await expect(changeToggle).toHaveText("Unchanged");
+    await page.locator("#practice .trace-sim-controls .pr-actions .primary").click();
+    await expect(page.locator("#practice .pr-note")).toContainText("select No visible effect");
+    expect((await page.evaluate(() => window.plp.tutor.drillStats()))).toEqual({ "0009": { seen: 1, missed: 1 } });
+    await noEffect.click();
+    await expect(noEffect).toHaveAttribute("aria-pressed", "true");
+    await changeToggle.click();
+    await expect(noEffect).toHaveAttribute("aria-pressed", "false");
+    await expect(changeInput).toBeVisible();
+    await noEffect.click();
+    await expect(changeToggle).toHaveText("Unchanged");
+    await expect(changeInput).toBeHidden();
 
     // Wrong effects remain private: no per-field mark, truth, or ledger row.
     await page.evaluate(() => window.plp.tutor.submit({
@@ -1971,6 +2008,10 @@ test.describe("PLP tutor (T-series)", () => {
     }));
     await expect(page.locator("#practice .trace-sim-ledger-row")).toHaveCount(1);
     await expect(page.locator("#practice .trace-sim-ledger-row").first()).toContainText("solved after retry");
+    await expect(page.locator("#practice .trace-sim-history")).not.toHaveAttribute("hidden", "");
+    await expect(page.locator("#practice .trace-sim-history")).not.toHaveAttribute("open", "");
+    await expect(page.locator("#practice .trace-sim-history > summary")).toContainText("Last step: line 1");
+    await expect(lineOne.locator(".trace-sim-line-mark")).toHaveText("✓");
 
     // Revealing the line and then its effects marks the whole committed row
     // revealed, rather than visually claiming independent work.
@@ -1981,6 +2022,8 @@ test.describe("PLP tutor (T-series)", () => {
     await expect(page.locator("#practice .trace-sim-ledger-row").nth(1)).toContainText("revealed");
     await page.evaluate(() => window.plp.tutor.revealAnswer()); // reveal Program ends
     await page.waitForFunction(() => window.plp.tutor.state().waiting === "pause");
+    await expect(page.locator("#practice .trace-sim-complete")).toBeVisible();
+    await expect(page.locator("#practice .trace-sim-route")).toHaveText("L1 › L2 › END");
 
     const result = await page.evaluate(() => {
       const rec = window.plp.tutor.feed().find((c) => c.type === "question-frozen");
@@ -2003,6 +2046,75 @@ test.describe("PLP tutor (T-series)", () => {
     await page.evaluate(() => window.plp.tutor.review(0));
     await expect(page.locator("#practice .pr-review .trace-sim-review .trace-sim-ledger-row")).toHaveCount(3);
     await expect(page.locator("#practice .pr-review .trace-sim-review")).toContainText("Program ends");
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("trace-simulation keeps function context and repeated-line progress on the stable board", async ({ page }) => {
+    await setup(page);
+    await startTraceSimulationRound(page, {
+      id: "trace-sim-function-context",
+      code: "def double(n):\n    result = n * 2\n    return result\nx = double(3)\nprint(x)\n",
+      probeNames: ["x"],
+    });
+    const context = page.locator("#practice .trace-sim-context");
+    await expect(context).toHaveText("Context: module");
+
+    // Reveal only the current phase as we walk through the definition and
+    // call site. Once the verified call transition is committed, the next
+    // decision is visibly scoped to the callee.
+    await page.evaluate(() => window.plp.tutor.revealAnswer());
+    await expect(page.locator("#practice .trace-sim-phase")).toHaveAttribute("data-phase", "effects");
+    await expect(context).toHaveText("Context: module");
+    await page.evaluate(() => window.plp.tutor.revealAnswer());
+    await page.evaluate(() => window.plp.tutor.revealAnswer());
+    await expect(page.locator("#practice .trace-sim-line[data-line='4']")).toHaveClass(/picked/);
+    await page.evaluate(() => window.plp.tutor.revealAnswer());
+    await expect(page.locator("#practice .trace-sim-phase")).toHaveAttribute("data-phase", "next-line");
+    await expect(context).toHaveText("Context: double()");
+    await expect(page.locator("#practice .trace-sim-history > summary")).toContainText("calls double()");
+    await page.evaluate(() => window.plp.tutor.revealAnswer());
+    await expect(context).toHaveText("Context: double()");
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("trace-simulation counts repeated source occurrences without adding future rows", async ({ page }) => {
+    await setup(page);
+    await startTraceSimulationRound(page, {
+      id: "trace-sim-loop-progress",
+      code: "n = 0\nwhile n < 1:\n    n = n + 1\n",
+      probeNames: ["n"],
+    });
+    const lineTwoMark = page.locator("#practice .trace-sim-line[data-line='2'] .trace-sim-line-mark");
+    // Commit line 1, the first condition check, the body, and the second
+    // condition check. Each pair reveals only one current line and its effect.
+    for (let step = 0; step < 4; step += 1) {
+      await page.evaluate(() => window.plp.tutor.revealAnswer());
+      await expect(page.locator("#practice .trace-sim-phase")).toHaveAttribute("data-phase", "effects");
+      await page.evaluate(() => window.plp.tutor.revealAnswer());
+      await expect(page.locator("#practice .trace-sim-phase")).toHaveAttribute("data-phase", "next-line");
+    }
+    await expect(lineTwoMark).toHaveText("×2");
+    await expect(page.locator("#practice .trace-sim-ledger-row")).toHaveCount(4);
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
+  test("trace-simulation stacks cleanly on a narrow reduced-motion viewport", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 780 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await setup(page);
+    await startTraceSimulationRound(page);
+    const layout = await page.evaluate(() => {
+      const trace = document.querySelector("#practice .trace-sim");
+      const program = document.querySelector("#practice .trace-sim-program").getBoundingClientRect();
+      const current = document.querySelector("#practice .trace-sim-current").getBoundingClientRect();
+      const line = document.querySelector("#practice .trace-sim-line");
+      return {
+        stacked: program.bottom <= current.top + 1,
+        overflow: trace.scrollWidth > trace.clientWidth + 1,
+        transition: getComputedStyle(line).transitionDuration,
+      };
+    });
+    expect(layout).toEqual({ stacked: true, overflow: false, transition: "0s" });
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 

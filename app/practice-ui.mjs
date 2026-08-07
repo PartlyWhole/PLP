@@ -501,7 +501,7 @@ export function createPracticeUI({ layout, getCode }) {
     // The runtime renders its own input (and binds its Enter handler) into
     // the body we provide — same contract as the stage.
     const view = render?.(answer) ?? null;
-    const mech = mechanicsLineFor(form, multiline);
+    const mech = view?.hideMechanics ? null : mechanicsLineFor(form, multiline);
     if (mech) {
       const m = document.createElement("p");
       m.className = "pr-mechanics hint";
@@ -916,6 +916,11 @@ export function createPracticeUI({ layout, getCode }) {
       if (entry.effects?.output?.writes) add(`prints ${JSON.stringify(entry.effects.output.text)}`);
       for (const transition of entry.effects?.transitions ?? []) {
         if (transition.kind === "call") add(`calls ${transition.function}()`);
+        if (transition.kind === "return") {
+          add(transition.callerLine == null
+            ? `returns from ${transition.function}()`
+            : `returns to line ${transition.callerLine}`);
+        }
       }
       if (entry.effects && !facts.children.length) add("no watched value or output changes");
       if (facts.children.length) row.appendChild(facts);

@@ -1552,6 +1552,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       });
       ui.popBatch(batch, card);
       batch = [];
+      view.mountChrome?.({
+        actions: card.el.querySelector(".pr-actions"),
+        note: card.el.querySelector(".pr-note"),
+      });
 
       const save = () => { store.activeTrace = progress; persist(); };
       const countFirstMiss = () => {
@@ -1592,6 +1596,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         const independentlySolved = !ok && !progress.usedReveal;
         const tries = progress.lineMisses + progress.effectMisses;
         view.setCommitted(progress.committed);
+        view.complete?.({ ok, usedReveal: progress.usedReveal });
         view.freeze();
         delete store.activeTrace;
         persist();
@@ -1670,7 +1675,11 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       };
       const checkEffects = (provided) => {
         const answer = provided ?? view.collectEffects();
-        const missing = answerMissing(answer);
+        // The visual editor asks for an affirmative "No visible effect"
+        // choice. Programmatic debug/test submissions retain the established
+        // answer contract and do not need that UI-only signal.
+        const missing = (provided == null ? view.validateEffects?.() : null)
+          ?? answerMissing(answer);
         if (missing) { card.setNote(missing); return; }
         progress.draftEffects = answer;
         const result = q.gradeEffects(progress.cursor, answer);

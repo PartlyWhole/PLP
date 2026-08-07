@@ -90,6 +90,14 @@ incomplete traces, and traces over 24 raw line occurrences fail closed in v1.
 The practice runtime persists only committed history and the current phase,
 never uncommitted future truth.
 
+The practice renderer keeps one stable source board through the entire
+question. Next-line choices are made directly on that board; verified source
+occurrences add checkmarks or counts, while unverified future control flow is
+never decorated. The current-step pane shows function context and the watched
+state before the line. Its effects editor requires an explicit changed value,
+output, return value, or **No visible effect** choice. Verified history stays in
+a collapsed strip and the completed route is shown only after program end.
+
 ### trace-table payload + grading
 
 Rows are kept only where at least one watched name was added or changed

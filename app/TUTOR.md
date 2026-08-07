@@ -104,6 +104,16 @@ the saved committed ledger. Finishing or replacing a round while its silent
 trace is still running invalidates that continuation, so it cannot resurrect
 the old exercise.
 
+The progressive card is a stable coding-puzzle workspace rather than a growing
+form. Its source pane remains mounted across phases and accepts pointer or
+arrow-key line selection. The current-step pane owns state, function context,
+effects, retry notes, and actions. Effects use before/after rows plus an
+affirmative **No visible effect** control; leaving everything untouched is an
+incomplete answer. Verified history is collapsed below the board, repeated
+source occurrences appear as counts, and completion shows the learner-built
+route. At narrow widths the panes stack, and reduced-motion preferences remove
+the commit and completion animations.
+
 **order-the-lines** (Parsons, expansion ladder §R2) is the fifth kind: the
 KB emits the lines in CANONICAL order and buildKBSession draws the deal
 from the round's rng (deterministic per round, guarded so the dealt
