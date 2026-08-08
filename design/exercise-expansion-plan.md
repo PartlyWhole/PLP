@@ -182,6 +182,14 @@ every applicable shape minus the documented skip register
 refreshed 8→17 / 5→11 as a commented fixture refresh), KB-REFERENCE
 regenerated + byte-clean, T/Q/P suites 80/80 with zero fixture breaks.
 Work left in the working tree per the `commits: off` convention.
-Escalation list stands (bool-values mint; frame-aware tables; new
-forms). Remaining from the plan: the recurring cadence (§6) and the
-deferred variety pass (audit-baseline LOW list).
+Follow-through wave (same day, commit 2782c3f): deployed + live-suite
+validated; the variety pass paid (six generators widened, ceilings
+documented); bool-values' review tier closed via a braided challenge
+(chal-bool-verdict — no mint, superseding the escalation item); the
+innovation lane's first form, trace-query, shipped end-to-end per
+design/new-forms.md (bank at 231, eleven forms); pool-growth fixture
+reconciliation completed (several breaks had been masked by piped test
+invocations — repaid with re-derived pins). Escalation list now:
+frame-aware trace tables (rides the settled trace UI); break-the-tie
+and mutation-duel (specced in new-forms.md, break-the-tie's met-grant
+needs owner sign-off). Recurring cadence (§6) is the standing practice.
