@@ -824,6 +824,63 @@ function traceTableQuestion(ctx, opts = {}) {
   };
 }
 
+// ---- trace-query ----------------------------------------------------------
+// One pointed question about the execution PROCESS, graded against the real
+// trace (design/new-forms.md §1). Where trace-table asks for the whole story,
+// trace-query asks for the single fact a misconception gets wrong: how many
+// times a line ran, which line ran last, what a name held mid-run. The
+// answer is DERIVED here from the trace — never authored — so kb/ stays
+// trace-agnostic and the interpreter remains the only answer key.
+//
+// query := { type: "runs", line }                      → a count
+//        | { type: "last-line" }                       → a line number
+//        | { type: "value-when", name, line, visit }   → a value, read at the
+//          NEXT record after that line's visit-th raw occurrence (raw records
+//          carry before-the-line state, so the line's effect lands on the
+//          following record — trace-simulation's repeated-line convention).
+// V1 scope: completed module runs, module-frame lines only (same guard
+// family as trace-simulation; frame-local queries wait for frame-aware
+// tables). Grades the same {text} shape as predict-output, and returns
+// expected as {text}, so the tutor's predict-then-verify path serves it.
+function traceQueryQuestion(ctx, opts = {}) {
+  const query = opts.query;
+  const steps = ctx.steps ?? [];
+  if (!query || !steps.length) return null;
+  const last = steps[steps.length - 1];
+  if (last?.event !== "return" || last.location?.function !== "<module>") return null;
+  const moduleLines = steps
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => s.event === "line" && s.location?.function === "<module>");
+  if (!moduleLines.length) return null;
+  let expected = null;
+  if (query.type === "runs") {
+    expected = String(moduleLines.filter(({ s }) => s.location.line === query.line).length);
+  } else if (query.type === "last-line") {
+    expected = String(moduleLines[moduleLines.length - 1].s.location.line);
+  } else if (query.type === "value-when") {
+    const { name, line, visit = 1 } = query;
+    const occ = moduleLines.filter(({ s }) => s.location.line === line)[visit - 1];
+    if (!occ) return null;
+    const snap = snapshotAt(steps, Math.min(occ.i + 1, steps.length - 1));
+    const entry = snap.entries.find((e) => e.scope === "globals" && e.name === name);
+    if (!entry) return null;
+    expected = entry.value;
+  } else return null;
+  if (expected == null || String(expected).includes("\n")) return null;
+  return {
+    kind: "trace-query",
+    prompt: opts.prompt ?? "Answer from the run:",
+    query,
+    grade(answers = {}) {
+      const text = typeof answers === "object" ? answers.text : answers;
+      const correct = query.type === "value-when"
+        ? equivalentStateValue(text, expected)
+        : normalizeAnswer(text) === normalizeAnswer(expected);
+      return { correct, expected: { text: expected } };
+    },
+  };
+}
+
 // ---- code-prediction questions --------------------------------------------
 const STRUCTURAL_RE = /^\s*(def |class |for |while |if |elif |else\b|return\b|import |from )/;
 
@@ -981,6 +1038,11 @@ export const questionGenerators = {
     label: "Build the trace step by step",
     needsTrace: true,
     generate: traceSimulationQuestion,
+  },
+  "trace-query": {
+    label: "Answer one question about the run",
+    needsTrace: true,
+    generate: traceQueryQuestion,
   },
   "fill-one-blank": {
     // Graded by the tutor's async substitute-and-run path (design §5.2); this

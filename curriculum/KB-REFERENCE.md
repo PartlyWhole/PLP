@@ -9,8 +9,8 @@
 ## Overview
 
 - **87 concepts** — 4 structural / 60 core / 23 edge.
-- **227 exercises** across 8 topics.
-- **Forms:** fill-one-blank, fix-the-bug, order-the-lines, predict-exact-output, predict-io, predict-state, predict-the-error, spot-the-difference, trace-table, write-the-line.
+- **231 exercises** across 8 topics.
+- **Forms:** fill-one-blank, fix-the-bug, order-the-lines, predict-exact-output, predict-io, predict-state, predict-the-error, spot-the-difference, trace-query, trace-table, write-the-line.
 
 ## Topics
 
@@ -638,7 +638,7 @@ The yes-or-no values are True and False, and they print exactly like that.
 - Children: 000X, 0015, 001A, 001V, 002M
 - Lineage: 0001 ← 0004 ← 0005
 - Characteristic wrong answer: true, yes, or 1
-- Exercises: bool-prints
+- Exercises: bool-prints, chal-bool-verdict
 
 ### 0017 · if-runs-or-skips — core
 
@@ -758,7 +758,7 @@ A running total updates once per loop pass; its final value is there after the l
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000B ← 000D ← 001E
 - Characteristic wrong answer: an off-by-one total, or only the last value
-- Exercises: accumulate-then-read, chal-filtered-total, fix-accumulator, loop-total, loop-total-latent, order-loop-total, trace-sum, two-accumulators-hard, write-loop-step
+- Exercises: accumulate-then-read, chal-filtered-total, fix-accumulator, loop-total, loop-total-latent, order-loop-total, tq-total-when, trace-sum, two-accumulators-hard, write-loop-step
 
 ### 001K · loop-build-list — core
 
@@ -778,7 +778,7 @@ while re-tests before every pass and stops the moment the test is False.
 - Children: —
 - Lineage: 0001 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 0009 ← 000A ← 000B ← 0015 ← 0016
 - Characteristic wrong answer: one pass too many or one too few
-- Exercises: chal-while-grows-string, fix-while-condition, order-while-setup, trace-while, trace-while-two-names-hard, while-counts-down, write-while-step
+- Exercises: chal-while-grows-string, fix-while-condition, order-while-setup, tq-while-count, trace-while, trace-while-two-names-hard, while-counts-down, write-while-step
 
 ### 001N · break-exits — core
 
@@ -788,7 +788,7 @@ break leaves the whole loop immediately.
 - Children: —
 - Lineage: 0001 ← 0002 ← 0003 ← 0004 ← 0005 ← 0006 ← 0008 ← 000D ← 0015 ← 0016 ← 0017 ← 001E
 - Characteristic wrong answer: the loop finishes the remaining items anyway
-- Exercises: break-order, break-stops, chal-accumulate-until-break, trace-break
+- Exercises: break-order, break-stops, chal-accumulate-until-break, tq-break-count, trace-break
 
 ### 001P · continue-skips — core
 
@@ -1830,6 +1830,22 @@ print(a)
 prints:
 ```
 [5, 27, 54]
+```
+
+### chal-bool-verdict — focus 0016 (bool-values)
+
+- Form: `predict-exact-output` · Role: challenge · Topic: logic
+- Assumed: 0005, 0006, 0015
+- Shapes: direct-less, direct-greater, named · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+total = 17
+print(total > 15)
+```
+prints:
+```
+True
 ```
 
 ### chal-call-total — focus 002G (call-in-expression)
@@ -2883,7 +2899,7 @@ prints the target:
 
 - Form: `fill-one-blank` · Role: review · Topic: logic
 - Assumed: 0005, 0016
-- Shapes: not, and-false · Variants: plain
+- Shapes: not, and-false, or-true · Variants: plain
 - Sample (provenance: seed k=0):
 
 Filled with the intended token `True`:
@@ -3034,13 +3050,13 @@ prints the target:
 - Shapes: fill-stop · Variants: plain
 - Sample (provenance: seed k=0):
 
-Filled with the intended token `5`:
+Filled with the intended token `6`:
 ```py
-print(list(range(5)))
+print(list(range(6)))
 ```
 prints the target:
 ```
-[0, 1, 2, 3, 4]
+[0, 1, 2, 3, 4, 5]
 ```
 
 ### fill-slice-stop — focus 0011 (slice-half-open)
@@ -3983,7 +3999,7 @@ None
 - Form: `spot-the-difference` · Role: review · Topic: logic
 - Assumed: 0005, 0016, 001A, 001B
 - Contrast: 001A
-- Shapes: bool-or-vs-value-or · Variants: plain
+- Shapes: bool-or-vs-value-or, bool-and-vs-value-and · Variants: plain
 - Sample (provenance: seed k=0):
 
 Program A (shown with its output):
@@ -3997,11 +4013,11 @@ True
 
 Program B (predicted):
 ```py
-print(4 or 0)
+print(7 or 0)
 ```
 prints:
 ```
-4
+7
 ```
 
 ### order-append-then-print — focus 000G (append-mutates)
@@ -4536,20 +4552,20 @@ prints:
 
 Program A (shown with its output):
 ```py
-print(list(range(6)))
+print(list(range(9)))
 ```
 prints:
 ```
-[0, 1, 2, 3, 4, 5]
+[0, 1, 2, 3, 4, 5, 6, 7, 8]
 ```
 
 Program B (predicted):
 ```py
-print(list(range(2, 6)))
+print(list(range(2, 9)))
 ```
 prints:
 ```
-[2, 3, 4, 5]
+[2, 3, 4, 5, 6, 7, 8]
 ```
 
 ### range-step-contrast — focus 001H (range-step)
@@ -4562,20 +4578,20 @@ prints:
 
 Program A (shown with its output):
 ```py
-print(list(range(2, 12)))
+print(list(range(3, 13)))
 ```
 prints:
 ```
-[2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+[3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
 ```
 
 Program B (predicted):
 ```py
-print(list(range(2, 12, 3)))
+print(list(range(3, 13, 3)))
 ```
 prints:
 ```
-[2, 5, 8, 11]
+[3, 6, 9, 12]
 ```
 
 ### range-stop — focus 001F (range-stop-excluded)
@@ -4714,20 +4730,20 @@ drumdrumdrum
 
 Program A (shown with its output):
 ```py
-print("hi" + "hi")
+print("cat" + "cat")
 ```
 prints:
 ```
-hihi
+catcat
 ```
 
 Program B (predicted):
 ```py
-print("hi" * 3)
+print("cat" * 3)
 ```
 prints:
 ```
-hihihi
+catcatcat
 ```
 
 ### return-move-spot — focus 002C (return-exits-function)
@@ -5268,6 +5284,68 @@ print(b)
 prints:
 ```
 blue
+```
+
+### tq-break-count — focus 001N (break-exits)
+
+- Form: `trace-query` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 000D, 0015, 0017, 001E
+- Shapes: print-below-break, print-above-break · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+for x in [3, 5, 7, 10]:
+    print(x)
+    if x == 5:
+        break
+```
+Trace query: How many times does line 2 (the `print`) run? (the answer is derived from the real trace at practice time)
+the program itself prints:
+```
+3
+5
+```
+
+### tq-total-when — focus 001J (loop-accumulate)
+
+- Form: `trace-query` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 0009, 000A, 000B, 000D, 001E
+- Shapes: mid-loop-total · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+total = 0
+for x in [5, 5, 6, 7]:
+    total = total + x
+print(total)
+```
+Trace query: Line 3 runs once per item. What does `total` hold just after its run number 3? (the answer is derived from the real trace at practice time)
+the program itself prints:
+```
+23
+```
+
+### tq-while-count — focus 001M (while-repeats-while-true)
+
+- Form: `trace-query` · Role: review · Topic: loops
+- Assumed: 0005, 0006, 0008, 000A, 000B, 0015
+- Shapes: count-the-passes, count-the-checks · Variants: plain
+- Sample (provenance: seed k=0):
+
+```py
+n = 3
+while n > 0:
+    print(n)
+    n = n - 1
+print("done")
+```
+Trace query: How many times does line 3 (the `print(n)`) run? (the answer is derived from the real trace at practice time)
+the program itself prints:
+```
+3
+2
+1
+done
 ```
 
 ### trace-alias — focus 000H (names-share-list)

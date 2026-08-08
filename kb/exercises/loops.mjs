@@ -805,4 +805,139 @@ export default [
       },
     },
   },
+
+  // --- trace-query (design/new-forms.md §1) -------------------------------
+  // One pointed fact about the run, graded against the real trace. The
+  // exercise authors the QUERY and the prompt; the ANSWER is derived by the
+  // runtime from the trace — never authored here (kb/ stays trace-agnostic,
+  // same contract as trace-table's probeNames).
+  {
+    id: "tq-break-count",
+    topic: "loops",
+    focus: "001N", // break-exits — the process fact its misconception gets wrong
+    assumed: ["0005", "0006", "000D", "0015", "0017", "001E"],
+    role: "review",
+    form: "trace-query",
+    generator: {
+      shapes: ["print-below-break", "print-above-break"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["print-below-break", "print-above-break"]);
+        // Four DISTINCT items by offset draws; the break value is one of them.
+        const base = int(rng, 1, 5);
+        const items = [base, base + int(rng, 1, 3), base + int(rng, 4, 6), base + int(rng, 7, 9)];
+        if (shape === "print-above-break") {
+          // print FIRST, so the break pass still prints: truth = pos + 1.
+          // G1 regime: pos ∈ {1, 2} keeps truth ≤ 3 ≠ 4 (the "loop finishes
+          // anyway" model prints all four).
+          const pos = int(rng, 1, 2);
+          const k = items[pos];
+          return {
+            code: `for x in [${items.join(", ")}]:\n    print(x)\n    if x == ${k}:\n        break\n`,
+            query: { type: "runs", line: 2 },
+            prompt: "How many times does line 2 (the `print`) run?",
+            shape, variant: "plain",
+            misconception: String(items.length), // break ignored — the loop finishes anyway
+            variantCard: `The print comes FIRST each pass, so \`${k}\` still prints — `
+              + `then \`break\` ends the loop. Line 2 ran ${pos + 1} times, not ${items.length}.`,
+          };
+        }
+        // break guards the print: the break pass prints nothing — truth = pos.
+        // G1 regime: pos ∈ {1, 2, 3} < 4, so the full-loop model always differs.
+        const pos = int(rng, 1, 3);
+        const k = items[pos];
+        return {
+          code: `for x in [${items.join(", ")}]:\n    if x == ${k}:\n        break\n    print(x)\n`,
+          query: { type: "runs", line: 4 },
+          prompt: "How many times does line 4 (the `print`) run?",
+          shape, variant: "plain",
+          misconception: String(items.length), // break ignored — the loop finishes anyway
+          variantCard: `When \`x\` reaches \`${k}\`, \`break\` leaves the loop before that `
+            + `pass's print. Line 4 ran once per earlier item: ${pos} times.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "tq-while-count",
+    topic: "loops",
+    focus: "001M", // while-repeats-while-true
+    assumed: ["0005", "0006", "0008", "000A", "000B", "0015"],
+    role: "review",
+    form: "trace-query",
+    generator: {
+      shapes: ["count-the-passes", "count-the-checks"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["count-the-passes", "count-the-checks"]);
+        // p passes exactly: n0 = (p−1)·s + r with r ∈ 1..s (the last pass
+        // lands on r > 0, the next check fails).
+        const p = int(rng, 2, 4);
+        const s = int(rng, 1, 3);
+        const r = int(rng, 1, s);
+        const n0 = (p - 1) * s + r;
+        const code = `n = ${n0}\nwhile n > 0:\n    print(n)\n    n = n - ${s}\nprint("done")\n`;
+        if (shape === "count-the-checks") {
+          // The header re-tests before EVERY pass plus the final failing
+          // check: p + 1 occurrences. G1: the "one check per pass" model
+          // answers p — always one short.
+          return {
+            code,
+            query: { type: "runs", line: 2 },
+            prompt: "How many times does line 2 (the `while` test) run?",
+            shape, variant: "plain",
+            misconception: String(p), // the final failing check forgotten
+            variantCard: `The test runs before every pass — ${p} times with \`n\` still `
+              + `positive — and then ONE more time when \`n\` has run out. ${p} + 1 = ${p + 1}.`,
+          };
+        }
+        // G1: the "one pass too many" model answers p + 1 — always differs.
+        return {
+          code,
+          query: { type: "runs", line: 3 },
+          prompt: "How many times does line 3 (the `print(n)`) run?",
+          shape, variant: "plain",
+          misconception: String(p + 1), // one pass too many — the failing check imagined as a pass
+          variantCard: `Each pass prints then subtracts ${s}. After ${p} passes \`n\` is `
+            + `${n0 - p * s} — the test fails, so the body never runs a ${p + 1}th time.`,
+        };
+      },
+    },
+  },
+
+  {
+    id: "tq-total-when",
+    topic: "loops",
+    focus: "001J", // loop-accumulate — the mid-run value, not the final total
+    assumed: ["0005", "0006", "0008", "0009", "000A", "000B", "000D", "001E"],
+    role: "review",
+    form: "trace-query",
+    generator: {
+      shapes: ["mid-loop-total"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const items = Array.from({ length: 4 }, () => int(rng, 1, 9));
+        // Ask for the total just after the accumulate line's visit-th run.
+        // G1 regime: the "one visit behind" model answers the previous
+        // partial sum, and items are ≥ 1, so the partial sums are strictly
+        // increasing — the wrong answer always differs.
+        const visit = int(rng, 2, 3);
+        const partial = items.slice(0, visit).reduce((a, b) => a + b, 0);
+        const behind = items.slice(0, visit - 1).reduce((a, b) => a + b, 0);
+        return {
+          code: `total = 0\nfor x in [${items.join(", ")}]:\n    total = total + x\nprint(total)\n`,
+          query: { type: "value-when", name: "total", line: 3, visit },
+          prompt: `Line 3 runs once per item. What does \`total\` hold just after its run number ${visit}?`,
+          shape: "mid-loop-total", variant: "plain",
+          misconception: String(behind), // one visit behind — the pass counted before it added
+          variantCard: `Run ${visit} of line 3 adds item ${visit} (\`${items[visit - 1]}\`) to the `
+            + `${behind} already collected: \`total\` holds ${partial} at that moment.`,
+        };
+      },
+    },
+  },
 ];

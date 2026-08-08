@@ -9,7 +9,7 @@
 // Each challenge lives in its focus concept's lane.
 
 import { mulberry32, int, pick } from "../rng.mjs";
-import { words, dictKeys, distinctWords, listNames } from "../pools.mjs";
+import { words, names, dictKeys, distinctWords, listNames } from "../pools.mjs";
 
 export default [
   {
@@ -605,6 +605,68 @@ export default [
           variantCard: `\`input\` hands back the TEXT \`${typed}\`; \`int(...)\` turns it into `
             + `the number ${d} before \`n\` is bound. So \`${expr}\` is arithmetic — `
             + `${truth} — not the glued text \`${glued}\`.`,
+        };
+      },
+    },
+  },
+
+  {
+    // Challenge: bool-values braided with compare-ops — the learner predicts
+    // the VERDICT of a computed comparison, and the focus fact is that the
+    // verdict prints as `True`/`False` exactly (capitalized, unquoted — not
+    // "true"/"yes"/"1"); the comparison itself is met braid material.
+    //
+    // This CLOSES the documented bool-values review-tier gap: 0016's strict
+    // closure is ancestors(0016) = {print-text}, which admits no legal
+    // review beyond transcription (fill-bool was retired as provably
+    // unfixable there — kb-progress), so the gap was recorded pre-R1 as
+    // "needs a future mint" (exercise-expansion-plan, kb-progress). The
+    // challenge role post-dates that note: 0015 (compare-ops) is a
+    // DESCENDANT of 0016 — outside its lineage, which is exactly why no
+    // review can use it and exactly what makes it braid material — so the
+    // braid mechanism reaches discriminating depth for 0016 with NO ledger
+    // change, superseding the "needs a mint" note.
+    //
+    // NOTE: the named shape binds a name, and the analyzer charges 0006 for
+    // that; 0006 is in neither ancestors(0016) nor ancestors(0015)
+    // (0015's parents are 0008 + 0016), so it is braided in as well —
+    // braids adjusted to what the footprint really charges (precedent:
+    // chal-star-triangle).
+    //
+    // G1 regime: a ≠ b by offset draw, so the comparison is never vacuous
+    // and the verdict is a genuine decision; both polarities are reachable
+    // across seeds. Misconception formula: the lowercase spelling of the
+    // truth ("true"/"false") — 0016's characteristic wrong (precedent:
+    // bool-prints); grading is case-sensitive, so it differs on every seed.
+    id: "chal-bool-verdict",
+    topic: "logic",
+    focus: "0016", // bool-values, braided with compare-ops (+ name binding)
+    assumed: ["0005", "0006", "0015"],
+    braids: ["0006", "0015"],
+    role: "challenge",
+    form: "predict-exact-output",
+    generator: {
+      shapes: ["direct-less", "direct-greater", "named"],
+      variants: ["plain"],
+      generate(seed) {
+        const rng = mulberry32(seed);
+        const shape = pick(rng, ["direct-less", "direct-greater", "named"]);
+        const a = int(rng, 1, 20);
+        const b = 1 + ((a + int(rng, 0, 18)) % 20); // ≠ a by construction
+        const name = pick(rng, names); // drawn on every shape (G7 budget discipline)
+        const op = shape === "direct-less" ? "<" : ">";
+        const verdict = (shape === "direct-less" ? a < b : a > b) ? "True" : "False";
+        const code = shape === "named"
+          ? `${name} = ${a}\nprint(${name} ${op} ${b})\n`
+          : `print(${a} ${op} ${b})\n`;
+        return {
+          code,
+          shape, variant: "plain",
+          misconception: verdict.toLowerCase(), // "bools print like other languages' — lowercase"
+          variantCard: `\`${a} ${op} ${b}\` is worked out first — ${a} is `
+            + `${a < b ? "less than" : "greater than"} ${b}, so the answer is the yes-or-no `
+            + `VALUE spelled Python's way: \`${verdict}\`, capital first letter, `
+            + `no quotes — never \`${verdict.toLowerCase()}\`.`,
         };
       },
     },

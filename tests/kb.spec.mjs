@@ -785,6 +785,18 @@ test.describe("PLP knowledge base (K-series)", () => {
             },
           ];
         }
+        // trace-query (design/new-forms.md §1): the ANSWER is derived from
+        // the real trace in-browser — the branch asserts it exists, is one
+        // line, is stable across two builds, is a positive count for "runs"
+        // queries, and differs from the designed misconception. The program
+        // itself may print several lines (the query, not the output, is the
+        // one thing asked — E4's law lands on the derived answer).
+        if (ex.form === "trace-query") {
+          return [{
+            code: prog.code, form: "trace-query", name: null, target: null,
+            query: prog.query, mis: prog.misconception ?? null,
+          }];
+        }
         // fill-one-blank's `code` is the FULL correct program; grade it as
         // predict-output and verify its real output equals the target.
         return [{
@@ -800,7 +812,7 @@ test.describe("PLP knowledge base (K-series)", () => {
 
       const results = await page.evaluate(async (progs) => {
         const out = [];
-        for (const { code, form, name, names, maxBlanks, target, stdin } of progs) {
+        for (const { code, form, name, names, maxBlanks, target, stdin, query } of progs) {
           window.plp.editor.setValue(code);
           if (form === "predict-io") {
             const res = await window.plp.traceWithStdin(stdin);
@@ -845,6 +857,22 @@ test.describe("PLP knowledge base (K-series)", () => {
             steps: window.plp.memory.steps(),
             positions: window.plp.memory.linePositions(),
           };
+          if (form === "trace-query") {
+            const q = window.plp.questions.generateQuestion("trace-query", ctx, { query });
+            const q2 = window.plp.questions.generateQuestion("trace-query", ctx, { query });
+            const expected = q ? q.grade({}).expected.text : null;
+            out.push({
+              reason: summary?.terminal_reason,
+              gradable: Boolean(q),
+              expected,
+              stable: Boolean(q) && Boolean(q2) && q2.grade({}).expected.text === expected,
+              positiveCount: query.type !== "runs" || /^[1-9]\d*$/.test(String(expected ?? "")),
+              oneLine: expected != null && !String(expected).includes("\n"),
+              matchesTarget: true,
+              errors: window.plp.checkErrors(),
+            });
+            continue;
+          }
           if (form === "trace-table") {
             // The trace-table contract: gradable, tight (2..maxBlanks
             // blanks), every expected value single-line, every watched name
@@ -919,6 +947,10 @@ test.describe("PLP knowledge base (K-series)", () => {
         // exception (design §5.2 — loop-for-visits-each, where several lines
         // ARE the concept).
         if (!ex.multiline) expect(r.oneLine, `${ex.id} program ${i} must ask one thing (one output line)`).toBe(true);
+        if (r.stable !== undefined) {
+          expect(r.stable, `${ex.id} program ${i}: the derived trace-query answer must be stable across builds`).toBe(true);
+          expect(r.positiveCount, `${ex.id} program ${i}: a "runs" query must derive a positive count`).toBe(true);
+        }
         if (r.tight !== undefined) {
           expect(r.tight, `${ex.id} program ${i}: trace-table must yield 2..maxBlanks blanks`).toBe(true);
           expect(r.allNamesBlanked, `${ex.id} program ${i}: every watched name must be blanked at least once`).toBe(true);
@@ -1170,7 +1202,9 @@ test.describe("PLP knowledge base (K-series)", () => {
     // challenges incl. continue-total-hard, 5→11 hard siblings) — a fixture
     // refresh, not a weakened assertion; the behavioral gates below are the
     // real contract.
-    expect(challengeIds.size).toBe(17);
+    // (+1: chal-bool-verdict — the braided review tier for bool-values,
+    // closing the documented "needs a mint" gap without a ledger change.)
+    expect(challengeIds.size).toBe(18);
     expect(hardIds.size).toBe(11);
 
     // (a) Empty-met compiles NEVER deal challenges or hard siblings — the

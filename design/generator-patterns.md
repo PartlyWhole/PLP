@@ -180,6 +180,7 @@ form as the template; this table is the map:
 | write-the-line | `blank` (whole line), `targetOutput`, `constantLine` | scope rule; constantLine must MISS (E10c); usually `multiline` |
 | fix-the-bug | `buggyLine`, `blank` (intended fix), `targetOutput`, `wrongOutput`, `constantLine` | buggy program runs CLEAN but prints `wrongOutput` ≠ target; both sides inside the closure (E10d) |
 | predict-io | `stdinScript[]`, `multiline` | the transcript IS the answer; misconception = the wrong transcript |
+| trace-query | `query {type: runs\|last-line\|value-when, …}`, `prompt` | the ANSWER is derived from the real trace at practice time — never authored; misconception = the wrong process fact (design/new-forms.md §1) |
 
 ## The enforcement map (who catches what)
 

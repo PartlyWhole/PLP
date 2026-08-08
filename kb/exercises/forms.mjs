@@ -8,7 +8,7 @@
 // intros teach, through a second form.
 
 import { mulberry32, int, pick } from "../rng.mjs";
-import { names } from "../pools.mjs";
+import { names, words } from "../pools.mjs";
 
 // A blank is authored by writing the program with a NUL marker where the
 // hole goes; this returns the full (correct) code plus the hole's position,
@@ -164,11 +164,19 @@ export default [
     role: "review",
     form: "fill-one-blank",
     generator: {
-      shapes: ["not", "and-false"],
+      // Variety ceiling (2026-08 variety pass): the legal code space is
+      // exactly 4 programs. Bools are a two-value space, and G8 bars a blank
+      // whose token equals the shown target — so `True and \x00` (fill
+      // `False`, target `False`) and `False or \x00` (fill `True`, target
+      // `True`) are transcription, and a named-intermediate shape is barred
+      // because assignment (0006) is NOT an ancestor of 001A. What remains:
+      // `not True`, `not False`, `\x00 and False`, `\x00 or True` — the
+      // or-true shape below completes that space; 4/12 distinct is the cap.
+      shapes: ["not", "and-false", "or-true"],
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
-        const shape = pick(rng, ["not", "and-false"]);
+        const shape = pick(rng, ["not", "and-false", "or-true"]);
         if (shape === "and-false") {
           // Fill `True`; `True and False` still prints `False` — token ≠ target.
           // No designed misconception here: BOTH plausible fills (`True`,
@@ -179,6 +187,18 @@ export default [
             code, blank, targetOutput: "False",
             shape, variant: "plain",
             variantCard: "`and` needs BOTH sides true. Filling `True` gives `True and False`, which is still `False`.",
+          };
+        }
+        if (shape === "or-true") {
+          // The and-false shape mirrored: fill `False`; `False or True` still
+          // prints `True` — token ≠ target. No designed misconception here
+          // for the same reason: BOTH plausible fills (`True`, `False`) print
+          // the target `True`, so no discriminating wrong token exists.
+          const { code, blank } = blankFrom(`print(\x00 or True)\n`, "False");
+          return {
+            code, blank, targetOutput: "True",
+            shape, variant: "plain",
+            variantCard: "`or` needs just ONE side true. Filling `False` gives `False or True`, which is still `True`.",
           };
         }
         const want = pick(rng, ["True", "False"]);
@@ -210,7 +230,11 @@ export default [
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
-        const n = int(rng, 3, 6);
+        // n ∈ 3..9 (variety pass 2026-08; was 3..6). Regime: the fill n − 1
+        // ("stop read as included") prints [0..n−2], which is missing the
+        // shown last item n − 1 — it misses the target for every n ≥ 3, and
+        // the token String(n) never equals the shown list (G8).
+        const n = int(rng, 3, 9);
         const target = `[${Array.from({ length: n }, (_, i) => i).join(", ")}]`;
         const { code, blank } = blankFrom(`print(list(range(\x00)))\n`, String(n));
         return {
@@ -237,7 +261,12 @@ export default [
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
-        const b = int(rng, 5, 7), a = int(rng, 2, 3);
+        // b ∈ 5..11 (variety pass 2026-08; was 5..7), a ∈ 2..3. Regime:
+        // a ≥ 2 > 0, so the truth [a..b−1] never contains 0 while the
+        // misconception (= aOutput, [0..b−1]) always does — the start
+        // difference is VISIBLE in the outputs on every seed; b − a ≥ 2
+        // keeps B's list at ≥ 2 elements so the excluded stop stays visible.
+        const b = int(rng, 5, 11), a = int(rng, 2, 3);
         return {
           code: `print(list(range(${b})))\n`,
           aOutput: `[${Array.from({ length: b }, (_, i) => i).join(", ")}]`,
@@ -264,7 +293,13 @@ export default [
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
-        const a = int(rng, 1, 2), s = int(rng, 2, 3), b = a + s * int(rng, 2, 3) + 1;
+        // a ∈ 1..3 (variety pass 2026-08; was 1..2), s ∈ 2..3, k ∈ 2..3,
+        // b = a + s·k + 1. Regime: s ≥ 2 means the truth (counting by s)
+        // omits a + 1, which the misconception (= aOutput, counting by 1
+        // over b − a ≥ 5 values) always contains — the step difference is
+        // VISIBLE in the outputs on every seed. Max list length s·k + 1 ≤ 10
+        // is unchanged by the wider a.
+        const a = int(rng, 1, 3), s = int(rng, 2, 3), b = a + s * int(rng, 2, 3) + 1;
         const noStep = [];
         for (let v = a; v < b; v++) noStep.push(v);
         const withStep = [];
@@ -411,10 +446,16 @@ export default [
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
-        const w = pick(rng, ["hi", "cat", "sun", "ab"]);
-        // n ∈ {3, 4} only: at n = 2 the repeat `"w" * 2` equals the concat
-        // `"w" + "w"`, collapsing A and B — draw n so they always differ.
-        const n = pick(rng, [3, 4]);
+        // Word pool widened to the shared `words` pool (variety pass 2026-08;
+        // was an inline 4-word list) — all ≤ 4 letters, so even `* 5` stays a
+        // short readable line.
+        const w = pick(rng, words);
+        // n ∈ {3, 4, 5}, NEVER 2: at n = 2 the repeat `"w" * 2` equals the
+        // concat `"w" + "w"`, collapsing A and B — draw n so they always
+        // differ. Regime: the truth w·n has n·len(w) chars, the misconception
+        // (= aOutput, w + w) has 2·len(w); n ≥ 3 keeps them unequal on every
+        // seed. (2026-08: n gained 5; the n ≥ 3 guard is unchanged.)
+        const n = pick(rng, [3, 4, 5]);
         return {
           code: `print("${w}" + "${w}")\n`,
           aOutput: w + w,
@@ -550,21 +591,45 @@ export default [
     role: "review",
     form: "spot-the-difference",
     generator: {
-      shapes: ["bool-or-vs-value-or"],
+      // Two structural shapes (variety pass 2026-08 — the and-shape is the
+      // same fact through the other operator, both within 001C): the focus
+      // fires on B via analyzer rule11 for `or` AND `and` over ints alike.
+      shapes: ["bool-or-vs-value-or", "bool-and-vs-value-and"],
       variants: ["plain"],
       generate(seed) {
         const rng = mulberry32(seed);
-        // Vary program A across the bool pairs so its output isn't a constant
-        // `True` — the shown A must not telegraph a fixed answer.
-        const [l, r] = pick(rng, [["True", "False"], ["False", "True"], ["False", "False"]]);
-        const aOut = (l === "True" || r === "True") ? "True" : "False";
+        const shape = pick(rng, ["bool-or-vs-value-or", "bool-and-vs-value-and"]);
+        // Vary program A across ALL four bool pairs so its output isn't a
+        // constant `True`/`False` — the shown A must not telegraph a fixed
+        // answer (both operators produce both outputs across the pool).
+        const [l, r] = pick(rng, [["True", "False"], ["False", "True"], ["False", "False"], ["True", "True"]]);
         const n = int(rng, 2, 9);
+        // Second operand for the and-shape, ≠ n by offset (G3); drawn every
+        // seed so the rng budget is shape-uniform (G7).
+        const m = 2 + ((n - 2 + 1 + int(rng, 0, 6)) % 8);
+        if (shape === "bool-and-vs-value-and") {
+          const aOut = (l === "True" && r === "True") ? "True" : "False";
+          return {
+            code: `print(${l} and ${r})\n`,
+            aOutput: aOut,
+            contrastCode: `print(${n} and ${m})\n`,
+            // Regime: "and still hands back a bool" (= aOutput ∈ {True,
+            // False}); the truth is the digit m (both operands truthy, `and`
+            // hands back the LAST one), and m ∈ 2..9 is never True/False.
+            misconception: aOut,
+            shape, variant: "plain",
+            variantCard: `With plain \`True\`/\`False\`, \`and\` gives back \`True\`/\`False\`. But with plain `
+              + `values it does not convert anything: \`${n}\` counts as true, so \`and\` moves on and `
+              + `hands back the LAST operand \`${m}\` ITSELF — not \`True\`.`,
+          };
+        }
+        const aOut = (l === "True" || r === "True") ? "True" : "False";
         return {
           code: `print(${l} or ${r})\n`,
           aOutput: aOut,
           contrastCode: `print(${n} or 0)\n`,
-          misconception: aOut, // "or still hands back a bool" (= aOutput; truth is the digit n)
-          shape: "bool-or-vs-value-or", variant: "plain",
+          misconception: aOut, // "or still hands back a bool" (= aOutput; truth is the digit n, never True/False)
+          shape, variant: "plain",
           variantCard: `With plain \`True\`/\`False\`, \`or\` gives back \`True\`/\`False\`. But with plain `
             + `values it does not convert anything: \`${n}\` counts as true, so \`or\` hands back `
             + `\`${n}\` ITSELF — not \`True\`.`,

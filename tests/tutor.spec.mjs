@@ -74,7 +74,9 @@ test.describe("PLP tutor (T-series)", () => {
     });
     expect(endless).toEqual({ count: 7, chunk: 7 });
 
-    await page.evaluate(() => window.plp.tutor.startDrill("state", { focus: "0005", seed: 2 }));
+    // Capped-focus exemplar refreshed with the expansion plan: 0005 outgrew
+    // the single-exercise cap, so the deliberately intro-only 000W carries it.
+    await page.evaluate(() => window.plp.tutor.startDrill("numbers", { focus: "000W", seed: 2 }));
     await expect(page.locator("#practice [data-role=pr-round-notice]")).toContainText("2 varied practice problems");
     await expect(page.locator("#practice [data-role=pr-round-notice]")).toContainText("7-problem preference");
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem("plp.tutor.v1"))
@@ -189,6 +191,71 @@ test.describe("PLP tutor (T-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
+  test("trace-query: one process fact graded against the real trace — and grants NO met (design/new-forms.md §1)", async ({ page }) => {
+    await setup(page);
+    const warm = { "0005": { seen: 24, missed: 0 } };
+    // Derived, not a fixture: scan focus rounds for the first seed that deals
+    // tq-while-count (the pool may grow; the derivation stays valid).
+    const found = await page.evaluate(async (warmStats) => {
+      const { buildKBSession } = await import("./app/kb-session.mjs");
+      for (let seed = 1; seed < 300; seed++) {
+        const l = buildKBSession("loops", { seed, count: 1, stats: warmStats, focus: "001M" });
+        const ask = l?.steps.find((s) => s.ask)?.ask;
+        if (ask?.template === "tq-while-count") {
+          const code = l.steps.find((s) => s.loadCode)?.loadCode;
+          return { seed, kind: ask.kind, form: ask.form, prompt: ask.prompt, query: ask.opts.query, mis: ask.misconception, code };
+        }
+      }
+      return null;
+    }, warm);
+    expect(found, "a loops focus round must deal tq-while-count").toBeTruthy();
+    expect(found.kind).toBe("trace-query");
+    expect(found.form).toBe("trace-query");
+    // Independent derivation from the dealt program's arithmetic: p passes of
+    // the body; the header runs p + 1 times (the final failing check counts).
+    const n0 = Number(found.code.match(/n = (\d+)/)[1]);
+    const s = Number(found.code.match(/n = n - (\d+)/)[1]);
+    const passes = Math.ceil(n0 / s);
+    const expected = String(found.query.line === 2 ? passes + 1 : passes);
+    expect(found.mis).not.toBe(expected);
+
+    const round = async () => {
+      await page.evaluate((w) => {
+        localStorage.setItem("plp.kb.v1", JSON.stringify(w));
+        localStorage.removeItem("plp.tutor.v1");
+        localStorage.removeItem("plp.kb.met.v1");
+      }, warm);
+      await page.evaluate((seed) => window.plp.tutor.startDrill("loops", { seed, count: 1, focus: "001M" }), found.seed);
+    };
+    const answer = async (text) => {
+      await page.evaluate((t) => window.plp.tutor.lockPrediction(t), text);
+      await page.waitForFunction(() => ["pause", "correction"].includes(window.plp.tutor.state().waiting), null, { timeout: 20_000 });
+      return page.evaluate(() => ({
+        lastAnswer: window.plp.tutor.state().lastAnswer,
+        met: window.plp.tutor.met(),
+        stats: window.plp.tutor.drillStats(),
+        errors: window.plp.checkErrors(),
+      }));
+    };
+
+    // Correct: graded right against the trace-derived fact — but met stays
+    // EMPTY (v1: a single process fact is weaker evidence than a full
+    // prediction; Parsons precedent), while the stats still bump.
+    await round();
+    let r = await answer(expected);
+    expect(r.lastAnswer).toBe("correct");
+    expect(r.met).toEqual({});
+    expect(r.stats).toEqual({ "0005": { seen: 24, missed: 0 }, "001M": { seen: 1, missed: 0 } });
+    expect(r.errors).toEqual([]);
+
+    // The designed misconception is a real wrong answer.
+    await round();
+    r = await answer(found.mis);
+    expect(r.lastAnswer).toBe("wrong");
+    expect(r.met).toEqual({});
+    expect(r.errors).toEqual([]);
+  });
+
   test("fill-one-blank: substitutes the typed token, runs it for real, judges by output", async ({ page }) => {
     await setup(page);
     await page.evaluate(() => { localStorage.removeItem("plp.kb.v1"); localStorage.removeItem("plp.tutor.v1"); });
@@ -244,6 +311,10 @@ test.describe("PLP tutor (T-series)", () => {
       await page.evaluate((w) => {
         localStorage.setItem("plp.kb.v1", JSON.stringify(w));
         localStorage.removeItem("plp.tutor.v1");
+        // Template retirement must not rotate part 2/3 onto a DIFFERENT
+        // 001J exercise after part 1 answers correctly (the pool now holds
+        // tq-total-when too) — each part re-deals the identical puzzle.
+        localStorage.removeItem("plp.kb.tmpl.v1");
       }, warm);
       await page.evaluate((seed) => window.plp.tutor.startDrill("loops", { seed, count: 1, focus: "001J" }), found.seed);
       // The dealt program shows the hole, a whole line wide.
@@ -447,27 +518,27 @@ test.describe("PLP tutor (T-series)", () => {
       localStorage.setItem("plp.kb.v1", JSON.stringify({ "0005": { seen: 24, missed: 0 } }));
       localStorage.removeItem("plp.tutor.v1");
     });
-    // Seed 194 of a warm lists round opens with the += vs + [x] contrast (the
+    // Seed 20 of a warm lists round opens with the += vs + [x] contrast (the
     // seed is a fixture — re-derive it if the lists exercise pool changes;
     // derivation: scan buildKBSession("lists", {seed, count: 1, stats: warm})
     // for the first seed whose ask.context.code contains "+= [").
-    const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 194, count: 1 }));
-    expect(id).toBe("drill-lists-194");
+    const id = await page.evaluate(() => window.plp.tutor.startDrill("lists", { seed: 20, count: 1 }));
+    expect(id).toBe("drill-lists-20");
     // The contrast rides ON the ask (ask.context): program A (uses +=) with
     // its real output — reload-safe — and the card renders it above B.
     const ctx = await page.evaluate(() => {
       const s = JSON.parse(localStorage.getItem("plp.tutor.v1"));
       return s.drillLesson.steps.find((x) => x.ask)?.ask.context;
     });
-    expect(ctx.code).toContain("b += [40]");   // program A mutates the shared list
-    expect(ctx.output).toBe("[1, 8, 40]");     // …and its real output is shown
-    await expect(page.locator("#practice .pr-context")).toContainText("b += [40]");
-    await expect(page.locator("#practice .pr-context .pr-out")).toContainText("[1, 8, 40]");
+    expect(ctx.code).toContain("b += [97]");   // program A mutates the shared list
+    expect(ctx.output).toBe("[1, 6, 97]");     // …and its real output is shown
+    await expect(page.locator("#practice .pr-context")).toContainText("b += [97]");
+    await expect(page.locator("#practice .pr-context .pr-out")).toContainText("[1, 6, 97]");
     // The editor holds program B (the one to predict — a is left untouched).
     expect((await page.evaluate(() => window.plp.editor.getValue())).trim())
-      .toBe("a = [1, 8]\nb = a\nb = b + [40]\nprint(a)");
+      .toBe("a = [1, 6]\nb = a\nb = b + [97]\nprint(a)");
     // Predicting B's output correctly grades right and records the focus tag.
-    await page.evaluate(() => window.plp.tutor.lockPrediction("[1, 8]"));
+    await page.evaluate(() => window.plp.tutor.lockPrediction("[1, 6]"));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 15_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
     expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({
@@ -788,9 +859,12 @@ test.describe("PLP tutor (T-series)", () => {
     });
     expect(round.id).toMatch(/^drill-state-0005-\d+$/);
     expect(round.asks.every((t) => t === "0005")).toBe(true);
-    // Focused rounds default shorter — and a single-exercise focus pool
-    // (0005 has one) caps at 2: four near-identical questions read as broken.
-    expect(round.asks.length).toBe(2);
+    // Refreshed with the expansion plan: 0005 outgrew the single-exercise
+    // cap (hello-print + order-prints), so a map-launched round deals the
+    // full practice-count preference (default 10) — the variety the cap
+    // guarded against is now real. The single-exercise cap itself is still
+    // covered by the focus-cap test (000W).
+    expect(round.asks.length).toBe(10);
   });
 
   test("practice edge flows: open-in-editor round trip, changed-program chip, reload rebuilds the card, hide keeps the round", async ({ page }) => {
@@ -1191,9 +1265,12 @@ test.describe("PLP tutor (T-series)", () => {
     await setup(page);
     const r = await page.evaluate(async () => {
       const { buildKBSession } = await import("./app/kb-session.mjs");
-      // Single-exercise focus (0005 → hello-print), already seen: still
-      // teaches (the learner explicitly asked), and caps at 2.
-      const single = buildKBSession("state", { seed: 3, focus: "0005", stats: { "0005": { seen: 5, missed: 0 } } });
+      // Single-exercise focus, already seen: still teaches (the learner
+      // explicitly asked), and caps at 2. Exemplar refreshed with the
+      // expansion plan: 0005 gained a review (order-prints), so the one
+      // concept DELIBERATELY left intro-only carries this premise now —
+      // 000W float-inexact (waiver-bound, expansion plan §8 deviation).
+      const single = buildKBSession("numbers", { seed: 3, focus: "000W", stats: { "000W": { seen: 5, missed: 0 } } });
       const singleAsks = single.steps.filter((s) => s.ask).map((s) => s.ask);
       // Edge (discover-first) concept focus: "Try it anyway" still teaches.
       const edge = buildKBSession("lists", { seed: 1, focus: "000H", stats: {} });
@@ -2352,7 +2429,10 @@ test.describe("PLP tutor (T-series)", () => {
 
     const { ask, code } = await startErrorRound(page);
     expect(ask.kind).toBe("predict-the-error");
-    expect(ask.template).toBe("err-name-unbound");
+    // Refreshed with the error-lane expansion (002N's pool grew with
+    // err-after-output): seed 1 now deals the review sibling — same NameError
+    // truth on line 3, so every other assertion is deal-stable.
+    expect(ask.template).toBe("err-after-output");
     // The ask carries NO authored answer: expectedError is K-series provenance.
     expect(ask.expectedError).toBeUndefined();
     expect(code.split("\n").filter(Boolean).length).toBe(3);
@@ -2727,18 +2807,21 @@ test.describe("PLP tutor (T-series)", () => {
       id: "io-lint", steps: [{ ask: { kind: "predict-io" } }],
     }))).toEqual([]);
 
-    const { ask, code } = await startIORound(page, 0);
+    // Seed 7 deals greet-and-echo (re-derived after the 0026 focus pool grew
+    // with chal-input-number — a fixture refresh, not a weakened assertion):
+    // shape prompt-then-print-twice, script ["star"].
+    const { ask, code } = await startIORound(page, 7);
     expect(ask.kind).toBe("predict-io");
     expect(ask.template).toBe("greet-and-echo");
-    expect(ask.stdinScript).toEqual(["blue"]);
+    expect(ask.stdinScript).toEqual(["star"]);
     expect(ask.multiline).toBe(true);
-    expect(code).toBe('print("moon")\nword = input("Your name? ")\nprint(word)\n');
+    expect(code).toBe('msg = input("Your name? ")\nprint(msg)\nprint(msg)\n');
 
     // The typing is SCAFFOLDED and shown: one chip per scripted line, beside
     // the program, plus this form's first-time mechanics line.
     await expect(page.locator("#practice .pr-question .pr-stdin")).toHaveCount(1);
     await expect(page.locator("#practice .pr-stdin .pr-reveal-label")).toHaveText("someone types:");
-    await expect(page.locator("#practice .pr-stdin-chip code")).toHaveText(["blue"]);
+    await expect(page.locator("#practice .pr-stdin-chip code")).toHaveText(["star"]);
     await expect(page.locator("#practice .pr-mechanics")).toContainText("type the WHOLE console");
     // The answer widget is the growing line-box widget (a transcript is not one
     // line) — and it starts with EXACTLY ONE box: the number of boxes must
@@ -2749,13 +2832,13 @@ test.describe("PLP tutor (T-series)", () => {
 
     // A wrong answer — the concept's own misconception: output with no pause,
     // no prompt and no typed line.
-    await page.evaluate(() => window.plp.tutor.lockPrediction("moon\nblue"));
+    await page.evaluate(() => window.plp.tutor.lockPrediction("star\nstar"));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("wrong");
     // The run really happened, answered from the script with one echo, but
     // the card does not disclose the transcript after a miss.
-    expect(await page.evaluate(() => window.plp.console.text())).toBe("moon\nYour name? blue\nblue\n");
-    expect(await page.evaluate(() => window.plp.console.engineText())).toBe("moon\nYour name? blue\n");
+    expect(await page.evaluate(() => window.plp.console.text())).toBe("Your name? star\nstar\nstar\n");
+    expect(await page.evaluate(() => window.plp.console.engineText())).toBe("Your name? star\nstar\n");
     await expect(page.locator("#practice .pr-reveal, #practice .tutor-expected")).toHaveCount(0);
     expect(await page.evaluate(() => window.plp.tutor.drillStats())).toEqual({ "0026": { seen: 1, missed: 1 } });
     expect(await page.evaluate(() => window.plp.tutor.met())).toEqual({});
@@ -2764,8 +2847,8 @@ test.describe("PLP tutor (T-series)", () => {
 
   test("predict-io: the full transcript grades right and GRANTS met; the echo-stripped reading is accepted too", async ({ page }) => {
     await setup(page);
-    await startIORound(page, 0);
-    await page.evaluate(() => window.plp.tutor.lockPrediction("moon\nYour name? blue\nblue"));
+    await startIORound(page, 7);
+    await page.evaluate(() => window.plp.tutor.lockPrediction("Your name? star\nstar\nstar"));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
     await expect(page.locator("#practice .pr-verdict-slot .tutor-verdict")).toContainText("Exactly right");
@@ -2777,17 +2860,18 @@ test.describe("PLP tutor (T-series)", () => {
 
     // Two rendezvous, answered in order — and the echo-STRIPPED reading (what
     // the program alone emits) is accepted: the local echo is a presentation
-    // choice, not the concept.
-    const { ask } = await startIORound(page, 2);
+    // choice, not the concept. (Seed 0 deals two-questions post-refresh:
+    // shape second-only, script ["star", "drum"].)
+    const { ask } = await startIORound(page, 0);
     expect(ask.template).toBe("two-questions");
-    expect(ask.stdinScript).toEqual(["tree", "hi"]);
-    await expect(page.locator("#practice .pr-stdin-chip code")).toHaveText(["tree", "hi"]);
+    expect(ask.stdinScript).toEqual(["star", "drum"]);
+    await expect(page.locator("#practice .pr-stdin-chip code")).toHaveText(["star", "drum"]);
     await expect(page.locator("#practice .pr-stdin-then")).toHaveText(["then"]);
-    await page.evaluate(() => window.plp.tutor.lockPrediction("What shall I say? Say a word: hi\ntree"));
+    await page.evaluate(() => window.plp.tutor.lockPrediction("Your name? Type something: drum"));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
     expect((await page.evaluate(() => window.plp.tutor.state())).lastAnswer).toBe("correct");
     expect(await page.evaluate(() => window.plp.console.text()))
-      .toBe("What shall I say? tree\nSay a word: hi\nhi\ntree\n");
+      .toBe("Your name? star\nType something: drum\ndrum\n");
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
@@ -2820,25 +2904,25 @@ test.describe("PLP tutor (T-series)", () => {
 
   test("predict-io review + retry: the script comes back with the program, and the retry re-runs deterministically", async ({ page }) => {
     await setup(page);
-    await startIORound(page, 0);
-    await page.evaluate(() => window.plp.tutor.lockPrediction("moon\nblue"));
+    await startIORound(page, 7);
+    await page.evaluate(() => window.plp.tutor.lockPrediction("star\nstar"));
     await page.waitForFunction(() => window.plp.tutor.state().waiting !== "ask", null, { timeout: 30_000 });
     const liveCode = await page.evaluate(() => window.plp.editor.getValue());
 
     const rec = await page.evaluate(() => window.plp.tutor.feed().findLast((c) => c.type === "question-frozen"));
     expect(rec.review.kind).toBe("predict-io");
-    expect(rec.review.stdinScript).toEqual(["blue"]);
-    expect(rec.review.expectedText).toBe("moon\nYour name? blue\nblue\n");
+    expect(rec.review.stdinScript).toEqual(["star"]);
+    expect(rec.review.expectedText).toBe("Your name? star\nstar\nstar\n");
 
     await page.evaluate(() => window.plp.tutor.review(0));
-    await expect(page.locator("#practice .pr-review .pr-stdin-chip code")).toHaveText(["blue"]);
+    await expect(page.locator("#practice .pr-review .pr-stdin-chip code")).toHaveText(["star"]);
     await expect(page.locator("#practice .pr-review .pr-reveal, #practice .pr-review .tutor-expected")).toHaveCount(0);
     // The retry widget matches the live card: the growing line boxes (never a
     // textarea, which has no keyboard submit), one box to start.
     await expect(page.locator("#practice .pr-review .pr-retry textarea")).toHaveCount(0);
     await expect(page.locator("#practice .pr-review .pr-retry .tutor-lines-input")).toHaveCount(1);
 
-    const res = await page.evaluate(() => window.plp.tutor.retry(0, "moon\nYour name? blue\nblue"));
+    const res = await page.evaluate(() => window.plp.tutor.retry(0, "Your name? star\nstar\nstar"));
     expect(res.ok).toBe(true);
     expect(res).toEqual({ ok: true });
     const after = await page.evaluate(() => ({
@@ -2847,7 +2931,7 @@ test.describe("PLP tutor (T-series)", () => {
       met: window.plp.tutor.met(),
       editor: window.plp.editor.getValue(),
     }));
-    expect(after.rec).toEqual({ ok: false, retry: { ok: true, tries: 1, answer: "moon\nYour name? blue\nblue" } });
+    expect(after.rec).toEqual({ ok: false, retry: { ok: true, tries: 1, answer: "Your name? star\nstar\nstar" } });
     expect(after.stats).toEqual({ "0026": { seen: 1, missed: 1 } });
     expect(after.met).toEqual({}); // a retry never grants
     expect(after.editor).toBe(liveCode);

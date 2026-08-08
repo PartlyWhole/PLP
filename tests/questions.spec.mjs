@@ -389,6 +389,46 @@ test.describe("PLP questions (Q-series)", () => {
     expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
   });
 
+  test("trace-query: counts, last-line, and mid-run values derive from the real trace", async ({ page }) => {
+    await setupRun(page);
+    // A while loop with 3 passes: n = 5, 3, 1 print; the header tests 4 times
+    // (three true, one final false); the last executed line is the after-print.
+    await page.evaluate(() => window.plp.editor.setValue('n = 5\nwhile n > 0:\n    print(n)\n    n = n - 2\nprint("done")\n'));
+    expect((await page.evaluate(() => window.plp.trace())).terminal_reason).toBe("completed");
+    const r = await page.evaluate((ctxSrc) => {
+      const ctx = eval(ctxSrc);
+      const gen = (query) => window.plp.questions.generateQuestion("trace-query", ctx, { query });
+      const body = gen({ type: "runs", line: 3 });
+      const checks = gen({ type: "runs", line: 2 });
+      const lastLine = gen({ type: "last-line" });
+      // Produced-state convention: just after line 3's 2nd run, n still holds
+      // 3 (the decrement is the NEXT line).
+      const mid = gen({ type: "value-when", name: "n", line: 3, visit: 2 });
+      const missingName = gen({ type: "value-when", name: "zzz", line: 3, visit: 1 });
+      const missingVisit = gen({ type: "value-when", name: "n", line: 3, visit: 9 });
+      return {
+        bodyExpected: body.grade({}).expected.text,
+        bodyRight: body.grade({ text: " 3 " }).correct,   // whitespace forgiven
+        bodyWrong: body.grade({ text: "4" }).correct,
+        checksExpected: checks.grade({}).expected.text,
+        lastExpected: lastLine.grade({}).expected.text,
+        midExpected: mid.grade({}).expected.text,
+        midRight: mid.grade({ text: "3" }).correct,
+        missingName, missingVisit,
+      };
+    }, ctxExpr);
+    expect(r.bodyExpected).toBe("3");
+    expect(r.bodyRight).toBe(true);
+    expect(r.bodyWrong).toBe(false);
+    expect(r.checksExpected).toBe("4"); // 3 passes + the failing check
+    expect(r.lastExpected).toBe("5");   // print("done") is the last line to run
+    expect(r.midExpected).toBe("3");
+    expect(r.midRight).toBe(true);
+    expect(r.missingName).toBeNull();   // unknown name → no question, fail closed
+    expect(r.missingVisit).toBeNull();  // visit beyond the trace → fail closed
+    expect(await page.evaluate(() => window.plp.checkErrors())).toEqual([]);
+  });
+
   test("trace-table over a call: rows land on the call site; frame rows are opt-in", async ({ page }) => {
     await page.goto(SITE);
     await page.waitForFunction(() => crossOriginIsolated === true, null, { timeout: 30_000 });

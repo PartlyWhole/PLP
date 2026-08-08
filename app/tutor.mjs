@@ -531,9 +531,12 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       }
       store.resumeIndex = stepIndex; // re-ask on reload
       persist();
-      // predict-output and predict-state share the predict-then-verify path:
-      // a real trace, then grading against what the engine actually did.
-      if (step.ask.kind === "predict-output" || step.ask.kind === "predict-state") return execPredictOutput(step.ask);
+      // predict-output, predict-state, and trace-query share the
+      // predict-then-verify path: a real trace, then grading against what
+      // the engine actually did (trace-query derives its answer from the
+      // trace inside the question engine — design/new-forms.md §1).
+      if (step.ask.kind === "predict-output" || step.ask.kind === "predict-state"
+        || step.ask.kind === "trace-query") return execPredictOutput(step.ask);
       if (step.ask.kind === "fill-one-blank") return execFillBlank(step.ask);
       if (step.ask.kind === "trace-table") return execTraceTable(step.ask);
       if (step.ask.kind === "trace-simulation") return execTraceSimulation(step.ask);
@@ -781,6 +784,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
   function execPredictOutput(ask) {
     events.emit("quiz-question", { kind: ask.kind });
     const isState = ask.kind === "predict-state";
+    const isQuery = ask.kind === "trace-query";
     const hints = [...(ask.hints ?? [])];
     const totalHints = hints.length;
     // A predict-state answer is ONE value (and its "gone" chip fills one box),
@@ -799,7 +803,7 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
         // where Enter on an empty last box submits.
         ans = makeAnswerSurface({
           multi,
-          placeholder: isState ? "the value it holds…" : multi ? "one printed line…" : "what this prints…",
+          placeholder: isState ? "the value it holds…" : isQuery ? "your answer…" : multi ? "one printed line…" : "what this prints…",
           onSubmit: () => doLock(),
         });
         body.appendChild(ans.el);
@@ -853,7 +857,8 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       if (!result.correct && !store.drillLesson && !card.reveal) {
         appendExpected(card.body, {
           label: goneTruth ? "It holds nothing:"
-            : isState ? "What it really held:" : "What it really printed:",
+            : isState ? "What it really held:"
+              : isQuery ? "The run's real answer:" : "What it really printed:",
           text: goneTruth ? "that name is gone" : result.expected.text,
         });
       }
@@ -867,7 +872,10 @@ export function createTutor({ editor, memory, consoleUI, ui: stageUI, practiceUI
       // practice-round asks carry `concept`.
       const metTag = ask.focus ?? ask.concept;
       const beforeFinalHint = totalHints === 0 || hints.length > 0;
-      if (result.correct && metTag && beforeFinalHint) {
+      // trace-query grants NO met in v1 (a single process fact is weaker
+      // evidence than a full prediction — Parsons precedent,
+      // design/new-forms.md §1); it still bumps stats via resolveAsk.
+      if (result.correct && metTag && beforeFinalHint && !isQuery) {
         if (grantMet(metTag, ask.focus ? "lesson" : "drill")) {
           (store.roundMet ??= []).push(metTag); // exact newly-met list for the summary
           persist();

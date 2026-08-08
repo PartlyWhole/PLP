@@ -431,6 +431,19 @@ export function buildKBSession(topic, { count, seed = 1, stats = {}, focus, met 
         opts: { name: prog.probeName },
         prompt: `After it runs, what does \`${prog.probeName}\` hold?`,
       };
+    } else if (ex.form === "trace-query") {
+      // trace-query (design/new-forms.md §1): one pointed fact about the
+      // run, derived from the real trace at grading time. The exercise
+      // authors the QUERY and the prompt; the answer is never authored.
+      // Rides the predict-then-verify path (single-line answer).
+      steps.push({ loadCode: prog.code });
+      ask = {
+        kind: "trace-query",
+        form: ex.form, shape: prog.shape,
+        concept: ex.focus, template: ex.id, singleLine: true,
+        opts: { query: prog.query, prompt: prog.prompt },
+        prompt: prog.prompt,
+      };
     } else {
       steps.push({ loadCode: prog.code });
       ask = {

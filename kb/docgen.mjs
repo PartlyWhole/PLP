@@ -242,6 +242,14 @@ export function renderReference(kb, outputs, waivers = []) {
     } else if (ex.form === "predict-the-error") {
       L.push(fence(prog.code));
       L.push(`stops with: \`${get(`${ex.id}|raise`).trim()}\``);
+    } else if (ex.form === "trace-query") {
+      // The answer derives from the live trace at runtime (design/new-forms.md
+      // §1) and docgen is stdout-only, so the reference shows the query and
+      // the program's own output — never a stated answer.
+      L.push(fence(prog.code));
+      L.push(`Trace query: ${prog.prompt} (the answer is derived from the real trace at practice time)`);
+      L.push("the program itself prints:");
+      L.push(outBlock(get(`${ex.id}|out`)));
     } else if (ex.form === "order-the-lines") {
       L.push("Lines (canonical order):");
       L.push(fence(prog.lines.join("\n")));
